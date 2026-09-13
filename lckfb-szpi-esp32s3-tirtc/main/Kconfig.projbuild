@@ -1,0 +1,49 @@
+menu "XiaoTai application"
+config XIAOTAI_DISCOVERY_URL
+    string "ThingConnect service discovery URL"
+    default "http://ep-open.tangeopen.com/services"
+    help
+        Existing development endpoint is retained. Override for your deployment.
+        HTTPS requires valid time, trusted certificates and sufficient TLS memory.
+config XIAOTAI_DEVELOPMENT_CONSOLE
+    bool "Enable local development command console"
+    default n
+    help
+        Development only: enables serial commands that can alter credentials
+        and inject session actions. Product builds keep logs and BOOT wake,
+        but do not create this command task.
+config XIAOTAI_PORTAL_URL
+    string "Device binding portal URL (display only)"
+    default "https://demo-open.tange-ai.com"
+config XIAOTAI_WAKE_THRESHOLD_MILLI
+    int "Voicute wake threshold (thousandths)"
+    range 50 990
+    default 700
+    help
+        Model-specific; requires acoustic validation. Console overrides are volatile.
+config XIAOTAI_CAPTURE_AGC
+    bool "Adaptive uplink gain after AEC"
+    default y
+    help
+        ESP-SR WebRTC digital AGC with limiter. Does not modify the AEC
+        reference or codec gain. Adds a fixed 10 ms streaming delay.
+config XIAOTAI_WAKE_CAPTURE_AGC
+    bool "Use post-AEC adaptive gain for wake input"
+    depends on XIAOTAI_CAPTURE_AGC
+    default y
+    help
+        Share the existing 16 kHz AGC output before uplink downsampling.
+        No second AGC, added task or audio buffer. Preserve the model and
+        threshold and account for the 10 ms AGC delay in wake timestamps.
+config XIAOTAI_CAPTURE_AGC_GAIN_DB
+    int "Uplink AGC compression gain (dB)"
+    range 0 18 if IDF_TARGET_ESP32S3
+    range 0 12
+    default 15 if IDF_TARGET_ESP32S3
+    default 9
+    help
+        WebRTC compression gain, not a fixed volume multiplier. The target is
+        -6 dBFS. The S3 default adds 6 dB of gain allowance compared with 9 dB;
+        the limiter still protects loud input. More gain also amplifies residual
+        echo and noise. The P4 default is unchanged.
+endmenu

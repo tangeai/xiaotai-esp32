@@ -1,0 +1,18 @@
+*.a binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.h264 binary
+*.pcma binary
+*.ttf binary
+*.tflite binary
+*.wav binary
+components/tirtc_sdk/include/** -text -whitespace
+components/tirtc_sdk/VERSION.md -text -whitespace
+components/tirtc_sdk/SHA256SUMS.txt -text -whitespace
+components/esp_lcd/** -whitespace
+components/espressif__esp_codec_dev/** -whitespace
+components/espressif__esp_h264/** -whitespace
+components/espressif__esp_hosted/** -whitespace
+components/espressif__esp_lvgl_port/** -whitespace
+components/espressif__esp_video/** -whitespace

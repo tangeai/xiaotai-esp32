@@ -1,0 +1,12 @@
+/build*/
+/managed_components/
+/sdkconfig
+/sdkconfig.old
+/.vscode/
+/.clangd
+/.local/
+/AGENTS.md
+**/__pycache__/
+*.bin
+*.elf
+*.map

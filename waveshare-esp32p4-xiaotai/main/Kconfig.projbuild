@@ -1,0 +1,241 @@
+menu "Audio"
+
+config AUDIO_LOCAL_LOOPBACK_TEST
+    bool "Enable temporary local mic-to-speaker loopback test"
+    default n
+
+config APP_AUDIO_AEC_ENABLE
+    bool "Enable ESP-SR acoustic echo cancellation"
+    default y
+    help
+        Preloads the ESP-SR AEC engine when a full-duplex audio owner prepares
+        its media path. Runtime processing is enabled for IPC viewing, device
+        calls, WeChat VoIP, and AI Chat, and is disabled outside those media
+        sessions. Each application keeps its existing audio ownership model.
+
+endmenu
+
+menu "AI Chat"
+
+config APP_AI_CHAT_VIDEO_ENABLE
+    bool "Upload local H264 camera video during AI Chat"
+    default y
+    help
+        Start the existing ESP32-P4 camera and hardware H264 uplink only after
+        start_session succeeds. AI Chat video uses stream 0 while PCM audio
+        remains on stream 1. If camera startup fails, the audio conversation
+        continues without video.
+
+endmenu
+
+menu "WeChat VoIP"
+
+config APP_WECHAT_VOIP_LOCAL_VIDEO_ENABLE
+    bool "Upload local camera video during WeChat calls"
+    default y
+    help
+        Advertise WeChat calls as video capable and proactively publish the
+        ESP32-P4 camera through the existing YUV420-to-H264 RTC pipeline after
+        the WeChat room is joined. The WeChat audio path remains externally
+        owned by the dedicated PCMA capture task.
+
+config APP_WECHAT_VOIP_REMOTE_VIDEO_ENABLE
+    bool "Display remote WeChat video during calls"
+    default y
+    help
+        Request the standard 640x480 landscape MJPEG downlink, decode the
+        received frames with the ESP32-P4 hardware JPEG decoder, and map them
+        once to the physical 480x320 display without non-uniform stretching or
+        local rotation. Smaller adaptive frames may be uniformly enlarged to
+        fill the display. The local camera uplink remains H264. Disable only
+        for an audio-only product variant.
+
+endmenu
+
+menu "RTC video uplink"
+
+# Product media values are owned by media/media_tuning.h. Keep this menu for
+# build-time feature composition only.
+
+config APP_RTC_H264_DIRECT_HW_ENCODER
+    bool "Use direct ESP_H264 hardware encoder for RTC video"
+    default y
+    help
+        Bypass the V4L2 memory-to-memory H264 wrapper on the RTC camera
+        uplink hot path and call the ESP32-P4 hardware encoder directly.
+        The direct path keeps the native 1280x960 encoder output in PSRAM and leaves
+        enough internal DMA memory for ESP-Hosted SDIO during full-duplex
+        audio/video calls.
+
+config APP_H264_PERSISTENT_REF_POOL
+    bool "Retain the largest P4 H264 reference DMA buffer"
+    depends on APP_RTC_H264_DIRECT_HW_ENCODER
+    default y
+    help
+        Keep one aligned internal-DMA reference buffer across encoder profile
+        switches. Device calls use a compact encoder, while IPC and AI use the
+        full profile; retaining the largest buffer prevents repeated free/open
+        cycles from fragmenting the only block large enough for 1280-wide H264.
+        Concurrent extra encoders still receive independent allocations.
+
+config APP_H264_PERSISTENT_DB_POOL
+    bool "Retain the largest P4 H264 deblocking buffer"
+    depends on APP_RTC_H264_DIRECT_HW_ENCODER
+    default y
+    help
+        Keep one cache-aligned PSRAM deblocking buffer across encoder profile
+        switches. The 1280x960 encoder needs about 1.76 MiB contiguously; owning
+        it during early media prewarm prevents later IPC or AI starts from
+        depending on the fragmented runtime heap. Concurrent extra encoders
+        still receive independent allocations.
+
+config APP_RTC_H264_RESOURCE_FALLBACK_ENABLE
+    bool "Allow H264 resource-admission resolution fallback"
+    default y
+    help
+        If the requested hardware encoder cannot reserve one contiguous
+        internal reference-frame block, first use the compact camera/encoder
+        pair that keeps the P4 YUV420 path direct. Only fall back to another
+        aligned size when that compact profile cannot fit. This is a local
+        resource safety net only: it does not enable weak-network adaptation
+        or change the saved RTC video policy. A normally prewarmed encoder
+        still uses the requested size.
+
+config APP_CALL_VIDEO_DIRECT_LCD
+    bool "Use latest-frame direct LCD DMA after call controls auto-hide"
+    depends on SOC_PSRAM_DMA_CAPABLE && SPIRAM
+    default y
+    help
+        Keep the interactive controls in LVGL while they are visible, then
+        auto-hide them and present each latest RGB565 frame as one full-screen
+        PSRAM DMA transaction. Tapping the video restores the controls over the
+        retained current frame. This avoids multi-strip temporal tearing during
+        motion without sacrificing hangup and volume controls.
+
+config APP_RTC_VIDEO_AUTO_ADAPT_ENABLE
+    bool "Enable legacy local RTC video weak-network adaptation"
+    default n
+    help
+        Local fallback driven by queue pressure and send-buffer samples. Keep
+        this disabled when TiRTC SDK transport-driven adaptation is available,
+        so the application does not change frame rate or resolution before the
+        SDK controller publishes its first target.
+
+config APP_RTC_SDK_VIDEO_ADAPT_ENABLE
+    bool "Enable TiRTC SDK transport-driven video bitrate adaptation"
+    default y
+    help
+        Optional TiRTC 2.3 or later transport-driven controller. Register the
+        active encoder bitrate range and
+        apply its absolute target-bitrate callback through the application
+        control task. The SDK controller owns bitrate after its first feedback.
+        The legacy queue-pressure controller is configured independently and is
+        disabled by default so it cannot compete with TGMP. Congestion
+        reductions apply immediately, quality recovery is stepped after a short
+        stable period, resolution and frame rate stay fixed, and the hardware
+        encoder is updated in place. Every connection starts from the normal
+        configured profile; peers that do not produce TGMP feedback remain on
+        that profile, and optional registration failure must not block
+        audio/video setup. This path has passed bidirectional P4 weak-network
+        soak tests. Keep the legacy local controller disabled so that only one
+        layer owns encoder bitrate changes. The encoder starts each connection
+        at the normal profile and changes only after transport feedback.
+
+config APP_RTC_WAIT_VIDEO_SUBSCRIBE_BEFORE_CAPTURE
+    bool "Start camera capture after remote video subscription"
+    default n
+    help
+        Disable this for the normal IPC application path so the device starts the
+        physical camera/H264 hot path as soon as a call is accepted. That keeps
+        the capture/encoder path warm before the WebRTC proxy sends its video
+        subscription and shortens first-frame latency.
+
+        Enable it only when saving camera/H264 work before a confirmed remote
+        subscription is more important than first-frame time.
+
+config APP_DEVICE_ONLINE_PAUSE_DURING_RTC
+    bool "Pause device-online MQTT while RTC media is active"
+    default n
+    help
+        Keep this disabled for normal operation. The permanent MQTT connection
+        carries call_cancel, unbind, callers_update and other business events
+        that must remain available while RTC media is active.
+
+        Enable this only for isolated media stress tests where losing realtime
+        business notifications during the call is acceptable.
+
+config APP_TIRTC_QUERY_SEND_BUFFER_USED
+    bool "Query TiRTC SDK send-buffer usage"
+    default y
+    help
+        Keep SDK send-buffer backpressure enabled on the send hot path.
+        Close/error snapshots still use the cached waterline only, because
+        some SDK builds can invalidate a connection handle during remote close.
+        Disable this only when isolating SDK send-buffer internals.
+
+endmenu
+
+menu "Debug utilities"
+
+config APP_SERIAL_CALL_CLI_ENABLE
+    bool "Enable UART AT commands for device-call regression"
+    default y
+    help
+        Exposes AT+APP, AT+CALL, AT+ANSWER and AT+HANGUP on the existing
+        UART0 console. The command worker stack is allocated explicitly in
+        PSRAM and only submits application-layer intents; it never owns RTC,
+        media, or HTTP lifecycle state.
+
+config APP_MEMORY_WATERLINE_LOG
+    bool "Enable memory waterline transition logs"
+    default y
+    help
+        Record one memory baseline at startup, then log only pressure-level
+        transitions, recovery, or a new PSRAM allocation failure. This is the
+        normal maintenance signal and does not emit a periodic healthy line.
+
+config APP_VERBOSE_RUNTIME_LOGS
+    bool "Enable verbose runtime flow logs"
+    default n
+    help
+        Restore detailed HTTP, MQTT, ESP-Hosted, media handoff, and call-state
+        tracing for a focused diagnosis. Normal builds keep lifecycle, first
+        frame, warning, and error logs while suppressing repetitive internals.
+
+config APP_MEDIA_PERIODIC_DIAGNOSTICS
+    bool "Enable periodic media performance diagnostics"
+    default n
+    help
+        Print long camera, RTC transmit, decoder, audio-level, and whole-system
+        snapshots while media is running. These lines are useful for a focused
+        profiling session, but synchronous console output can pause realtime
+        media tasks and create visible periodic video stalls. Keep this off for
+        normal calls and enable it only while collecting performance evidence.
+
+config APP_MEDIA_COMPACT_HEALTH_LOG
+    bool "Enable one compact media health line"
+    default n
+    help
+        Print one short MEDIA line every five seconds while an RTC media
+        session is active. It reports camera and transmitted frame rates,
+        queue pressure, failures, and whether AEC is active and receiving a
+        playback reference. Keep this off for normal operation and enable it
+        only while collecting media performance evidence.
+
+config APP_DEBUG_SCREEN_SERVER_ENABLE
+    bool "Enable LAN screen debug web server"
+    default n
+    help
+        Starts a local HTTP server after the display is initialized.
+        The server exposes the current LVGL screen as BMP and accepts
+        debug tap/scroll commands from a browser on the same Wi-Fi LAN.
+        Disable this for production builds to avoid compiling or linking
+        the HTTP debug server.
+
+config APP_DEBUG_SCREEN_SERVER_PORT
+    int "LAN screen debug web server port"
+    range 1024 65534
+    default 8080
+    depends on APP_DEBUG_SCREEN_SERVER_ENABLE
+
+endmenu
