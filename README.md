@@ -2,7 +2,7 @@
 
 # 小钛 ESP32
 
-**TiRTC · WebRTC 实时音视频设备应用**
+**ESP32 实时音视频与 AI 对讲**
 
 [![MIT License](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](LICENSE)
 [![ESP32-S3](https://img.shields.io/badge/ESP32-S3-E7352C?style=flat-square&logo=espressif&logoColor=white)](lckfb-szpi-esp32s3-tirtc/README.md)
@@ -11,60 +11,103 @@
 [![GitHub Stars](https://img.shields.io/github/stars/tangeai/xiaotai-esp32?style=flat-square&label=Stars&color=B8860B)](https://github.com/tangeai/xiaotai-esp32)
 [![GitHub Issues](https://img.shields.io/github/issues/tangeai/xiaotai-esp32?style=flat-square&label=Issues&color=0969DA)](https://github.com/tangeai/xiaotai-esp32/issues)
 
+[![TiRTC SDK](https://img.shields.io/badge/TiRTC-SDK-0969DA?style=flat-square)](lckfb-szpi-esp32s3-tirtc/third_party/tirtc/README.md)
+[![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=flat-square&logo=webrtc&logoColor=white)](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)
+[![LVGL](https://img.shields.io/badge/UI-LVGL-008FBE?style=flat-square)](lckfb-szpi-esp32s3-tirtc/dependencies.lock)
+[![ESP-SR](https://img.shields.io/badge/Audio-ESP--SR-E7352C?style=flat-square&logo=espressif&logoColor=white)](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md#音频链路)
+[![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
+[![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#微信呼叫)
+
+[下载固件](#下载固件) · [在线烧录](https://espressif.github.io/esptool-js/) · [体验平台](https://demo-open.tange-ai.com) · [服务端与小程序](https://github.com/tangeai/tirtc-server-example)
+
 </div>
 
----
+小钛通过 TiRTC/WebRTC 提供实时查看、微信呼叫、设备互呼和 AI 对讲功能。下载对应固件，按以下步骤完成烧录、配网和绑定即可体验，无需编译或自建服务器。
 
-我们是探鸽，专注 WebRTC 实时音视频通信，**TiRTC 是我们的核心产品**。小钛把它装进开发板，让设备与设备、微信、H5 通话。**S3 做双向语音，P4 在此基础上增加视频。**
+**下载 BIN → USB 烧录 → Wi-Fi 配网 → 网站绑定 → 开始体验**
 
-先让设备聊起来，再看代码。下面准备好了固件、烧录步骤，以及从一次通话读懂 TiRTC 的代码入口。
+<a id="下载固件"></a>
 
-## 先用 16 MB 包体验
+## 步骤 1：下载 BIN 固件
 
-选好开发板，下载完整固件，用浏览器烧录。第一次体验，不必先安装 ESP-IDF。
+准备一块开发板、一根 USB 数据线、一台电脑和可上网的 **2.4 GHz Wi-Fi**。平台注册需要邮箱。按板型下载对应固件：
 
-| 开发板 | 16 MB 固件 | 指南 |
+| 开发板 | 完整 BIN 下载（16 MB） | 功能 |
 | --- | --- | --- |
-| 立创·实战派 ESP32-S3 N16R8 | [S3 1.0.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.0.0/xiaotai-esp32-s3-app-v1.0.0-full-16MB.bin) | [烧录与校验](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.0.0) |
-| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [P4 1.0.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.0.0/xiaotai-esp32-p4-app-v1.0.0-full-16MB.bin) | [烧录与校验](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.0.0) |
+| 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.0.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.0.0/xiaotai-esp32-s3-app-v1.0.0-full-16MB.bin) | 语音通话、AI 对讲；无摄像头画面 |
+| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.0.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.0.0/xiaotai-esp32-p4-app-v1.0.0-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
 
-当前为体验固件（Pre-release），验证范围见各版发布说明。
+烧录前请核对芯片修订版本：**S3 rev 0.0–0.99，P4 rev 1.0–1.99**。P4 rev 2.x/3.x 不适用；芯片修订版本与 PCB 版本不同。S3/P4 固件不可互刷。
 
-### 烧录前准备
+当前固件为体验版（Pre-release）。烧录说明、校验文件及验证范围见 [S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.0.0)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.0.0)。
 
-按指南校验下载文件。固件适用芯片修订：S3 rev 0.0–0.99、P4 rev 1.0–1.99；S3/P4 不可互刷，P4 只刷主芯片、不刷 C6。
+<a id="用浏览器烧录"></a>
 
-> **完整包会清除配网、绑定和用户设置，请先备份。**
+## 步骤 2：用浏览器烧录
 
-### 用浏览器烧录
+> 烧录完整 BIN 会清除设备中的配网信息、绑定信息和用户设置，请先备份。
 
-用 USB 数据线连接开发板，关闭串口终端，在 Chrome 或 Edge 中打开[乐鑫在线烧录工具](https://espressif.github.io/esptool-js/)。
+1. 用 USB 数据线连接开发板，关闭占用串口的软件。**P4 接主芯片烧录口，不刷板载 C6。**
+2. 在电脑的 **Chrome/Edge** 中打开[乐鑫在线烧录工具](https://espressif.github.io/esptool-js/)，点击 **Connect**，选择开发板串口。
+3. 点击 **Add File**，选择下载的 `*-full-16MB.bin` 文件，**Flash Address 填 `0x0`**；Flash Mode、Flash Frequency、Flash Size 均选 **`keep`**。
+4. 点击 **Program**。烧录成功后点击 **Disconnect**，按复位键重启设备。
 
-1. 点 **Connect**，选择开发板串口。
-2. 点 **Add File**，添加完整 BIN，地址填 **`0x0`**；Flash Mode / Frequency / Size 均选 `keep`。
-3. 点 **Program**，等待成功后点 **Disconnect**，复位开发板。
+找不到串口时，请检查 USB 线是否支持数据传输。连接失败时，可按住 **BOOT**，按一下 **RESET**，松开 BOOT 后重试。
 
-### 开机体验
+## 步骤 3：连接 Wi-Fi
 
-按屏幕或热点提示连接 Wi-Fi，在[小钛体验平台](https://demo-open.tange-ai.com)输入六位绑定码。绑定后，呼叫已授权联系人，试试双向语音；P4 还可以视频通话。只有一块板时，也可点击首页表情或说“你好小钛”体验 AI 对话。
+1. 按设备屏幕提示配网。S3 使用热点配网；P4 可在屏幕上选择 Wi-Fi，也可使用热点配网。
+2. 使用热点配网时，用手机连接屏幕显示的热点，再打开配网页。S3 热点为 `XiaoTai-XXXX`，无需密码；若未弹出配网页，访问 `http://192.168.6.1`。
+3. 选择 **2.4 GHz Wi-Fi**，输入密码并提交。设备联网后，屏幕会显示 **6 位绑定码**。
 
-具体操作见 [S3 使用说明](lckfb-szpi-esp32s3-tirtc/README.md) 和 [P4 使用说明](waveshare-esp32p4-xiaotai/README.md)。
+配网完成后，将手机或电脑切回可上网的网络，再访问体验平台。
 
-## 体验之后，再看源码
+## 步骤 4：在网站绑定设备
 
-读代码不必从第一行开始。跟着一通电话，看它怎样连接、怎样把声音和画面送出去，又怎样在挂断后释放资源。要改自己的板卡，再去看采集、播放和显示驱动。
+1. 打开[小钛体验平台](https://demo-open.tange-ai.com)，注册并登录账号。
+2. 进入[我的设备](https://demo-open.tange-ai.com/devices)，点击 **添加设备 → 验证码绑定**。
+3. 输入设备屏幕上的 **6 位绑定码**，点击 **绑定设备**。
+4. 返回设备列表，确认设备显示“在线”。绑定码过期时，按设备提示重新获取。
 
-| 工程 | 源码版本 | 构建与配置 | 架构 |
-| --- | --- | --- | --- |
-| S3 APP | [1.0.0 Tag](https://github.com/tangeai/xiaotai-esp32/tree/esp32-s3-app-v1.0.0) | [S3 README](lckfb-szpi-esp32s3-tirtc/README.md) | [通信与音频链路](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md) |
-| P4 APP | [1.0.0 Tag](https://github.com/tangeai/xiaotai-esp32/tree/esp32-p4-app-v1.0.0) | [P4 README](waveshare-esp32p4-xiaotai/README.md) | [通信与音视频链路](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md) |
+## 步骤 5：开始体验
 
-使用 ESP-IDF 5.5.4，并保留完整仓库：这版 P4 会用到同级 S3 源码，模型检查也需要 `common/`。切换到某个 Tag 时，按该版本附带的 README 构建。
+实时查看、微信呼叫和 AI 对讲只需一台设备；设备互呼需要两台。切换功能前，请先退出实时查看或结束当前通话。
 
-这版适合在受控网络中体验。准备部署时，先读 [S3 安全说明](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md) 和 [P4 连接安全说明](waveshare-esp32p4-xiaotai/docs/TESTING.md#网络与凭据)：两套 SDK 的认证能力不同，应用服务还需单独检查。
+### 实时查看
 
-## 许可与反馈
+1. 在网站设备列表中，点击目标设备的 **实时**。
+2. 点击声音按钮，收听设备端声音。P4 接入摄像头后还可查看实时画面；S3 仅支持音频。
+3. 允许浏览器使用麦克风，点击并按住 **按住说话**，向设备端发送语音。
 
-项目采用 [MIT License](LICENSE)，允许使用、修改、分发和商业使用，须保留版权与许可声明；软件按现状提供，不附带担保。[第三方 SDK 与资源](THIRD_PARTY.md) 仍遵循各自许可。
+### 微信呼叫
 
-遇到问题，欢迎提 [Issue](https://github.com/tangeai/xiaotai-esp32/issues)。带上板型、固件版本、复现步骤和报错前后的日志，比一句“连不上”更容易找到原因。记得去掉 Wi-Fi 密码、设备密钥和个人信息。
+1. 点击设备上的 **微信电话**。没有微信联系人时，屏幕会显示小程序二维码。
+2. 用微信扫码，按小程序提示授权设备发起语音/视频通话。
+3. 在设备通讯录中同步联系人，选择已授权的微信联系人发起呼叫，在手机上接听。
+
+已有微信联系人时，点击 **微信电话**会直接呼叫列表中的第一个微信联系人。S3 支持语音通话，P4 支持音视频通话。
+
+### 设备互呼
+
+1. 按步骤 1–4 配置第二台设备。绑定到同一账号的设备会自动互为联系人。
+2. 在设备通讯录中同步联系人。若两台设备属于不同账号，需先在网站的 **联系人** 页面添加对方，并由对方确认。
+3. 选择对方设备发起呼叫，在另一台设备上接听。两端均支持视频时，可选择视频呼叫。
+
+### AI 对讲
+
+1. 结束当前通话，回到设备首页。
+2. **点击首页表情**，或对设备说 **“你好小钛”**。
+3. 设备响应后即可对话，例如“介绍一下你自己”。
+
+## 开发资料
+
+- **构建与配置**：[S3 开发指南](lckfb-szpi-esp32s3-tirtc/README.md)、[P4 开发指南](waveshare-esp32p4-xiaotai/README.md)。构建使用 ESP-IDF 5.5.4。请保留完整仓库，P4 依赖同级 S3 源码和 `common/` 资源。
+- **架构与代码入口**：[S3 通信与音频链路](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)、[P4 通信与音视频链路](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md)。
+- **排障与使用限制**：[S3 已知问题](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md)、[P4 排障说明](waveshare-esp32p4-xiaotai/docs/TESTING.md)。
+- **服务端、Web 与微信小程序**：[tirtc-server-example](https://github.com/tangeai/tirtc-server-example)。自建服务请参阅[部署指南](https://github.com/tangeai/tirtc-server-example/blob/main/thing-connect/deployment.md)。
+
+## 反馈与许可
+
+[提交 Issue](https://github.com/tangeai/xiaotai-esp32/issues)时，请提供板型、固件版本、复现步骤及相关日志，并删除日志中的密码和密钥。
+
+项目采用 [MIT License](LICENSE)，第三方 SDK 与资源遵循[各自许可](THIRD_PARTY.md)。
