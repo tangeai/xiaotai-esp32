@@ -360,12 +360,14 @@ int rpc_parse_rsp(Rpc *rpc_msg, ctrl_cmd_t *app_resp)
 		RPC_ERR_IN_RESP(resp_wifi_scan_get_ap_records);
 		p_c_list = rpc_msg->resp_wifi_scan_get_ap_records->ap_records;
 
-		p_a->number = rpc_msg->resp_wifi_scan_get_ap_records->number;
-
-		if (!p_a->number) {
-			ESP_LOGI(TAG, "No AP found");
+		/* Validate the wire count before narrowing it or indexing protobuf data.
+		 * An empty successful scan is valid, not an RPC failure. */
+		if (rpc_msg->resp_wifi_scan_get_ap_records->number > UINT16_MAX ||
+			rpc_msg->resp_wifi_scan_get_ap_records->number !=
+			rpc_msg->resp_wifi_scan_get_ap_records->n_ap_records)
 			goto fail_parse_rpc_msg;
-		}
+		p_a->number = rpc_msg->resp_wifi_scan_get_ap_records->number;
+		if (!p_a->number) break;
 		ESP_LOGD(TAG, "Num AP records: %u",
 				app_resp->u.wifi_scan_ap_list.number);
 
@@ -382,6 +384,15 @@ int rpc_parse_rsp(Rpc *rpc_msg, ctrl_cmd_t *app_resp)
 
 		ESP_LOGD(TAG, "Number of available APs is %d", p_a->number);
 		for (i=0; i<p_a->number; i++) {
+			RPC_FAIL_ON_NULL(resp_wifi_scan_get_ap_records->ap_records[i]);
+			WifiApRecord *record = p_c_list[i];
+			if (!record->country || !record->he_ap ||
+				record->ssid.len > sizeof(list[i].ssid) ||
+				(record->ssid.len && !record->ssid.data) ||
+				record->bssid.len != sizeof(list[i].bssid) || !record->bssid.data ||
+				record->country->cc.len > sizeof(list[i].country.cc) ||
+				(record->country->cc.len && !record->country->cc.data))
+				goto fail_parse_rpc_msg;
 			rpc_copy_ap_record(&list[i], p_c_list[i]);
 		}
 		break;

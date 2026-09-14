@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "esp_attr.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -46,7 +47,7 @@ static const char *TAG = "wifi_manager";
 static bool s_started;
 static volatile bool s_connected;
 ESP_EVENT_DEFINE_BASE(WIFI_MANAGER_CONTROL);
-enum { WIFI_CONTROL_DISCONNECT, WIFI_CONTROL_RETRY };
+enum { WIFI_CONTROL_DISCONNECT, WIFI_CONTROL_RETRY, WIFI_CONTROL_SCAN };
 static atomic_bool s_manual_disconnect;
 static atomic_bool s_control_pending;
 static atomic_int s_control_error;
@@ -110,22 +111,10 @@ static char s_provisioning_ssid[33];
 static char s_provisioning_status[96];
 static httpd_handle_t s_http_server;
 static esp_netif_t *s_ap_netif;
+static EXT_RAM_BSS_ATTR wifi_manager_credentials_t s_station_credentials;
 
-/* 页面内嵌在固件中，避免模板依赖额外文件系统分区。 */
-static const char s_setup_page[] =
-    "<!doctype html><html lang=zh-CN><meta charset=utf-8>"
-    "<meta name=viewport content='width=device-width,initial-scale=1'>"
-    "<title>TiRTC Wi-Fi 配置</title><style>body{font-family:sans-serif;max-width:420px;"
-    "margin:40px auto;padding:0 18px}input,button{box-sizing:border-box;width:100%;"
-    "padding:12px;margin:7px 0;font-size:16px}#msg{white-space:pre-wrap}</style>"
-    "<h2>TiRTC 设备配网</h2><p>填写设备需要连接的 Wi-Fi。</p>"
-    "<input id=s placeholder='Wi-Fi 名称' maxlength=32>"
-    "<input id=p type=password placeholder='Wi-Fi 密码（开放网络可留空）' maxlength=64>"
-    "<button onclick=save()>保存并重启</button><p id=msg></p>"
-    "<script>async function save(){let m=document.getElementById('msg');m.textContent='保存中…';"
-    "try{let r=await fetch('/api/wifi',{method:'POST',headers:{'Content-Type':'application/json'},"
-    "body:JSON.stringify({ssid:s.value,password:p.value})});m.textContent=await r.text()}"
-    "catch(e){m.textContent='请求失败：'+e}}</script></html>";
+/* A Flash-resident page: no filesystem, CDN, browser password store or copies in RAM. */
+extern const char s_setup_page[] asm("_binary_setup_html_start");
 
 static void set_error(char *error, size_t error_size, const char *message)
 {
@@ -301,11 +290,15 @@ static esp_err_t portal_open(httpd_handle_t server, int socket_fd)
     return portal_socket_allowed(socket_fd) ? ESP_OK : ESP_FAIL;
 }
 
+#include "wifi_history.inc"
+#include "wifi_portal.inc"
+
 static esp_err_t setup_page_get(httpd_req_t *request)
 {
     if (!portal_socket_allowed(httpd_req_to_sockfd(request)))
         return httpd_resp_send_err(request, HTTPD_403_FORBIDDEN, "provisioning closed");
     httpd_resp_set_type(request, "text/html; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     return httpd_resp_send(request, s_setup_page, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -366,14 +359,36 @@ static esp_err_t wifi_config_post(httpd_req_t *request)
         cJSON_GetObjectItemCaseSensitive(root, "ssid");
     const cJSON *password = root == NULL ? NULL :
         cJSON_GetObjectItemCaseSensitive(root, "password");
-    if (!cJSON_IsString(ssid) || !cJSON_IsString(password)) {
+    const cJSON *saved = cJSON_GetObjectItemCaseSensitive(root, "use_saved");
+    const cJSON *ssid_hex = cJSON_GetObjectItemCaseSensitive(root, "ssid_hex");
+    wifi_manager_credentials_t selected = {0};
+    const char *network = cJSON_IsString(ssid) ? ssid->valuestring : NULL;
+    if (ssid_hex != NULL) {
+        if (!cJSON_IsString(ssid_hex) || !portal_decode_ssid(ssid_hex->valuestring, selected.ssid)) {
+            cJSON_Delete(root);
+            return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "invalid SSID identity");
+        }
+        network = selected.ssid;
+    }
+    if (network == NULL || (!cJSON_IsString(password) && !cJSON_IsTrue(saved)) ||
+        (saved != NULL && !cJSON_IsBool(saved))) {
         cJSON_Delete(root);
         return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "ssid/password required");
     }
-
+    const char *passphrase = cJSON_IsString(password) ? password->valuestring : "";
+    if (cJSON_IsTrue(saved)) {
+        /* Reuse on the device, never return stored secrets to an open AP client. */
+        esp_err_t lookup = wifi_history_password(network, selected.password);
+        if (lookup != ESP_OK) {
+            cJSON_Delete(root);
+            httpd_resp_set_status(request, "409 Conflict");
+            return httpd_resp_sendstr(request, "已保存密码不可用，请重新输入密码。");
+        }
+        passphrase = selected.password;
+    }
     char validation_error[80];
-    if (!wifi_manager_credentials_valid(ssid->valuestring,
-                                        password->valuestring,
+    if (!wifi_manager_credentials_valid(network,
+                                        passphrase,
                                         validation_error,
                                         sizeof(validation_error))) {
         cJSON_Delete(root);
@@ -392,7 +407,8 @@ static esp_err_t wifi_config_post(httpd_req_t *request)
         httpd_resp_set_status(request, "503 Service Unavailable");
         return httpd_resp_sendstr(request, "configuration unavailable or restart pending");
     }
-    esp_err_t err = wifi_manager_save_credentials(ssid->valuestring, password->valuestring);
+    esp_err_t err = wifi_manager_save_credentials(network, passphrase);
+    memset(selected.password, 0, sizeof(selected.password));
     cJSON_Delete(root);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Wi-Fi config save failed: %s", esp_err_to_name(err));
@@ -437,9 +453,21 @@ static esp_err_t start_http_server(void)
         .method = HTTP_POST,
         .handler = wifi_config_post,
     };
+    const httpd_uri_t networks = {
+        .uri = "/api/wifi/networks", .method = HTTP_GET, .handler = portal_networks_get,
+    };
+    const httpd_uri_t scan = {
+        .uri = "/api/wifi/scan", .method = HTTP_POST, .handler = portal_scan_post,
+    };
     err = httpd_register_uri_handler(s_http_server, &page);
     if (err == ESP_OK) {
         err = httpd_register_uri_handler(s_http_server, &api);
+    }
+    if (err == ESP_OK) {
+        err = httpd_register_uri_handler(s_http_server, &networks);
+    }
+    if (err == ESP_OK) {
+        err = httpd_register_uri_handler(s_http_server, &scan);
     }
     if (err == ESP_OK) {
         err = httpd_register_err_handler(s_http_server,
@@ -460,6 +488,7 @@ static esp_err_t stop_provisioning(void)
     /* Revoke new writes before joining workers. Keep failed handles available
      * for diagnosis/retry, and report teardown errors instead of false success. */
     atomic_store(&s_provisioning, false);
+    portal_scan_cancel(PORTAL_SCAN_IDLE);
     esp_err_t err = captive_dns_stop();
     if (s_http_server != NULL) {
         esp_err_t http_err = httpd_stop(s_http_server);
@@ -531,7 +560,8 @@ static void retry_timer_callback(void *argument)
 static void retry_stop(void)
 {
     s_retry_due_us = 0;
-    (void)esp_timer_stop(s_retry_timer);
+    /* Manual provisioning can cancel a retry while a scan still needs its watchdog. */
+    if (!s_scan_active) (void)esp_timer_stop(s_retry_timer);
 }
 
 static void retry_schedule(void)
@@ -564,7 +594,7 @@ static void retry_schedule(void)
 static void connect_saved_network(void)
 {
     if (atomic_load(&s_manual_disconnect) || !s_has_saved_credentials ||
-        s_connected || s_connecting || s_retry_due_us != 0) return;
+        s_connected || s_connecting || s_scan_active || s_retry_due_us != 0) return;
     s_connect_started_us = esp_timer_get_time();
     s_associated_us = 0;
     esp_err_t err = esp_wifi_connect();
@@ -577,7 +607,16 @@ static void connect_saved_network(void)
 
 static void wifi_control_event(int32_t event_id)
 {
+    if (event_id == WIFI_CONTROL_SCAN) {
+        portal_scan_begin();
+        return;
+    }
     if (event_id == WIFI_CONTROL_RETRY) {
+        if (s_scan_active) {
+            if (esp_timer_get_time() - s_scan_started_us < PORTAL_SCAN_TIMEOUT_US) return;
+            ESP_LOGW(TAG, "Wi-Fi portal scan timed out");
+            portal_scan_cancel(PORTAL_SCAN_ERROR);
+        }
         if (s_retry_due_us == 0 || esp_timer_get_time() < s_retry_due_us) return;
         retry_stop();
         connect_saved_network();
@@ -727,6 +766,8 @@ static void wifi_event(void *argument,
     (void)event_data;
     if (event_base == WIFI_MANAGER_CONTROL) {
         wifi_control_event(event_id);
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_SCAN_DONE) {
+        portal_scan_done(event_data);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         if (atomic_load(&s_manual_disconnect)) return;
         if (s_has_saved_credentials) {
@@ -770,6 +811,12 @@ static void wifi_event(void *argument,
         signal_connection_changed();
         s_connection_failed = false;
         s_retry_count = 0;
+        /* Only a successful DHCP outcome enters history. The worker copies the
+         * small PSRAM record; no Flash operation runs on the Wi-Fi event stack. */
+        esp_err_t history_err = nvs_worker_submit_latest(remember_network_job,
+            &s_station_credentials, sizeof(s_station_credentials));
+        if (history_err != ESP_OK)
+            ESP_LOGW(TAG, "Wi-Fi history queue failed: %s", esp_err_to_name(history_err));
         atomic_store(&s_control_error, stop_provisioning());
         ESP_LOGI(TAG, "Wi-Fi connected, IP=" IPSTR, IP2STR(&got_ip->ip_info.ip));
         ESP_LOGI(TAG, "Wi-Fi setup: link_ms=%ld dhcp_ms=%ld portal_stop_ms=%lu",
@@ -848,6 +895,7 @@ esp_err_t wifi_manager_start(void)
     esp_err_t credentials_err = wifi_manager_load_credentials(&credentials);
     if (credentials_err == ESP_OK) {
         s_has_saved_credentials = true;
+        s_station_credentials = credentials;
         wifi_config_t station = {0};
         memcpy(station.sta.ssid, credentials.ssid, strlen(credentials.ssid));
         memcpy(station.sta.password, credentials.password, strlen(credentials.password));

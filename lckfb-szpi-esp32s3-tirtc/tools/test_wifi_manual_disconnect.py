@@ -29,8 +29,21 @@ typedef int esp_event_base_t;
 #define WIFI_EVENT_STA_DISCONNECTED 5
 #define IP_EVENT_STA_GOT_IP 6
 #define WIFI_EVENT_STA_CONNECTED 7
+#define WIFI_EVENT_SCAN_DONE 8
 #define WIFI_PROVISION_AFTER_FAILURES 5U
-enum { WIFI_CONTROL_DISCONNECT, WIFI_CONTROL_RETRY };
+enum { WIFI_CONTROL_DISCONNECT, WIFI_CONTROL_RETRY, WIFI_CONTROL_SCAN };
+#define PORTAL_SCAN_TIMEOUT_US 5000000LL
+#define PORTAL_SCAN_ERROR 5
+static bool s_scan_active;
+static int64_t s_scan_started_us;
+static void portal_scan_begin(void) {}
+static void portal_scan_done(void *event) { (void)event; }
+static void portal_scan_cancel(int state) { assert(state == PORTAL_SCAN_ERROR); s_scan_active = false; }
+static char s_station_credentials[98];
+static int remember_network_job(void *data, size_t size) { (void)data; (void)size; return 0; }
+static int nvs_worker_submit_latest(int (*job)(void *, size_t), void *data, size_t size) {
+    assert(job == remember_network_job && data == s_station_credentials && size == 98); return 0;
+}
 typedef struct { struct { int ip; } ip_info; } ip_event_got_ip_t;
 typedef struct { unsigned reason; } wifi_event_sta_disconnected_t;
 static bool s_started, s_connected, s_connecting, s_connection_failed;

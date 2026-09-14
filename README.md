@@ -36,12 +36,12 @@
 
 | 开发板 | 完整 BIN 下载（16 MB） | 功能 |
 | --- | --- | --- |
-| 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.1.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.1.0/xiaotai-esp32-s3-app-v1.1.0-full-16MB.bin) | 语音通话、AI 对讲；无摄像头画面 |
-| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.1.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.1.0/xiaotai-esp32-p4-app-v1.1.0-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
+| 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.1.2](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.1.2/xiaotai-esp32-s3-app-v1.1.2-full-16MB.bin) | 语音通话、AI 对讲；无摄像头画面 |
+| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.1.2](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.1.2/xiaotai-esp32-p4-app-v1.1.2-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
 
 烧录前请核对芯片修订版本：**S3 rev 0.0–0.99，P4 rev 1.0–1.99**。P4 rev 2.x/3.x 不适用；芯片修订版本与 PCB 版本不同。S3/P4 固件不可互刷。
 
-当前固件为体验版（Pre-release）。烧录说明、校验文件及验证范围见 [S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.1.0)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.1.0)。
+当前固件为体验版（Pre-release）。烧录说明、校验文件及验证范围见 [S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.1.2)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.1.2)。
 
 <a id="用浏览器烧录"></a>
 
@@ -59,8 +59,8 @@
 ## 步骤 3：连接 Wi-Fi
 
 1. 按设备屏幕提示使用热点配网，S3/P4 均可通过手机填写 Wi-Fi 信息。
-2. 使用热点配网时，用手机连接屏幕显示的热点，再打开配网页。S3 热点为 `XiaoTai-XXXX`，无需密码；若未弹出配网页，访问 `http://192.168.6.1`。
-3. 选择 **2.4 GHz Wi-Fi**，输入密码并提交。设备联网后，屏幕会显示 **6 位绑定码**。
+2. 用手机连接屏幕显示的 `XiaoTai-XXXX` 开放热点，访问 `http://192.168.6.1`。
+3. 在列表中选择 **2.4 GHz Wi-Fi**，输入密码并提交；已保存的网络可直接复用密码，隐藏网络可手动添加。设备联网并完成校时后，屏幕会显示 **6 位绑定码**。
 
 配网完成后，将手机或电脑切回可上网的网络，再访问体验平台。
 

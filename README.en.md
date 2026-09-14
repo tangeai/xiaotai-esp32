@@ -36,12 +36,12 @@ Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi**
 
 | Board | Full BIN download (16 MB) | Features |
 | --- | --- | --- |
-| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.1.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.1.0/xiaotai-esp32-s3-app-v1.1.0-full-16MB.bin) | Voice calls and AI voice chat; no camera video |
-| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.1.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.1.0/xiaotai-esp32-p4-app-v1.1.0-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
+| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.1.2](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.1.2/xiaotai-esp32-s3-app-v1.1.2-full-16MB.bin) | Voice calls and AI voice chat; no camera video |
+| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.1.2](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.1.2/xiaotai-esp32-p4-app-v1.1.2-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
 
 Check the chip revision before flashing: **S3 rev 0.0–0.99 or P4 rev 1.0–1.99**. P4 rev 2.x/3.x is not supported by these images. The chip revision is different from the PCB version. Do not flash S3 firmware onto P4, or vice versa.
 
-These are **pre-release** images. See the [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.1.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.1.0) for flashing instructions, checksums, and validation status.
+These are **pre-release** images. See the [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.1.2) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.1.2) for flashing instructions, checksums, and validation status.
 
 ## Step 2: Flash from your browser
 
@@ -57,8 +57,8 @@ If no serial port appears, check that your USB cable supports data transfer. If 
 ## Step 3: Connect to Wi-Fi
 
 1. Follow the setup instructions on the device screen. Both S3 and P4 support entering Wi-Fi details from your phone through hotspot setup.
-2. For hotspot setup, connect your phone to the hotspot shown on the screen, then open the setup page. The S3 hotspot is named `XiaoTai-XXXX` and requires no password. If its setup page does not open automatically, visit `http://192.168.6.1`.
-3. Select your **2.4 GHz Wi-Fi** network, enter its password, and submit. Once connected, the device displays a **6-digit binding code**.
+2. Connect your phone to the open `XiaoTai-XXXX` hotspot shown on the screen, then visit `http://192.168.6.1`.
+3. Select your **2.4 GHz Wi-Fi** network from the list, enter its password, and submit. Saved networks can reuse their passwords; hidden networks can be entered manually. Once connected and synchronized with a time server, the device displays a **6-digit binding code**.
 
 Switch your phone or computer back to a network with internet access before opening the demo platform.
 

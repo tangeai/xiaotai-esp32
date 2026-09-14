@@ -67,7 +67,7 @@ esp_err_t wifi_manager_load_credentials(wifi_manager_credentials_t *credentials)
  *  超时不撤销已接受的写入；不得把返回成功理解为仅入队。 */
 esp_err_t wifi_manager_save_credentials(const char *ssid, const char *password);
 
-/** 由公共 NVS 任务删除配置，最多等待 5 秒；调用后不会自动重启。 */
+/** 删除当前配置及成功联网历史；串行锁与 NVS 完成各最多等待 5 秒，不自动重启。 */
 esp_err_t wifi_manager_forget_credentials(void);
 
 /** 按 ESP32 字节长度规则校验 SSID 和密码；error 可为 NULL。 */

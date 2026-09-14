@@ -227,7 +227,10 @@ def s3_product_ui(c):
     for token in ("s3_ai_request_pending()", "starter_runtime_ai_stop()",
                   "starter_runtime_call_contact(selected)", "starter_runtime_contacts_refresh()"):
         require(token in actions, f"actual S3 action handler missing: {token}")
-    c.need("s3_face", "#if LV_COLOR_16_SWAP", "if (cutout || front > back) *pixel = colour;")
+    c.need("s3_face", "#if LV_COLOR_16_SWAP", "if (front > back) *pixel = colour;",
+           "if (overlay)", "lv_color_mix(s3_face.palette[16], *pixel,")
+    c.need("s3_face", "FACE_GLASSES", "FACE_MUSIC", "FACE_ZZZ", "FACE_WINK",
+           'else if (strcmp(key, "speech") == 0) key = "listening";')
 
 
 def product_ui(c):

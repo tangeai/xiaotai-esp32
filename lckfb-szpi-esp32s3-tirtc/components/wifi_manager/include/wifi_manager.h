@@ -66,7 +66,7 @@ esp_err_t wifi_manager_load_credentials(wifi_manager_credentials_t *credentials)
  *  Flash/NVS 由内部 RAM 栈的 nvs_worker 执行；调用方可使用 PSRAM 栈。 */
 esp_err_t wifi_manager_save_credentials(const char *ssid, const char *password);
 
-/** 删除 Wi-Fi NVS 配置；调用后不会自动重启。 */
+/** 删除 Wi-Fi NVS 配置及成功连接历史；调用后不会自动重启。 */
 esp_err_t wifi_manager_forget_credentials(void);
 
 /** 按 ESP32 字节长度规则校验 SSID 和密码；error 可为 NULL。 */

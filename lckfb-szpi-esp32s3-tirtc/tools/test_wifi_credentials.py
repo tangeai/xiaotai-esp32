@@ -18,6 +18,9 @@ record_type = source[source.index('#define WIFI_NVS_NAMESPACE'):source.index('st
 storage = source[source.index("static void set_error("):source.index("static bool portal_socket_allowed(")]
 post = "static esp_err_t wifi_config_post(httpd_req_t *request) {\n" + function_body(source, "wifi_config_post") + "\n}\n"
 worker = "static void signal_task(void *context) {\n" + function_body(source, "signal_task") + "\n}\n"
+history = (PROJECT / "components/wifi_manager/src/wifi_history.inc").read_text(encoding="utf-8")
+portal = (PROJECT / "components/wifi_manager/src/wifi_portal.inc").read_text(encoding="utf-8")
+decode = "static bool portal_decode_ssid(const char *hex, char ssid[33]) {\n" + function_body(portal, "portal_decode_ssid") + "\n}\n"
 
 harness = r'''
 #include <assert.h>
@@ -39,6 +42,8 @@ typedef unsigned nvs_handle_t;
 #define ESP_ERR_NVS_INVALID_LENGTH -5
 #define ESP_ERR_INVALID_SIZE -6
 #define NVS_WORKER_WAIT_MS 5000
+#define NVS_WORKER_DATA_BYTES 512
+#define EXT_RAM_BSS_ATTR
 typedef esp_err_t (*nvs_worker_fn_t)(void *, size_t);
 static bool on_nvs_worker;
 static int nvs_worker_call(nvs_worker_fn_t fn, void *data, size_t size, unsigned timeout) {
@@ -56,6 +61,9 @@ static int nvs_worker_call(nvs_worker_fn_t fn, void *data, size_t size, unsigned
 #define ESP_LOGE(...) ((void)0)
 TYPES
 static wifi_credentials_record_t stored;
+static unsigned char stored_history[492];
+static size_t history_size;
+static unsigned history_writes;
 static size_t stored_size;
 static bool has_record, legacy_ssid, legacy_password;
 static char old_ssid[33], old_password[65];
@@ -68,13 +76,24 @@ static int nvs_open(const char *name, int mode, nvs_handle_t *handle) {
     *handle = 1; return ESP_OK;
 }
 static int nvs_get_blob(nvs_handle_t handle, const char *key, void *out, size_t *size) {
-    assert(handle == 1 && !strcmp(key, WIFI_NVS_CREDENTIALS));
+    assert(handle == 1);
     if (read_error) return read_error;
+    if (!strcmp(key, "known")) {
+        if (!history_size) return ESP_ERR_NVS_NOT_FOUND;
+        if (*size < history_size) return ESP_ERR_NVS_INVALID_LENGTH;
+        memcpy(out, stored_history, history_size); *size = history_size; return ESP_OK;
+    }
+    assert(!strcmp(key, WIFI_NVS_CREDENTIALS));
     if (!has_record) return ESP_ERR_NVS_NOT_FOUND;
     if (*size < stored_size) return ESP_ERR_NVS_INVALID_LENGTH;
     memcpy(out, &stored, stored_size); *size = stored_size; return ESP_OK;
 }
 static int nvs_set_blob(nvs_handle_t handle, const char *key, const void *value, size_t size) {
+    if (!strcmp(key, "known")) {
+        assert(handle == 1 && size == sizeof(stored_history)); ++history_writes;
+        if (!write_error) { memcpy(stored_history, value, size); history_size = size; }
+        return write_error;
+    }
     assert(handle == 1 && !strcmp(key, WIFI_NVS_CREDENTIALS) && size == 99);
     ++writes;
     if (!write_error || write_before_error) {
@@ -94,9 +113,12 @@ static int nvs_get_str(nvs_handle_t handle, const char *key, char *out, size_t *
 static int nvs_commit(nvs_handle_t handle) { assert(handle == 1); ++commits; return commit_error; }
 static void nvs_close(nvs_handle_t handle) { assert(handle == 1); }
 static int nvs_erase_all(nvs_handle_t handle) {
-    assert(handle == 1); has_record = legacy_ssid = legacy_password = false; return ESP_OK;
+    assert(handle == 1); has_record = legacy_ssid = legacy_password = false;
+    history_size = 0; return ESP_OK;
 }
 STORAGE
+HISTORY
+DECODE
 
 typedef struct { int content_len; } httpd_req_t;
 #define HTTPD_403_FORBIDDEN 403
@@ -117,7 +139,9 @@ static int httpd_resp_send_err(httpd_req_t *r, int code, const char *text) {
     (void)r; (void)text; http_status = code; return send_error;
 }
 static void httpd_resp_set_status(httpd_req_t *r, const char *status) {
-    (void)r; assert(!strcmp(status, "503 Service Unavailable")); http_status = 503;
+    (void)r;
+    if (!strcmp(status, "409 Conflict")) http_status = 409;
+    else { assert(!strcmp(status, "503 Service Unavailable")); http_status = 503; }
 }
 static int64_t esp_timer_get_time(void) { return 0; }
 static int httpd_req_recv(httpd_req_t *r, char *out, size_t length) {
@@ -168,6 +192,7 @@ static void reset(void) {
     open_error = read_error = write_error = commit_error = send_error = 0;
     writes = commits = legacy_reads = success_responses = notifications = 0;
     write_before_error = false;
+    history_size = history_writes = 0; memset(stored_history, 0, sizeof(stored_history));
     atomic_store(&s_restart_requested, false); atomic_store(&s_provisioning, true);
     s_signal_task = (void *)1;
     restarts = delay_ms = poll_ms = 0; inject_restart = s_connected = false;
@@ -249,9 +274,65 @@ int main(void) {
     reset(); s_connected = true; inject_restart = true;
     run_worker(); assert(s_cached_rssi == -50 && s_signal_revision == 1 && restarts == 1 && delay_ms == 1000);
     puts("PASS: HTTP rejects unavailable owner/pending restart/storage errors; accepted save survives response loss; existing worker restarts and RSSI polling remains intact");
+
+    reset(); wifi_history_t known;
+    assert(wifi_history_load(&known) == ESP_OK && known.version == 1 && known.count == 0);
+    wifi_manager_credentials_t entry = {.ssid = "home", .password = "fixture-only"};
+    assert(nvs_worker_call(remember_network_job, &entry, sizeof(entry), NVS_WORKER_WAIT_MS) == ESP_OK);
+    assert(history_writes == 1 && sizeof(known) == 492);
+    for (int i = 0; i < 100; ++i)
+        assert(nvs_worker_call(remember_network_job, &entry, sizeof(entry), NVS_WORKER_WAIT_MS) == ESP_OK);
+    assert(history_writes == 1);
+    for (unsigned i = 1; i <= 6; ++i) {
+        snprintf(entry.ssid, sizeof(entry.ssid), "ap-%u", i);
+        assert(nvs_worker_call(remember_network_job, &entry, sizeof(entry), NVS_WORKER_WAIT_MS) == ESP_OK);
+    }
+    assert(wifi_history_load(&known) == ESP_OK && known.count == 5);
+    assert(!strcmp(known.entries[0].ssid, "ap-6") && !strcmp(known.entries[4].ssid, "ap-2"));
+    strcpy(entry.ssid, "ap-3"); strcpy(entry.password, "updated-fixture");
+    assert(nvs_worker_call(remember_network_job, &entry, sizeof(entry), NVS_WORKER_WAIT_MS) == ESP_OK);
+    assert(wifi_history_load(&known) == ESP_OK && known.count == 5);
+    assert(!strcmp(known.entries[0].ssid, "ap-3") && !strcmp(known.entries[1].ssid, "ap-6"));
+    char secret[65]; assert(wifi_history_password("ap-3", secret) == ESP_OK && !strcmp(secret, "updated-fixture"));
+    assert(wifi_history_password("home", secret) == ESP_ERR_NVS_NOT_FOUND && !secret[0]);
+    assert(wifi_manager_save_credentials("failed-attempt", "bad-fixture") == ESP_OK);
+    assert(wifi_history_password("failed-attempt", secret) == ESP_ERR_NVS_NOT_FOUND);
+    unsigned written = history_writes;
+    stored_history[0] = 2;
+    assert(wifi_history_load(&known) == ESP_ERR_INVALID_RESPONSE && !known.count);
+    assert(nvs_worker_call(remember_network_job, &entry, sizeof(entry), NVS_WORKER_WAIT_MS) == ESP_ERR_INVALID_RESPONSE);
+    assert(history_writes == written); stored_history[0] = 1;
+    history_size = 491; assert(wifi_history_load(&known) == ESP_ERR_INVALID_RESPONSE); history_size = 492;
+    write_error = -31; strcpy(entry.ssid, "write-fails");
+    assert(nvs_worker_call(remember_network_job, &entry, sizeof(entry), NVS_WORKER_WAIT_MS) == -31);
+    write_error = 0; assert(wifi_history_password("ap-3", secret) == ESP_OK);
+    read_error = -32; assert(wifi_history_load(&known) == -32 && !known.count); read_error = 0;
+
+    atomic_store(&s_restart_requested, false); notifications = 0;
+    body = "{\"ssid\":\"ap-3\",\"use_saved\":true}";
+    assert(request() == ESP_OK && http_status == 200); check_pair("ap-3", "updated-fixture");
+    atomic_store(&s_restart_requested, false); notifications = 0;
+    body = "{\"ssid\":\"display\",\"ssid_hex\":\"61702d33\",\"use_saved\":true}";
+    assert(request() == ESP_OK && http_status == 200); check_pair("ap-3", "updated-fixture");
+    atomic_store(&s_restart_requested, false); notifications = 0; written = writes;
+    body = "{\"ssid\":\"missing\",\"use_saved\":true}";
+    assert(request() == ESP_OK && http_status == 409 && writes == written && !notifications);
+    body = "{\"ssid_hex\":\"6100\",\"password\":\"fixture-only\"}";
+    assert(request() == ESP_OK && http_status == 400 && writes == written);
+    body = "{\"ssid\":\"ap-3\",\"use_saved\":\"true\"}";
+    assert(request() == ESP_OK && http_status == 400 && writes == written);
+    char decoded[33];
+    assert(portal_decode_ssid("e4b8ade69687225c", decoded) && !strcmp(decoded, "\xe4\xb8\xad\xe6\x96\x87\"\\"));
+    assert(!portal_decode_ssid("0", decoded) && !portal_decode_ssid("zz", decoded));
+    assert(!portal_decode_ssid("", decoded) && !portal_decode_ssid("00", decoded));
+    assert(portal_decode_ssid("fffe", decoded) && (unsigned char)decoded[0] == 255);
+    assert(wifi_manager_forget_credentials() == ESP_OK);
+    assert(wifi_history_load(&known) == ESP_OK && !known.count);
+    puts("PASS: 5-network MRU, duplicate-IP write suppression, confirmed-only history, corrupt/failure semantics, saved-password reuse, exact SSID bytes, history erase");
 }
 '''
 harness = harness.replace("TYPES", credentials_type + record_type).replace("STORAGE", storage)
+harness = harness.replace("\nHISTORY\n", "\n" + history + "\n").replace("\nDECODE\n", "\n" + decode + "\n")
 harness = harness.replace("\nPOST\n", "\n" + post + "\n").replace("\nWORKER\n", "\n" + worker + "\n")
 assert "xTaskCreate(" not in post and "restart_task(" not in source
 cjson = PROJECT / "managed_components/espressif__cjson/cJSON"

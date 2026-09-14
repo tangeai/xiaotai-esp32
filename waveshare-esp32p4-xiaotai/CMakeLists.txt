@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_VER "1.1.0")
+set(PROJECT_VER "1.1.2")
 # Wi-Fi Remote 0.14 includes Kconfig by this major.minor environment value.
 # Derive it from the selected IDF even on Ninja/CMake-triggered reconfigure;
 # a missing value silently drops C6/SDIO symbols before Hosted compilation.

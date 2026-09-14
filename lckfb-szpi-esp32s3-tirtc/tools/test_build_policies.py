@@ -173,6 +173,22 @@ class PortablePoliciesTest(unittest.TestCase):
         with self.assertRaisesRegex(policies.PolicyFailure, "cannot locate"):
             policies.tirtc_startup_order(context)
 
+    def test_clock_gate_precedes_both_identity_paths(self):
+        context = self.source_context()
+        policies.time_sync(context)
+        path = context.path("main")
+        original = context.text("main")
+        gate = "err = platform_client_sync_clock();"
+        for changed in (
+            original.replace(gate, "err = ESP_OK;", 1),
+            original.replace(gate, "err = ESP_OK;", 1).replace(
+                "starter_runtime_start(s_tirtc_config.device_id)",
+                "platform_client_sync_clock(); starter_runtime_start(s_tirtc_config.device_id)", 1),
+        ):
+            context.text_cache[path] = changed
+            with self.assertRaisesRegex(policies.PolicyFailure, "both identity paths"):
+                policies.time_sync(context)
+
     def test_startup_console_must_remain_opt_in(self):
         context = self.source_context()
         context.text_cache[context.path("main")] = context.text("main").replace(

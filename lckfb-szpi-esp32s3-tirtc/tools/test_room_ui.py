@@ -110,6 +110,21 @@ static void keypad_press(uint16_t key) {
     lv_btnmatrix_set_selected_btn(s3_room.keyboard,key);
     lv_event_send(s3_room.keyboard,LV_EVENT_VALUE_CHANGED,NULL);
 }
+static void check_member_text(lv_obj_t *label,const char *expected) {
+    assert(lv_label_get_long_mode(label)==LV_LABEL_LONG_DOT);
+    const char *shown=lv_label_get_text(label);
+    if(strcmp(shown,expected)) {
+        const char *dots=strstr(shown,"...");
+        assert(dots&&dots>shown&&!strncmp(shown,expected,(size_t)(dots-shown)));
+        static bool reported;
+        if(!reported){printf("UI ellipsis: shown=%s expected=%s\n",shown,expected);reported=true;}
+    }
+    /* LVGL 8 temporarily replaces text bytes with dots. Changing mode restores
+     * its saved tail, so verify the full model text without widening the UI. */
+    lv_label_set_long_mode(label,LV_LABEL_LONG_CLIP);
+    assert(!strcmp(lv_label_get_text(label),expected));
+    lv_label_set_long_mode(label,LV_LABEL_LONG_DOT);
+}
 static void check_keypad(void) {
     static const char *const expected[]={"1","2","3","4","5","6","7","8","9","0",LV_SYMBOL_BACKSPACE,"确认"};
     lv_obj_update_layout(s3_room.keyboard);
@@ -182,8 +197,9 @@ int main(int argc,char **argv) {
         assert(!lv_obj_has_flag(s3_room.self[0],LV_OBJ_FLAG_HIDDEN));
         assert(!strcmp(lv_label_get_text(lv_obj_get_child(s3_room.leave,0)),"退出房间"));
         model.self_name[0]=0;s3_room.next_refresh=0;s3_room_refresh(1500,&product);
-        assert(!strcmp(lv_label_get_text(s3_room.members[0]),"self-device-123"));
-        assert(!strcmp(lv_label_get_text(s3_room.members[2]),model.members[2].device_id));
+        check_member_text(s3_room.members[0],"self-device-123");
+        check_member_text(s3_room.members[2],model.members[2].device_id);
+        assert(!lv_obj_has_flag(s3_room.self[0],LV_OBJ_FLAG_HIDDEN));
         lv_event_send(s3_room.ptt,LV_EVENT_PRESSED,NULL);assert(s3_room.held_generation==7);
         model.phase=STARTER_ROOM_SPEAKING;s3_room.next_refresh=0;s3_room_refresh(2000,&product);
         lv_obj_update_layout(lv_scr_act());

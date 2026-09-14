@@ -2,7 +2,7 @@
  * 工程组合根：只负责初始化基础设施、组装模块和持有启动任务。
  *
  * 启动顺序：NVS -> V1.0.1 媒体适配器 -> 产品 UI -> Wi-Fi -> 后台上线任务。
- * 后台任务等待网络、完成必要的首次绑定，优先为 TiRTC 保留连续内部堆；
+ * 后台任务等待网络及校时、完成必要的首次绑定，优先为 TiRTC 保留连续内部堆；
  * TiRTC bootstrap 后异步初始化专用唤醒，再运行平台 MQTT/TLS 和开发控制任务。
  * 当前启动编排并非离线唤醒产品。H5/AI/语音呼叫顺序由 starter_runtime
  * 隐藏，app_main 不直接处理 SDK 回调或音视频帧。
@@ -307,6 +307,18 @@ static esp_err_t rebind_platform(bool *binding_restored)
     return err;
 }
 
+static void wait_for_network_clock(void)
+{
+    for (;;) {
+        while (!wifi_manager_connected()) vTaskDelay(pdMS_TO_TICKS(100));
+        esp_err_t err = platform_client_sync_clock();
+        if (err == ESP_OK) return;
+        ESP_LOGW(TAG, "startup waiting for network clock: %s; retrying in %u ms",
+                 esp_err_to_name(err), START_RETRY_DELAY_MS);
+        vTaskDelay(pdMS_TO_TICKS(START_RETRY_DELAY_MS));
+    }
+}
+
 static void starter_start_task(void *argument)
 {
     (void)argument;
@@ -318,10 +330,9 @@ static void starter_start_task(void *argument)
     starter_product_set_binding_state(credentials_valid ? STARTER_BINDING_CHECKING
                                                          : STARTER_BINDING_REQUIRED);
 
-    /* 服务发现、HTTP 和 MQTT 都依赖 STA 已拿到 IP。 */
-    while (!wifi_manager_connected()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+    /* Both stored credentials and first binding must cross the same clock
+     * boundary before any SDK initialization or authenticated network I/O. */
+    wait_for_network_clock();
 
     char mac_address[18];
     char default_client_id[65];
@@ -393,9 +404,9 @@ static void starter_start_task(void *argument)
     bool controls_started = false;
     bool wake_submitted = false;
     for (;;) {
-        while (!wifi_manager_connected()) {
-            vTaskDelay(pdMS_TO_TICKS(250));
-        }
+        /* Normally a cache hit; also covers a retry after time became invalid.
+         * Keep the internal bootstrap reserve until SNTP is ready. */
+        wait_for_network_clock();
 
         /*
          * TIRTC_FIRST_CONTIGUOUS_HEAP: TiRtcStart needs one 16+ KiB internal

@@ -84,6 +84,15 @@ typedef void (*platform_signal_callback_t)(const char *json,
 typedef void (*platform_online_callback_t)(void *user_data);
 
 /**
+ * Gate cloud startup on one successful SNTP synchronization in this boot.
+ * Call after Wi-Fi has an IP and before TiRTC init, discovery or binding.
+ * The startup/platform owner task may block; never call from UI/SDK callbacks.
+ * Later calls reuse that result while the clock remains valid; SNTP keeps
+ * refreshing in the background. A timeout/error does not open the gate.
+ */
+esp_err_t platform_client_sync_clock(void);
+
+/**
  * 完成服务发现、签名设备登录和永久 MQTT。为了降低 TiRTC TLS 启动峰值，
  * 本函数不创建另一份大栈；TiRTC 启动成功后由调用者进入请求循环。
  * 函数执行网络 I/O，必须在 app_main 之外的工作任务调用；重复调用安全。

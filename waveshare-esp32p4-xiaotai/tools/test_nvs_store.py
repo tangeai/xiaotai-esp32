@@ -186,6 +186,18 @@ static int64_t monotonic_ms(void) { return clock_us/1000; }
     harness += '\n#define WIFI_NVS_SSID "ssid"\n#define WIFI_NVS_PASSWORD "password"\n'
     harness += re.search(r'typedef struct \{.*?} wifi_manager_credentials_t;', wifi_header, re.S).group()
     harness += re.search(r'typedef struct \{\s+uint8_t version;.*?} wifi_credentials_record_t;', wifi, re.S).group()
+    history = (ROOT / 'components/wifi_manager/src/wifi_history.c').read_text(encoding='utf-8')
+    harness += r'''
+#define WIFI_HISTORY_NAMESPACE WIFI_NVS_NAMESPACE
+static void *history_mutex;
+static bool history_allow_remember;
+static wifi_manager_credentials_t history_active;
+'''
+    # Keep the real erase path, with distinct globals from nvs_store's harness.
+    harness += (function(history, 'wifi_history_forget_all')
+                .replace('s_mutex', 'history_mutex')
+                .replace('s_active', 'history_active')
+                .replace('s_allow_remember', 'history_allow_remember'))
     harness += '\n'.join(function(wifi, name) for name in (
         'wifi_manager_credentials_valid', 'wifi_manager_save_credentials', 'wifi_manager_forget_credentials',
         'wifi_manager_load_credentials'))

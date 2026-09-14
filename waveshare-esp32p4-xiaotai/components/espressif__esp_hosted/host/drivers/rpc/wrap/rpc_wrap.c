@@ -1473,11 +1473,11 @@ int rpc_wifi_scan_get_ap_record(wifi_ap_record_t *ap_record)
 int rpc_wifi_scan_get_ap_records(uint16_t *number, wifi_ap_record_t *ap_records)
 {
 	/* implemented synchronous */
-	ctrl_cmd_t *req = RPC_DEFAULT_REQ();
-	ctrl_cmd_t *resp = NULL;
-
 	if (!number || !*number || !ap_records)
 		return FAILURE;
+
+	ctrl_cmd_t *req = RPC_DEFAULT_REQ();
+	ctrl_cmd_t *resp = NULL;
 
 	g_h.funcs->_h_memset(ap_records, 0, (*number)*sizeof(wifi_ap_record_t));
 
@@ -1485,9 +1485,17 @@ int rpc_wifi_scan_get_ap_records(uint16_t *number, wifi_ap_record_t *ap_records)
 	resp = wifi_scan_get_ap_records(req);
 	if (resp && resp->resp_event_status == SUCCESS) {
 		ESP_LOGV(TAG, "num: %u",resp->u.wifi_scan_ap_list.number);
-
-		g_h.funcs->_h_memcpy(ap_records, resp->u.wifi_scan_ap_list.out_list,
-				resp->u.wifi_scan_ap_list.number * sizeof(wifi_ap_record_t));
+		/* number is capacity on entry and actual count on return, as in IDF.
+		 * Never trust a remote count to fit the caller's destination. */
+		uint16_t count = resp->u.wifi_scan_ap_list.number;
+		if (count > *number || (count && !resp->u.wifi_scan_ap_list.out_list)) {
+			resp->resp_event_status = ESP_ERR_INVALID_RESPONSE;
+			*number = 0;
+		} else {
+			if (count) g_h.funcs->_h_memcpy(ap_records, resp->u.wifi_scan_ap_list.out_list,
+					count * sizeof(wifi_ap_record_t));
+			*number = count;
+		}
 	}
 	return rpc_rsp_callback(resp);
 }

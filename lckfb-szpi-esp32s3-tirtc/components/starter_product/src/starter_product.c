@@ -307,12 +307,14 @@ static const char *const s_emoji_names[] = {
     "中性", "开心", "大笑", "逗趣", "难过", "生气", "哭泣",
     "喜爱", "害羞", "惊讶", "震惊", "思考", "眨眼", "酷",
     "放松", "美味", "亲亲", "自信", "困倦", "搞怪", "困惑",
+    "聆听", "悠闲",
 };
 static const char *const s_emoji_keys[] = {
     "neutral", "happy", "laughing", "funny", "sad", "angry", "crying",
     "loving", "embarrassed", "surprised", "shocked", "thinking",
     "winking", "cool", "relaxed", "delicious", "kissy", "confident",
     "sleepy", "silly", "confused",
+    "listening", "ambient",
 };
 
 void starter_product_set_binding_state(starter_product_binding_state_t state)
@@ -1734,7 +1736,7 @@ static void render_call_result(lv_obj_t *screen)
 
 static void render_emojis(lv_obj_t *screen)
 {
-    render_header(screen, "表情包 21");
+    render_header(screen, "表情包 23");
     lv_obj_t *grid = lv_obj_create(screen);
     lv_obj_set_pos(grid, 10, 38);
     lv_obj_set_size(grid, 300, 150);
@@ -2917,11 +2919,11 @@ static void product_tick(lv_timer_t *timer)
     if (session_idle) {
         emotion = s_emoji_keys[s_preferences.emoji_index];
         if (s_ambient_visible) {
-            emotion = media.voice_active ? "speech" : "ambient";
+            emotion = media.voice_active ? "listening" : "ambient";
         } else if (idle_stage >= 2U) {
             emotion = "sleepy";
         } else if (idle_stage == 1U) {
-            emotion = "relaxed";
+            emotion = "ambient";
         }
     }
     if (home && s_page == PAGE_HOME_FACE &&

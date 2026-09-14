@@ -84,6 +84,18 @@ typedef void (*platform_signal_callback_t)(const char *json,
 typedef void (*platform_online_callback_t)(void *user_data);
 
 /**
+ * Start/reuse SNTP and wait for a valid synchronization in this boot before
+ * TiRTC initialization, provisioning or authentication. A plausible retained
+ * wall clock alone does not satisfy the first wait. Later calls reuse the
+ * confirmed clock; SNTP keeps refreshing it in the background.
+ * Call serially from the startup/platform HTTP owner after Wi-Fi has an IP,
+ * never from LVGL, media or SDK callbacks. One wait is bounded by the configured
+ * SNTP peer timeouts; errors leave dependent startup work to the caller.
+ * Does not create a product task, start MQTT or perform service discovery.
+ */
+esp_err_t platform_client_sync_clock(void);
+
+/**
  * 完成服务发现、签名设备登录和永久 MQTT。为了降低 TiRTC TLS 启动峰值，
  * 本函数不创建另一份大栈；TiRTC 启动成功后由调用者进入请求循环。
  * 函数执行网络 I/O，必须在 app_main 之外的工作任务调用；重复调用安全。

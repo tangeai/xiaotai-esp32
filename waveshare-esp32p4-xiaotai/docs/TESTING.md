@@ -47,7 +47,7 @@
 
 下面是开发回归中已出现、根因尚未闭环的问题，排查时应保留原始错误：
 
-- **SDK 开机注册：**设备开机后的第一轮 TiRTC 注册曾返回 `service_code=40001`、`TiRtcStart=-40012`，服务端详情为 `nonce replayed`，约 5 秒后的重试成功。该提示表示防重放随机串被判为重复，不等于 Wi-Fi 密码、六位绑定码或内存错误。当前 SDK 保持不变；排查时核对 SDK 随机源及跨复位请求摘要，不把重试成功当作根因已修复，也不要在日志中记录完整鉴权请求。
+- **SDK 开机注册：**设备开机后的第一轮 TiRTC 注册曾返回 `service_code=40001`、`TiRtcStart=-40012`，服务端详情为 `nonce replayed`，约 5 秒后的重试成功。该提示表示防重放随机串被判为重复，不等于 Wi-Fi 密码、六位绑定码或内存错误。启动链路已要求先确认本次开机校时，SDK 随机源保持不变；尚不能据此认定重复随机串的根因已修复。后续仍需核对跨复位请求摘要，不把重试成功当作根因证据，也不要在日志中记录完整鉴权请求。
 
 先在普通路由器建立基线，再对照电脑热点和受控弱网。记录发送时间、SDK 到包、PCM 消费和 I2S 写入四段；仅在接收端注入丢包不能代表完整的双向弱网。
 
@@ -57,6 +57,7 @@
 
 | 修改范围 | 脚本入口 | 目标板还需检查 |
 | --- | --- | --- |
+| 启动校时 | `tools/test_startup_clock.py` | 已绑定/首次绑定、冷启动/保留日期复位；阻断 SNTP 后恢复，确认同步日志先于 SDK 初始化及平台请求 |
 | AI 握手和 HTTP | `tools/test_ai_start_contract.py`、`tools/test_platform_http_requests.py`、`tools/test_platform_http_trace.py` | 重复建连、完整应答后开放音频、DNS/连接/响应等待时序 |
 | NVS 与建连资源 | `tools/test_nvs_store.py`、`tools/test_runtime_resources.py` | 快速改设置后复位、配网/绑定保存、连续呼叫时 MQTT 在线及内存水位 |
 | 多人房间与 UI 快照 | `tools/test_room_release.py`、`tools/test_room_navigation.py` | 创建/加入/退出、返回断连再进入、PTT 松手停止、AI 切换、断网释放后重连、断电后的租约恢复 |
@@ -67,13 +68,17 @@
 | 唤醒 FFT | `tools/test_wake_fft.py` | 不同语速、距离及播放中唤醒 |
 | 卷积适配 | `tools/test_conv_channels.py` | P4 向量计算输出和推理耗时 |
 | 界面 | `tools/test_product_layout.py` | 快速点击、字幕、表情与视频并发 |
+| 表情与切换 | `tools/test_face_animation.py` | 23 种表情的两套姿态、快速切换、眨眼、聆听/思考、隐藏后恢复；观察轮廓、装饰、残影、触摸和绘制耗时 |
 | 联系人与微信 | `tools/test_contact_query.py`、`tools/test_voip_incoming_media.py`、`tools/test_voip_profile.py` | 查询回包、双向语音/视频呼叫 |
 | 视频 | `tools/test_p4_video.py`、`tools/test_full_frame_uplink.py`、`tools/test_video_ingress.py`、`tools/test_p4_profile_switch.py` | 首帧、方向、摄像头开关与连续显示 |
 | 码率 | `tools/test_video_bitrate.py`、`tools/test_bitrate_governor.py` | SDK 反馈及真实发送码率 |
 | Hosted | `tools/test_hosted_rpc_routing.py`、`tools/test_hosted_init_lifecycle.py` | 并发请求、掉线和资源回收 |
+| 手机热点配网 | `tools/test_wifi_portal.py`、`tools/test_nvs_store.py` | 中文名称、开放/隐藏网络、已保存密码复用和修改、超过 4 个网络的替换、失败密码不入历史；零条/多条扫描、反复刷新、扫描中重连及退出；手机 320/390/480 像素宽度 |
 | 依赖 | `tools/test_dependency_lock.py` | 固件构建 |
 
 运行前阅读脚本的编译器要求。需要 gcc/g++ 或 sanitizer 的检查使用 Linux/WSL 主机环境；IDF 交叉编译器不能直接替代主机编译器。卷积适配检查需要 CMake 和 Ninja。
+
+表情检查读取本工程 `managed_components` 中的 LVGL 源码，不自动下载依赖；覆盖 46 套姿态与局部重绘一致性，不能替代屏幕目视检查与运行时耗时验证。启动校时检查使用 SNTP stub，不能证明真实服务器可达或 SDK 防重放错误已消失。
 
 例如：
 
@@ -108,6 +113,8 @@ python -B -X utf8 tools/test_dependency_lock.py --resolved build/dependencies.lo
 | 9. 稳态 | 重复上述操作并持续观察 | 稳定阶段内存、队列和任务数量无持续异常增长 |
 
 测试前确认端口、板卡和对端可用。烧录不擅自擦除 NVS；采样避免记录无关人员和隐私。
+
+启动校时专项应同时覆盖已有绑定和首次绑定：`network clock synchronized` 必须先于 `pre-tirtc-bootstrap` 和设备上报/鉴权请求。SNTP 无响应时保留 `network clock unavailable`，后续上线不能提前执行；网络恢复后应由同一校时服务继续推进，UI 和采集仍可运行。顺序通过不等于 SDK 防重放问题已经闭环，仍需多次断电与复位日志验证。
 
 ## 弱网检查
 

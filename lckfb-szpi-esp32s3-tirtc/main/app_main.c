@@ -320,9 +320,18 @@ static void starter_start_task(void *argument)
     starter_product_set_binding_state(credentials_valid ? STARTER_BINDING_CHECKING
                                                          : STARTER_BINDING_REQUIRED);
 
-    /* 服务发现、HTTP 和 MQTT 都依赖 STA 已拿到 IP。 */
-    while (!wifi_manager_connected()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
+    /* Both stored and first-time identities must synchronize before cloud
+     * startup. Keep the internal TiRTC reserve held while SNTP is waiting;
+     * this PSRAM worker must not block local UI/audio initialization. */
+    for (;;) {
+        while (!wifi_manager_connected()) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        err = platform_client_sync_clock();
+        if (err == ESP_OK) break;
+        ESP_LOGE(TAG, "cloud startup waiting for clock: %s; retrying in %u ms",
+                 esp_err_to_name(err), START_RETRY_DELAY_MS);
+        vTaskDelay(pdMS_TO_TICKS(START_RETRY_DELAY_MS));
     }
 
     char mac_address[18];

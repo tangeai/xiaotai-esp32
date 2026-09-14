@@ -1,7 +1,7 @@
 /*
  * ThingConnect 平台传输 adapter。
  *
- * 正常上线：服务发现 -> SNTP -> HMAC 设备登录 -> MQTT token -> 永久 MQTT。
+ * 正常上线：SNTP -> 服务发现 -> HMAC 设备登录 -> MQTT token -> 永久 MQTT。
  * 首次绑定：设备上报 -> 显示验证码 -> 临时 MQTT auth_grant -> QoS1 ACK。
  * 业务 HTTP：调用者复制请求到固定队列，由 request_task 串行执行和回调。
  *
@@ -807,26 +807,27 @@ static esp_err_t start_mqtt(void)
     return err;
 }
 
-static esp_err_t sync_clock(void)
+/* Serialized by the startup owner, then its platform HTTP successor. */
+static bool s_clock_initialized;
+static bool s_clock_synchronized;
+
+esp_err_t platform_client_sync_clock(void)
 {
-    /*
-     * 默认配置立即启动 lwIP SNTP，后续由其后台定时刷新。已有可信时间时
-     * 不阻塞平台注册；冷启动时等待首个结果，避免使用错误时间计算 HMAC。
-     */
-    time_t current = time(NULL);
-    bool time_was_valid = current > 1700000000;
+    /* Require a received SNTP result in this boot, not just a retained date.
+     * Reuse the service and confirmed time on binding/SDK retries. */
+    if (s_clock_synchronized && time(NULL) > 1700000000) return ESP_OK;
+    s_clock_synchronized = false;
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(
         2,
         ESP_SNTP_SERVER_LIST("ntp.aliyun.com", "pool.ntp.org"));
-    esp_err_t err = esp_netif_sntp_init(&config);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        return err;
-    }
-    if (time_was_valid) {
-        ESP_LOGI(TAG,
-                 "SNTP refresh started asynchronously "
-                 "(primary=ntp.aliyun.com fallback=pool.ntp.org)");
-        return ESP_OK;
+    esp_err_t err;
+    if (!s_clock_initialized) {
+        err = esp_netif_sntp_init(&config);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGE(TAG, "network clock init failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        s_clock_initialized = true;
     }
     /* lwIP switches peers only after SNTP_RECV_TIMEOUT (15 s in IDF 5.5.4).
      * Cover both peers plus one resolution/start window; the former 10 s
@@ -841,7 +842,8 @@ static esp_err_t sync_clock(void)
              (unsigned long)timeout_ms, (unsigned)config.num_of_servers);
     err = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(timeout_ms));
     const unsigned long elapsed_ms = (unsigned long)((esp_timer_get_time() - started_us) / 1000);
-    if (time(NULL) > 1700000000) {
+    if (err == ESP_OK && time(NULL) > 1700000000) {
+        s_clock_synchronized = true;
         ESP_LOGI(TAG, "network clock synchronized: elapsed_ms=%lu", elapsed_ms);
         return ESP_OK;
     }
@@ -1348,7 +1350,7 @@ esp_err_t platform_client_provision(const platform_provision_config_t *config,
     }
     memset(result, 0, sizeof(*result));
     const int64_t provision_started = esp_timer_get_time();
-    esp_err_t err = sync_clock();
+    esp_err_t err = platform_client_sync_clock();
     if (err != ESP_OK) {
         return err;
     }
@@ -1410,7 +1412,7 @@ esp_err_t platform_client_start(const platform_client_config_t *config)
     }
     (void)snprintf(s_mac_address, sizeof(s_mac_address), "%s", config->mac_address);
 
-    esp_err_t err = sync_clock();
+    esp_err_t err = platform_client_sync_clock();
     if (err != ESP_OK) {
         return err;
     }
