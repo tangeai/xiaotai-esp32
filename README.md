@@ -2,6 +2,8 @@
 
 # 小钛 ESP32
 
+**简体中文** | [English](README.en.md)
+
 **ESP32 实时音视频与 AI 对讲**
 
 [![MIT License](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](LICENSE)
