@@ -8,7 +8,7 @@
 | --- | --- |
 | 应用 | `1.1.0`，项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
 | 开发板 | Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash |
-| 芯片修订 | 默认 P4 rev 1.x/2.x；rev 3 需另行适配 |
+| 芯片修订 | 默认 P4 rev 1.0–1.99；其他修订需先核对 SDK 支持范围并适配配置 |
 | 开发环境 | ESP-IDF 5.5.4，riscv32-esp-elf 14.2.0_20260121 |
 | TiRTC SDK | 2.3.0 P4 补丁库，详情见 [SDK VERSION](../components/tirtc_sdk/VERSION.md) |
 | Wi-Fi | C6 + ESP-Hosted 1.4.7 主机补丁组件；从机单独核验，见 [C6 指南](C6_PREPARATION.md) |
