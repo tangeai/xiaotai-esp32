@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "starter_room.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,8 @@ typedef enum {
     STARTER_RUNTIME_CALL_INCOMING, /**< 设备或微信语音来电，等待用户处理。 */
     STARTER_RUNTIME_CALL_CONNECTING, /**< 语音外呼/接听正在建连。 */
     STARTER_RUNTIME_CALL_ACTIVE, /**< 语音通话已收到 0x2000 接通确认。 */
+    STARTER_RUNTIME_ROOM_CONNECTING,
+    STARTER_RUNTIME_ROOM_ACTIVE,
 } starter_runtime_state_t;
 
 typedef enum {
@@ -114,7 +117,8 @@ esp_err_t starter_runtime_start(const char *device_id);
 
 /**
  * 在 TiRTC 已完成启动、MQTT 尚未创建前保留下一次外连所需的连续内部堆。
- * 连接门禁会在销毁 MQTT 后立即释放该块；调用方仅在启动编排阶段调用一次。
+ * 建连时借出该块；内存充足时保留 MQTT，否则先暂停 MQTT。
+ * 会话所有者在建连结果/退出时补回；启动编排阶段也会调用一次。
  */
 esp_err_t starter_runtime_arm_external_connect_reserve(void);
 

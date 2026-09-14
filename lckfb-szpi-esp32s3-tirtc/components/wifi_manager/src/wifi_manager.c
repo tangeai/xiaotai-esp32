@@ -26,12 +26,21 @@
 #include "freertos/task.h"
 #include "lwip/sockets.h"
 #include "nvs.h"
+#include "nvs_worker.h"
 
 #define WIFI_NVS_NAMESPACE "wifi_cfg"
 #define WIFI_NVS_SSID "ssid"
 #define WIFI_NVS_PASSWORD "password"
+#define WIFI_NVS_CREDENTIALS "credentials"
+#define WIFI_CREDENTIALS_VERSION 1U
 #define WIFI_PROVISION_AFTER_FAILURES 5U
 #define WIFI_SETUP_URL "http://192.168.6.1"
+
+typedef struct {
+    uint8_t version;
+    wifi_manager_credentials_t credentials;
+} wifi_credentials_record_t;
+_Static_assert(sizeof(wifi_credentials_record_t) == 99, "Wi-Fi NVS record layout changed");
 
 static const char *TAG = "wifi_manager";
 static bool s_started;
@@ -45,6 +54,9 @@ static atomic_int s_control_error;
  * background worker reads the hardware; UI consumers read a cached snapshot. */
 #define WIFI_SIGNAL_POLL_MS 30000U
 static TaskHandle_t s_signal_task;
+/* This internal-stack worker also owns the one-shot provisioning reboot.
+ * No task/stack allocation is allowed after promising to apply saved settings. */
+static atomic_bool s_restart_requested;
 static portMUX_TYPE s_signal_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_signal_epoch;
 static uint32_t s_signal_revision;
@@ -64,6 +76,11 @@ static void signal_task(void *context)
 {
     (void)context;
     for (;;) {
+        if (atomic_load(&s_restart_requested)) {
+            /* Let HTTPD finish its response without blocking the event loop. */
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
+        }
         taskENTER_CRITICAL(&s_signal_lock);
         uint32_t epoch = s_signal_epoch;
         taskEXIT_CRITICAL(&s_signal_lock);
@@ -141,51 +158,62 @@ bool wifi_manager_credentials_valid(const char *ssid,
     return true;
 }
 
-esp_err_t wifi_manager_load_credentials(wifi_manager_credentials_t *credentials)
+static esp_err_t load_credentials_job(void *data, size_t data_size)
 {
-    if (credentials == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
+    if (data_size != sizeof(wifi_manager_credentials_t)) return ESP_ERR_INVALID_SIZE;
+    wifi_manager_credentials_t *credentials = data;
     memset(credentials, 0, sizeof(*credentials));
     nvs_handle_t nvs = 0;
     esp_err_t err = nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs);
     if (err != ESP_OK) {
         return err;
     }
-    /* SSID/password 必须成组读取；任一失败都清空输出。 */
-    size_t ssid_size = sizeof(credentials->ssid);
-    size_t password_size = sizeof(credentials->password);
-    err = nvs_get_str(nvs, WIFI_NVS_SSID, credentials->ssid, &ssid_size);
+    wifi_credentials_record_t record = {0};
+    size_t record_size = sizeof(record);
+    err = nvs_get_blob(nvs, WIFI_NVS_CREDENTIALS, &record, &record_size);
     if (err == ESP_OK) {
-        err = nvs_get_str(nvs, WIFI_NVS_PASSWORD, credentials->password, &password_size);
+        if (record_size != sizeof(record) || record.version != WIFI_CREDENTIALS_VERSION) {
+            err = ESP_ERR_INVALID_RESPONSE;
+        } else {
+            *credentials = record.credentials;
+        }
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+        /* Read old firmware's pair only when no new record exists. Never hide
+         * a corrupt/newer record by silently reviving stale legacy settings. */
+        size_t ssid_size = sizeof(credentials->ssid);
+        size_t password_size = sizeof(credentials->password);
+        err = nvs_get_str(nvs, WIFI_NVS_SSID, credentials->ssid, &ssid_size);
+        if (err == ESP_OK) {
+            err = nvs_get_str(nvs, WIFI_NVS_PASSWORD, credentials->password, &password_size);
+        }
     }
     nvs_close(nvs);
+    if (err == ESP_OK &&
+        (memchr(credentials->ssid, '\0', sizeof(credentials->ssid)) == NULL ||
+         memchr(credentials->password, '\0', sizeof(credentials->password)) == NULL ||
+         !wifi_manager_credentials_valid(credentials->ssid, credentials->password, NULL, 0))) {
+        err = ESP_ERR_INVALID_RESPONSE;
+    }
     if (err != ESP_OK) {
         memset(credentials, 0, sizeof(*credentials));
     }
     return err;
 }
 
-esp_err_t wifi_manager_save_credentials(const char *ssid, const char *password)
+static esp_err_t save_credentials_job(void *data, size_t data_size)
 {
-    char validation_error[80];
-    if (!wifi_manager_credentials_valid(ssid,
-                                        password,
-                                        validation_error,
-                                        sizeof(validation_error))) {
-        ESP_LOGE(TAG, "invalid Wi-Fi credentials: %s", validation_error);
-        return ESP_ERR_INVALID_ARG;
-    }
-
+    if (data_size != sizeof(wifi_credentials_record_t)) return ESP_ERR_INVALID_SIZE;
+    const wifi_credentials_record_t *record = data;
     nvs_handle_t nvs = 0;
     esp_err_t err = nvs_open(WIFI_NVS_NAMESPACE, NVS_READWRITE, &nvs);
     if (err == ESP_OK) {
-        err = nvs_set_str(nvs, WIFI_NVS_SSID, ssid);
+        /* NVS commit is not a multi-key transaction. One versioned blob keeps
+         * SSID/password in the same NVS update, including legacy migration.
+         * Keep old keys untouched: a failed first write can still read them. */
+        err = nvs_set_blob(nvs, WIFI_NVS_CREDENTIALS, record, sizeof(*record));
     }
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs, WIFI_NVS_PASSWORD, password);
-    }
-    /* commit 成功后新配置才对下一次启动可见。 */
+    /* Honor the API commit contract, but never claim rollback on an error:
+     * IDF may already have persisted the complete new record at this point. */
     if (err == ESP_OK) {
         err = nvs_commit(nvs);
     }
@@ -195,8 +223,10 @@ esp_err_t wifi_manager_save_credentials(const char *ssid, const char *password)
     return err;
 }
 
-esp_err_t wifi_manager_forget_credentials(void)
+static esp_err_t forget_credentials_job(void *data, size_t size)
 {
+    (void)data;
+    (void)size;
     nvs_handle_t nvs = 0;
     esp_err_t err = nvs_open(WIFI_NVS_NAMESPACE, NVS_READWRITE, &nvs);
     if (err == ESP_OK) {
@@ -211,12 +241,32 @@ esp_err_t wifi_manager_forget_credentials(void)
     return err;
 }
 
-static void restart_task(void *argument)
+esp_err_t wifi_manager_load_credentials(wifi_manager_credentials_t *credentials)
 {
-    /* 先给 HTTP 响应留出发送时间，再让正常启动路径应用新配置。 */
-    (void)argument;
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    esp_restart();
+    if (credentials == NULL) return ESP_ERR_INVALID_ARG;
+    memset(credentials, 0, sizeof(*credentials));
+    esp_err_t err = nvs_worker_call(load_credentials_job, credentials, sizeof(*credentials),
+                                    NVS_WORKER_WAIT_MS);
+    if (err != ESP_OK) memset(credentials, 0, sizeof(*credentials));
+    return err;
+}
+
+esp_err_t wifi_manager_save_credentials(const char *ssid, const char *password)
+{
+    char validation_error[80];
+    if (!wifi_manager_credentials_valid(ssid, password, validation_error, sizeof(validation_error))) {
+        ESP_LOGE(TAG, "invalid Wi-Fi credentials: %s", validation_error);
+        return ESP_ERR_INVALID_ARG;
+    }
+    wifi_credentials_record_t record = {.version = WIFI_CREDENTIALS_VERSION};
+    memcpy(record.credentials.ssid, ssid, strlen(ssid) + 1);
+    memcpy(record.credentials.password, password, strlen(password) + 1);
+    return nvs_worker_call(save_credentials_job, &record, sizeof(record), NVS_WORKER_WAIT_MS);
+}
+
+esp_err_t wifi_manager_forget_credentials(void)
+{
+    return nvs_worker_call(forget_credentials_job, NULL, 0, NVS_WORKER_WAIT_MS);
 }
 
 static bool portal_socket_allowed(int socket_fd)
@@ -335,18 +385,25 @@ static esp_err_t wifi_config_post(httpd_req_t *request)
         cJSON_Delete(root);
         return httpd_resp_send_err(request, HTTPD_403_FORBIDDEN, "provisioning closed");
     }
+    /* HTTPD serializes these requests. The worker lives for the entire Wi-Fi
+     * lifetime; reject before writing if it cannot own the restart. */
+    if (s_signal_task == NULL || atomic_load(&s_restart_requested)) {
+        cJSON_Delete(root);
+        httpd_resp_set_status(request, "503 Service Unavailable");
+        return httpd_resp_sendstr(request, "configuration unavailable or restart pending");
+    }
     esp_err_t err = wifi_manager_save_credentials(ssid->valuestring, password->valuestring);
     cJSON_Delete(root);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Wi-Fi config save failed: %s", esp_err_to_name(err));
         return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "NVS save failed");
     }
 
+    atomic_store(&s_restart_requested, true);
+    xTaskNotifyGive(s_signal_task);
+    /* Apply an accepted save even if the browser disconnects during delivery. */
     httpd_resp_set_type(request, "text/plain; charset=utf-8");
-    esp_err_t response = httpd_resp_sendstr(request, "保存成功，设备将在 1 秒后重启。");
-    if (response == ESP_OK) {
-        (void)xTaskCreate(restart_task, "wifi_restart", 2048, NULL, 3, NULL);
-    }
-    return response;
+    return httpd_resp_sendstr(request, "配置已保存，设备即将重启，请查看设备联网状态。");
 }
 
 static esp_err_t start_http_server(void)
@@ -355,6 +412,9 @@ static esp_err_t start_http_server(void)
         return ESP_OK;
     }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    /* Flash work has its own internal stack. HTTP parsing uses PSRAM only. */
+    config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    config.stack_size = 8192;
     config.max_uri_handlers = 4;
     config.lru_purge_enable = true;
     config.open_fn = portal_open;
@@ -785,7 +845,8 @@ esp_err_t wifi_manager_start(void)
 
     /* 启动前先决定 STA 还是 APSTA；STA_START 事件负责真正 connect。 */
     wifi_manager_credentials_t credentials;
-    if (wifi_manager_load_credentials(&credentials) == ESP_OK) {
+    esp_err_t credentials_err = wifi_manager_load_credentials(&credentials);
+    if (credentials_err == ESP_OK) {
         s_has_saved_credentials = true;
         wifi_config_t station = {0};
         memcpy(station.sta.ssid, credentials.ssid, strlen(credentials.ssid));
@@ -797,6 +858,8 @@ esp_err_t wifi_manager_start(void)
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &station));
         ESP_LOGI(TAG, "connecting to configured SSID=%s", credentials.ssid);
     } else {
+        if (credentials_err != ESP_ERR_NVS_NOT_FOUND)
+            ESP_LOGE(TAG, "Wi-Fi config load failed: %s", esp_err_to_name(credentials_err));
         s_has_saved_credentials = false;
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     }

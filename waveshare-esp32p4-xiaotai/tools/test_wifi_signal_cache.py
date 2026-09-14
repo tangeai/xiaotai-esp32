@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-source = (root.parent / "lckfb-szpi-esp32s3-tirtc/components/wifi_manager/src/wifi_manager.c").read_text()
+source = (root / "components/wifi_manager/src/wifi_manager.c").read_text()
 def function(signature):
     start = source.index(signature)
     return source[start:source.index("\n}", start) + 2]
@@ -62,7 +62,7 @@ with tempfile.TemporaryDirectory(prefix="p4-rssi-") as directory:
     subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                     str(path / "test.c"), "-o", str(path / "test")], check=True)
     subprocess.run([str(path / "test")], check=True)
-product = (root.parent / "lckfb-szpi-esp32s3-tirtc/components/starter_product/src/starter_product.c").read_text()
+product = (root / "components/starter_product/src/starter_product.c").read_text()
 assert "PRODUCT_WIFI_SIGNAL_PERIOD_MS" not in product
 assert "signal_revision != s_wifi_signal_revision" in product
 assert "signal_style != s_wifi_signal_style" in product

@@ -1,5 +1,4 @@
-*.a binary
-*.png binary
-*.jpg binary
-*.tflite binary
-*.wav binary
+# Keep developer README dependencies; exclude local workflow and audit records.
+/AGENTS.md export-ignore
+/docs/** export-ignore
+/docs/GETTING_STARTED_CN.md -export-ignore

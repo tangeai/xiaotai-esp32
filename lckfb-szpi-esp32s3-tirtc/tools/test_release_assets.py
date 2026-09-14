@@ -9,7 +9,6 @@ import wave
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-REPO = PROJECT.parent
 
 WAV_ASSETS = {
     "components/starter_product/assets/rings/kids_watch_incoming_tiny.wav": (8000, 1, 2),
@@ -19,8 +18,8 @@ WAV_ASSETS = {
 }
 
 FORBIDDEN = (
-    REPO / "docs/rings",
-    REPO / "docs/xiao-tai-esp32s3-multinet7",
+    PROJECT / "docs/rings",
+    PROJECT / "docs/xiao-tai-esp32s3-multinet7",
     PROJECT / "components/starter_voice/assets/multinet7",
 )
 
@@ -38,17 +37,17 @@ def main() -> None:
         assert actual == expected, f"unexpected WAV format for {relative}: {actual}"
         assert path.read_bytes()[36:40] == b"data", f"non-canonical WAV header: {relative}"
 
-    source_model = REPO / "common/models/nihaoxiaotai_v9.3_voice_tflite/nihaoxiaotai.tflite"
-    build_model = PROJECT / "components/starter_voice/model/nihaoxiaotai.tflite"
-    source_head = REPO / "common/models/nihaoxiaotai_v9.3_voice_tflite/head.h"
-    build_head = PROJECT / "components/starter_voice/model/head.h"
-    for path in (source_model, build_model, source_head, build_head):
-        assert path.is_file(), f"missing wake asset: {path.relative_to(REPO)}"
-    assert digest(source_model) == digest(build_model), "wake model source/build copies differ"
-    assert digest(source_head) == digest(build_head), "wake head source/build copies differ"
+    expected_models = {
+        "head.h": "170e80f7c850dfe45ae914cdb1ed2813b79125b58c82595a0c30d9574feda1c6",
+        "nihaoxiaotai.tflite": "9b3a844becbeffa185fafec0b8fe1550708d4ca2a600ae9ff9285247e3f8fac6",
+    }
+    for name, expected in expected_models.items():
+        path = PROJECT / "components/starter_voice/model" / name
+        assert path.is_file(), f"missing wake asset: {name}"
+        assert digest(path) == expected, f"wake asset differs from pinned v9.3: {name}"
 
     for path in FORBIDDEN:
-        assert not path.exists(), f"obsolete or duplicate asset returned: {path.relative_to(REPO)}"
+        assert not path.exists(), f"obsolete or duplicate asset returned: {path.relative_to(PROJECT)}"
 
     cmake = (PROJECT / "components/starter_product/CMakeLists.txt").read_text()
     for relative in WAV_ASSETS:

@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-sdk = (root.parent / 'lckfb-szpi-esp32s3-tirtc/components/starter_tirtc/src/starter_tirtc.c').read_text(encoding='utf-8')
+sdk = (root / 'components/starter_tirtc/src/starter_tirtc.c').read_text(encoding='utf-8')
 video = (root / 'components/p4_hardware/p4_video.c').read_text(encoding='utf-8')
 
 def function(text, signature):

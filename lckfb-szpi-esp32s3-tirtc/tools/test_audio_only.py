@@ -24,7 +24,7 @@ prefix = r'''
 #define CALL_AUDIO_STREAM 10U
 typedef uintptr_t tirtc_conn_t;
 typedef enum { STARTER_TIRTC_NONE, STARTER_TIRTC_H5, STARTER_TIRTC_AI,
-               STARTER_TIRTC_VOIP, STARTER_TIRTC_CALL } starter_tirtc_mode_t;
+               STARTER_TIRTC_VOIP, STARTER_TIRTC_CALL, STARTER_TIRTC_ROOM } starter_tirtc_mode_t;
 static atomic_int s_mode;
 static atomic_bool s_audio_subscribed, s_video_subscribed;
 static unsigned key_requests;
@@ -34,11 +34,11 @@ static void on_request_key_frame(tirtc_conn_t c, uint8_t id) { (void)c; (void)id
 '''
 main = r'''
 int main(void) {
-    for (int mode=STARTER_TIRTC_NONE; mode<=STARTER_TIRTC_CALL; ++mode) {
+    for (int mode=STARTER_TIRTC_NONE; mode<=STARTER_TIRTC_ROOM; ++mode) {
         atomic_store(&s_mode, mode);
         for (unsigned id=0; id<256; ++id) {
             s_audio_subscribed=false;
-            bool audio=(mode==STARTER_TIRTC_AI && id==AI_AUDIO_STREAM) ||
+            bool audio=((mode==STARTER_TIRTC_AI || mode==STARTER_TIRTC_ROOM) && id==AI_AUDIO_STREAM) ||
                 ((mode==STARTER_TIRTC_H5 || mode==STARTER_TIRTC_CALL ||
                   mode==STARTER_TIRTC_VOIP) && id==H5_AUDIO_STREAM);
             assert(on_subscribe_audio(7,id)==(audio?0:-1));

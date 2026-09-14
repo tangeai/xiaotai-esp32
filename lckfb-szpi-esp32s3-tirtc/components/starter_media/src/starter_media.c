@@ -130,6 +130,11 @@ static atomic_uint s_capture_epoch;
 static atomic_bool s_active;
 static atomic_int s_mode;
 static atomic_uint_fast32_t s_generation;
+/* EOS closes ingress, not playback. The sink acknowledges only after all
+ * admitted PCM and the bounded I2S output horizon have drained. */
+static atomic_uint s_audio_rx_writers;
+static atomic_uint s_drain_generation;
+static atomic_uint s_drained_generation;
 static atomic_uint_fast32_t s_audio_sent;
 static atomic_uint_fast32_t s_audio_received;
 static atomic_uint_fast32_t s_audio_dropped;
@@ -163,6 +168,22 @@ EXT_RAM_BSS_ATTR static struct {
     atomic_uint_fast32_t post_agc_peak, post_agc_rms, tx_peak, tx_rms, tx_clipped, tx_frames, tx_measure_max_us;
 } s_pipeline_diag;
 _Static_assert(sizeof(s_pipeline_diag) == 80U, "S3 pipeline diagnostics PSRAM budget changed");
+
+/* Room-only observation, no pacing/gain/gate changes. Counters are lifetime
+ * values. TX/RX each own their last-* fields; runtime owns last_log_ms. No
+ * allocation, payload logging, SDK query or serial output on the hot paths. */
+EXT_RAM_BSS_ATTR static struct {
+    atomic_uint_fast32_t tx_enqueued, tx_full, tx_stale, tx_encode_error, tx_send_error;
+    atomic_uint_fast32_t tx_pairs, tx_burst, tx_gaps, tx_gap_max_us, tx_accepted, tx_gain_error;
+    atomic_uint_fast32_t ptt_down, ptt_up, capture_stale;
+    atomic_uint_fast32_t rx_frames, rx_bytes, rx_pairs, rx_gap_max_us, rx_burst, rx_gaps;
+    atomic_uint_fast32_t rx_repeat_ts, rx_forward_gap, rx_back_ts;
+    atomic_uint rx_observer_busy;
+    atomic_uint_fast32_t rx_observer_skipped;
+    uint32_t tx_last_us, tx_generation, tx_epoch;
+    uint32_t rx_last_us, rx_last_timestamp, rx_last_len, rx_generation, last_log_ms;
+} s_room_audio_diag;
+_Static_assert(sizeof(s_room_audio_diag) == 132U, "Room diagnostics PSRAM budget changed");
 
 typedef enum {
     OUTPUT_OWNER_NONE, OUTPUT_OWNER_RX, OUTPUT_OWNER_VOLUME, OUTPUT_OWNER_MUTE,
@@ -220,6 +241,7 @@ static atomic_bool s_voice_active;
 static atomic_uchar s_speaker_volume = 7;
 static atomic_bool s_speaker_muted;
 static atomic_bool s_microphone_muted;
+static atomic_uint s_room_ptt_generation;
 /* 单调序号避免“清除取消标志”与新铃声启动之间的竞态。 */
 static atomic_uint_fast32_t s_pcm8k_cancel_sequence;
 
@@ -307,8 +329,34 @@ static void give_audio_output_lock(void)
 static bool same_session(starter_tirtc_mode_t mode, uint32_t generation)
 {
     return atomic_load_explicit(&s_active, memory_order_acquire) &&
-           atomic_load_explicit(&s_mode, memory_order_acquire) == mode &&
+           atomic_load_explicit(&s_mode, memory_order_acquire) == (int)mode &&
            atomic_load_explicit(&s_generation, memory_order_acquire) == generation;
+}
+
+static bool uplink_session_current(starter_tirtc_mode_t mode, uint32_t generation)
+{
+    /* EOS retains speaker ownership only, never microphone/network admission. */
+    return same_session(mode, generation) && atomic_load(&s_drain_generation) == 0 &&
+           (mode != STARTER_TIRTC_ROOM || atomic_load(&s_room_ptt_generation) == generation);
+}
+
+bool starter_media_room_ptt(uint32_t generation, bool pressed)
+{
+    if (!pressed) {
+        unsigned expected = generation;
+        if (generation == 0 || atomic_compare_exchange_strong(&s_room_ptt_generation, &expected, 0)) {
+            atomic_fetch_add(&s_room_audio_diag.ptt_up, 1);
+            if (generation == 0) atomic_store(&s_room_ptt_generation, 0);
+            atomic_fetch_add(&s_mute_epoch, 1);
+        }
+        return true;
+    }
+    if (!generation || !same_session(STARTER_TIRTC_ROOM, generation) ||
+        atomic_load(&s_microphone_muted)) return false;
+    atomic_fetch_add(&s_room_audio_diag.ptt_down, 1);
+    atomic_fetch_add(&s_mute_epoch, 1);
+    atomic_store(&s_room_ptt_generation, generation);
+    return true;
 }
 
 static esp_err_t pca9557_write_register(uint8_t reg, uint8_t value)
@@ -604,6 +652,7 @@ static bool enqueue_uplink_pcm(starter_tirtc_mode_t mode,
     uint8_t slot = 0;
     if (pcm == NULL || s_audio_tx_free_queue == NULL ||
         xQueueReceive(s_audio_tx_free_queue, &slot, 0) != pdTRUE) {
+        if (mode == STARTER_TIRTC_ROOM) atomic_fetch_add(&s_room_audio_diag.tx_full, 1);
         atomic_fetch_add_explicit(&s_audio_dropped, 1, memory_order_relaxed);
         return false;
     }
@@ -615,12 +664,14 @@ static bool enqueue_uplink_pcm(starter_tirtc_mode_t mode,
     item->mute_epoch = mute_epoch;
     memcpy(item->pcm, pcm, sizeof(item->pcm));
     if (xQueueSend(s_audio_tx_ready_queue, &slot, 0) != pdTRUE) {
+        if (mode == STARTER_TIRTC_ROOM) atomic_fetch_add(&s_room_audio_diag.tx_full, 1);
         memset(item, 0, sizeof(*item));
         (void)xQueueSend(s_audio_tx_free_queue, &slot, 0);
         atomic_fetch_add_explicit(&s_audio_dropped, 1, memory_order_relaxed);
         return false;
     }
     update_max_counter(&s_pipeline_diag.tx_queue_peak, uxQueueMessagesWaiting(s_audio_tx_ready_queue));
+    if (mode == STARTER_TIRTC_ROOM) atomic_fetch_add(&s_room_audio_diag.tx_enqueued, 1);
     return true;
 }
 
@@ -638,10 +689,12 @@ static void audio_uplink_task(void *argument)
         audio_tx_item_t *item = &s_audio_tx_pool[slot];
         update_max_counter(&s_pipeline_diag.tx_age_max_us,
                            (uint32_t)esp_timer_get_time() - item->enqueued_us);
-        bool ready = same_session(item->mode, item->generation) &&
+        bool ready = uplink_session_current(item->mode, item->generation) &&
                      item->mute_epoch == atomic_load(&s_mute_epoch) &&
                      starter_tirtc_audio_ready() &&
                      !atomic_load_explicit(&s_microphone_muted, memory_order_acquire);
+        if (!ready && item->mode == STARTER_TIRTC_ROOM)
+            atomic_fetch_add(&s_room_audio_diag.tx_stale, 1);
 #if CONFIG_XIAOTAI_CAPTURE_AGC
         if (ready) {
             /* The TX worker exclusively owns this slot. Both live and preroll
@@ -651,6 +704,8 @@ static void audio_uplink_task(void *argument)
             update_max_counter(&s_pipeline_diag.tx_gain_max_us,
                                (uint32_t)(esp_timer_get_time() - gain_begin));
             if (gain_err != ESP_OK) {
+                if (item->mode == STARTER_TIRTC_ROOM)
+                    atomic_fetch_add(&s_room_audio_diag.tx_gain_error, 1);
                 atomic_fetch_add(&s_audio_dropped, 1);
                 ESP_LOGE(TAG, "TX gain failed: %s", esp_err_to_name(gain_err));
                 ready = false;
@@ -682,13 +737,34 @@ static void audio_uplink_task(void *argument)
             update_max_counter(&s_pipeline_diag.encode_max_us,
                                (uint32_t)(esp_timer_get_time() - encode_begin));
             if (encoded == ESP_AUDIO_ERR_OK && output.encoded_bytes == AUDIO_PACKET_SAMPLES) {
+                if (!uplink_session_current(item->mode, item->generation) ||
+                    item->mute_epoch != atomic_load(&s_mute_epoch)) {
+                    if (item->mode == STARTER_TIRTC_ROOM)
+                        atomic_fetch_add(&s_room_audio_diag.tx_stale, 1);
+                    goto release_tx_slot;
+                }
                 int64_t send_begin = esp_timer_get_time();
+                if (item->mode == STARTER_TIRTC_ROOM) {
+                    if (s_room_audio_diag.tx_generation == item->generation &&
+                        s_room_audio_diag.tx_epoch == item->mute_epoch) {
+                        uint32_t gap = (uint32_t)send_begin - s_room_audio_diag.tx_last_us;
+                        atomic_fetch_add(&s_room_audio_diag.tx_pairs, 1);
+                        if (gap < 5000U) atomic_fetch_add(&s_room_audio_diag.tx_burst, 1);
+                        if (gap > 60000U) atomic_fetch_add(&s_room_audio_diag.tx_gaps, 1);
+                        update_max_counter(&s_room_audio_diag.tx_gap_max_us, gap);
+                    }
+                    s_room_audio_diag.tx_last_us = (uint32_t)send_begin;
+                    s_room_audio_diag.tx_generation = item->generation;
+                    s_room_audio_diag.tx_epoch = item->mute_epoch;
+                }
                 int ret = starter_tirtc_send_alaw(item->timestamp_ms,
                                                    alaw,
                                                    output.encoded_bytes);
                 update_max_counter(&s_pipeline_diag.send_max_us,
                                    (uint32_t)(esp_timer_get_time() - send_begin));
                 if (ret >= 0) {
+                    if (item->mode == STARTER_TIRTC_ROOM)
+                        atomic_fetch_add(&s_room_audio_diag.tx_accepted, 1);
                     uint32_t sent = (uint32_t)atomic_fetch_add_explicit(
                         &s_audio_sent, 1, memory_order_relaxed) + 1U;
                     if (sent == 1U) {
@@ -699,14 +775,19 @@ static void audio_uplink_task(void *argument)
                                  (unsigned long)item->timestamp_ms);
                     }
                 } else {
+                    if (item->mode == STARTER_TIRTC_ROOM)
+                        atomic_fetch_add(&s_room_audio_diag.tx_send_error, 1);
                     ESP_LOGW(TAG, "uplink send failed mode=%d bytes=%u ret=%d",
                              (int)item->mode, (unsigned)output.encoded_bytes, ret);
                 }
             } else {
+                if (item->mode == STARTER_TIRTC_ROOM)
+                    atomic_fetch_add(&s_room_audio_diag.tx_encode_error, 1);
                 ESP_LOGW(TAG, "uplink A-law encode failed ret=%s bytes=%u",
                          esp_err_to_name(encoded), (unsigned)output.encoded_bytes);
             }
         }
+release_tx_slot:
         memset(item, 0, sizeof(*item));
         (void)xQueueSend(s_audio_tx_free_queue, &slot, 0);
     }
@@ -770,7 +851,7 @@ static void audio_capture_task(void *argument)
             next_timestamp_ms = 0;
             mute_epoch = current_mute_epoch;
         }
-        bool session_ready = same_session(mode, generation) &&
+        bool session_ready = uplink_session_current(mode, generation) &&
                              starter_tirtc_audio_ready();
         if (!session_ready) {
             packet_samples = 0;
@@ -820,6 +901,7 @@ static void audio_capture_task(void *argument)
         if (mute_epoch != atomic_load(&s_mute_epoch) ||
             capture_epoch != atomic_load(&s_capture_epoch) ||
             clean.mute_epoch != mute_epoch || clean.capture_epoch != capture_epoch) {
+            if (mode == STARTER_TIRTC_ROOM) atomic_fetch_add(&s_room_audio_diag.capture_stale, 1);
             starter_agc_discard_pending();
             continue;
         }
@@ -919,7 +1001,7 @@ static void audio_capture_task(void *argument)
                                                            memory_order_acquire);
         generation = (uint32_t)atomic_load_explicit(&s_generation,
                                                      memory_order_acquire);
-        session_ready = same_session(mode, generation) &&
+        session_ready = uplink_session_current(mode, generation) &&
                         starter_tirtc_audio_ready() &&
                         !atomic_load_explicit(&s_microphone_muted,
                                               memory_order_acquire);
@@ -965,7 +1047,7 @@ static void audio_capture_task(void *argument)
                 continue;
             }
             packet_samples = 0;
-            if (!same_session(mode, generation) || !starter_tirtc_audio_ready()) {
+            if (!uplink_session_current(mode, generation) || !starter_tirtc_audio_ready()) {
                 continue;
             }
             if (next_timestamp_ms == 0U) {
@@ -1109,6 +1191,22 @@ static void publish_playout(const starter_playout_t *q, uint32_t generation,
     atomic_store(&s_playout_diag.rate_mode, q->rate_mode);
     atomic_store(&s_playout_diag.dma_estimate_us,
                  starter_playout_output_estimate(q, esp_timer_get_time()));
+}
+
+static void complete_audio_drain(const starter_playout_t *playout,
+                                 size_t pending_samples, uint64_t now_us)
+{
+    uint32_t generation = atomic_load(&s_drain_generation);
+    if (generation != 0 && same_session(STARTER_TIRTC_AI, generation) &&
+        atomic_load(&s_audio_rx_writers) == 0 &&
+        uxQueueMessagesWaiting(s_audio_rx_ready_queue) == 0 &&
+        playout->count == 0 && pending_samples == 0 &&
+        starter_playout_output_estimate(playout, now_us) == 0 &&
+        (playout->last_write_us == 0 ||
+         (now_us >= playout->last_write_us &&
+          now_us - playout->last_write_us >= STARTER_PLAYOUT_DMA_ESTIMATE_US))) {
+        atomic_store(&s_drained_generation, generation);
+    }
 }
 
 static void audio_sink_task(void *argument)
@@ -1262,6 +1360,7 @@ static void audio_sink_task(void *argument)
         now = esp_timer_get_time();
         publish_playout(&playout, active ? generation : 0,
                         decoded_count - decoded_offset + s_rx_pcm.count);
+        complete_audio_drain(&playout, decoded_count - decoded_offset + s_rx_pcm.count, now);
         uint32_t faults = (uint32_t)atomic_load(&s_playout_diag.overflow) +
             (uint32_t)atomic_load(&s_playout_diag.lock_timeouts) +
             (uint32_t)atomic_load(&s_playout_diag.slow_writes) +
@@ -1637,7 +1736,7 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation)
     if (!atomic_load_explicit(&s_ready, memory_order_acquire) ||
         generation == 0U ||
         (mode != STARTER_TIRTC_H5 && mode != STARTER_TIRTC_AI &&
-         mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL)) {
+         mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL && mode != STARTER_TIRTC_ROOM)) {
         return ESP_ERR_INVALID_STATE;
     }
     xSemaphoreTake(s_preroll_mutex, portMAX_DELAY);
@@ -1675,6 +1774,8 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation)
     atomic_store_explicit(&s_aec_deadline_misses, 0, memory_order_release);
     atomic_store_explicit(&s_mode, mode, memory_order_release);
     atomic_store_explicit(&s_generation, generation, memory_order_release);
+    atomic_store(&s_drained_generation, 0);
+    atomic_store(&s_drain_generation, 0);
     atomic_store_explicit(&s_active, true, memory_order_release);
     if (!take_audio_output_lock(OUTPUT_OWNER_START, pdMS_TO_TICKS(500))) {
         ESP_LOGE(TAG, "media start output lock timeout mode=%d generation=%lu",
@@ -1707,6 +1808,8 @@ static esp_err_t stop_media(uint32_t preserve_token)
     starter_media_cancel_pcm8k_playback();
     atomic_store_explicit(&s_active, false, memory_order_release);
     atomic_store_explicit(&s_generation, 0, memory_order_release);
+    atomic_store(&s_drain_generation, 0);
+    atomic_store(&s_drained_generation, 0);
     atomic_fetch_add(&s_playout_diag.epoch, 1);
     bool preserved = preserve_token == 0;
     if (s_preroll_mutex != NULL) {
@@ -1730,7 +1833,21 @@ static esp_err_t stop_media(uint32_t preserve_token)
 void starter_media_stop(void) { (void)stop_media(0); }
 esp_err_t starter_media_stop_for_ai(uint32_t token) { return stop_media(token); }
 
-void starter_media_submit_audio(starter_tirtc_mode_t mode,
+bool starter_media_begin_audio_drain(uint32_t generation)
+{
+    if (generation == 0 || !same_session(STARTER_TIRTC_AI, generation)) return false;
+    atomic_store(&s_drain_generation, generation);
+    return true;
+}
+
+bool starter_media_audio_drained(uint32_t generation)
+{
+    return generation != 0 && same_session(STARTER_TIRTC_AI, generation) &&
+           atomic_load(&s_drain_generation) == generation &&
+           atomic_load(&s_drained_generation) == generation;
+}
+
+static void submit_audio(starter_tirtc_mode_t mode,
                                 uint32_t generation,
                                 const starter_tirtc_frame_t *frame,
                                 const void *data)
@@ -1744,10 +1861,46 @@ void starter_media_submit_audio(starter_tirtc_mode_t mode,
         atomic_fetch_add(&s_playout_diag.invalid, 1);
         return;
     }
-    if (!same_session(mode, generation)) {
+    if (!same_session(mode, generation) || atomic_load(&s_drain_generation) != 0) {
         atomic_fetch_add(&s_audio_dropped, 1);
         atomic_fetch_add(&s_playout_diag.stale, 1);
         return;
+    }
+    if (mode == STARTER_TIRTC_ROOM) {
+        atomic_fetch_add(&s_room_audio_diag.rx_frames, 1);
+        atomic_fetch_add(&s_room_audio_diag.rx_bytes, frame->length);
+        /* Never serialize media on diagnostics if SDK callbacks overlap. Only
+         * skip the timing observation; payload admission continues unchanged. */
+        unsigned observer = 0;
+        if (atomic_compare_exchange_strong(&s_room_audio_diag.rx_observer_busy, &observer, 1)) {
+            bool same_generation = s_room_audio_diag.rx_generation == generation;
+            uint32_t gap = (uint32_t)received_us - s_room_audio_diag.rx_last_us;
+            /* Overlapping callbacks may reach this observer out of time order.
+             * Do not turn that into a huge unsigned arrival gap. */
+            bool ordered = !same_generation || gap <= INT32_MAX;
+            if (same_generation && ordered) {
+                uint32_t step = frame->timestamp_ms - s_room_audio_diag.rx_last_timestamp;
+                atomic_fetch_add(&s_room_audio_diag.rx_pairs, 1);
+                if (gap < 5000U) atomic_fetch_add(&s_room_audio_diag.rx_burst, 1);
+                if (gap > 60000U) atomic_fetch_add(&s_room_audio_diag.rx_gaps, 1);
+                update_max_counter(&s_room_audio_diag.rx_gap_max_us, gap);
+                if (!step) atomic_fetch_add(&s_room_audio_diag.rx_repeat_ts, 1);
+                else if (step > INT32_MAX) atomic_fetch_add(&s_room_audio_diag.rx_back_ts, 1);
+                else if (step * (uint64_t)1000U > s_room_audio_diag.rx_last_len * 125ULL + 2000U)
+                    atomic_fetch_add(&s_room_audio_diag.rx_forward_gap, 1);
+            }
+            if (ordered) {
+                s_room_audio_diag.rx_last_us = (uint32_t)received_us;
+                s_room_audio_diag.rx_last_timestamp = frame->timestamp_ms;
+                s_room_audio_diag.rx_last_len = frame->length;
+                s_room_audio_diag.rx_generation = generation;
+            } else {
+                atomic_fetch_add(&s_room_audio_diag.rx_observer_skipped, 1);
+            }
+            atomic_store(&s_room_audio_diag.rx_observer_busy, 0);
+        } else {
+            atomic_fetch_add(&s_room_audio_diag.rx_observer_skipped, 1);
+        }
     }
     if (atomic_load(&s_speaker_muted)) {
         atomic_fetch_add(&s_audio_playback_blocked, 1);
@@ -1776,6 +1929,53 @@ void starter_media_submit_audio(starter_tirtc_mode_t mode,
         atomic_fetch_add_explicit(&s_audio_dropped, 1, memory_order_relaxed);
         atomic_fetch_add(&s_playout_diag.overflow, 1);
     }
+}
+
+void starter_media_submit_audio(starter_tirtc_mode_t mode, uint32_t generation,
+                                const starter_tirtc_frame_t *frame, const void *data)
+{
+    /* Count before checking EOS so the sink cannot acknowledge an empty queue
+     * while a previously admitted callback is still copying into its slot. */
+    atomic_fetch_add(&s_audio_rx_writers, 1);
+    submit_audio(mode, generation, frame, data);
+    atomic_fetch_sub(&s_audio_rx_writers, 1);
+}
+
+void starter_media_log_room_audio(void)
+{
+    if (!same_session(STARTER_TIRTC_ROOM, atomic_load(&s_generation))) return;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    if (now - s_room_audio_diag.last_log_ms < 5000U) return;
+    s_room_audio_diag.last_log_ms = now;
+    starter_aec_stats_t afe;
+    starter_aec_get_stats(&afe);
+    /* Called by runtime, never the capture, SDK callback or speaker worker.
+     * Gap/PTS counters are observations, not packet-loss or DAC-underrun rates. */
+#define RA(field) ((unsigned long)atomic_load(&s_room_audio_diag.field))
+#define PA(field) ((unsigned long)atomic_load(&s_pipeline_diag.field))
+#define PB(field) ((unsigned long)atomic_load(&s_playout_diag.field))
+    ESP_LOGI(TAG, "ROOM CAP t=%lu gen=%lu ptt=%d calls=%lu/%lu read=%lu err=%lu afe=%lu/%lu full=%lu timeout=%lu stale=%lu age=%lu",
+             (unsigned long)now, (unsigned long)atomic_load(&s_generation),
+             atomic_load(&s_room_ptt_generation) != 0, RA(ptt_down), RA(ptt_up), PA(read_frames), PA(read_errors),
+             (unsigned long)afe.feed_frames, (unsigned long)afe.fetch_frames,
+             (unsigned long)afe.input_full, (unsigned long)afe.fetch_timeouts, RA(capture_stale), PA(afe_age_max_ms));
+    ESP_LOGI(TAG, "ROOM TX t=%lu in=%lu full=%lu stale=%lu sent=%lu err_gain/enc/send=%lu/%lu/%lu pairs=%lu burst5=%lu gap60=%lu gap_us=%lu q_us=%lu sdk_us=%lu rms=%lu",
+             (unsigned long)now, RA(tx_enqueued), RA(tx_full), RA(tx_stale),
+             RA(tx_accepted), RA(tx_gain_error), RA(tx_encode_error), RA(tx_send_error),
+             RA(tx_pairs), RA(tx_burst), RA(tx_gaps), RA(tx_gap_max_us), PA(tx_age_max_us), PA(send_max_us), PA(tx_rms));
+    ESP_LOGI(TAG, "ROOM RX t=%lu n=%lu bytes=%lu pairs=%lu burst5=%lu gap60=%lu gap_us=%lu pts_repeat/gap/back=%lu/%lu/%lu obs_skip=%lu ingress_us=%lu",
+             (unsigned long)now, RA(rx_frames), RA(rx_bytes), RA(rx_pairs), RA(rx_burst), RA(rx_gaps),
+             RA(rx_gap_max_us), RA(rx_repeat_ts), RA(rx_forward_gap), RA(rx_back_ts), RA(rx_observer_skipped), PB(ingress_max_us));
+    ESP_LOGI(TAG, "ROOM PLAY t=%lu target=%lu q=%lu buffer=%lu starts=%lu late=%lu jitter_us=%lu untimed/break=%lu/%lu bad/full/stale=%lu/%lu/%lu mute=%lu decerr=%lu lock=%lu wrerr=%lu wrgap_us=%lu service_us=%lu pcm=%lu/%lu/%lu+%lu rate=%d slow/fast=%lu/%lu",
+             (unsigned long)now, PB(target_ms), PB(queued_ms), PB(buffering), PB(starts), PB(late_bursts),
+             PB(jitter_us), PB(untimed_pairs), PB(timestamp_breaks), PB(invalid), PB(overflow), PB(stale),
+             (unsigned long)atomic_load(&s_audio_playback_blocked), (unsigned long)atomic_load(&s_audio_decode_failed),
+             PB(lock_timeouts), (unsigned long)atomic_load(&s_audio_write_failed),
+             PB(write_gap_max_us), PB(service_gap_max_us), PB(decoded_samples), PB(written_samples),
+             PB(discarded_samples), PB(pending_samples), atomic_load(&s_playout_diag.rate_mode), PB(slow_chunks), PB(fast_chunks));
+#undef PB
+#undef PA
+#undef RA
 }
 
 starter_media_playback_status_t starter_media_playback_status(void)

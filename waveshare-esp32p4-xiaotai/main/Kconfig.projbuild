@@ -4,54 +4,9 @@ config AUDIO_LOCAL_LOOPBACK_TEST
     bool "Enable temporary local mic-to-speaker loopback test"
     default n
 
-config APP_AUDIO_AEC_ENABLE
-    bool "Enable ESP-SR acoustic echo cancellation"
-    default y
-    help
-        Preloads the ESP-SR AEC engine when a full-duplex audio owner prepares
-        its media path. Runtime processing is enabled for IPC viewing, device
-        calls, WeChat VoIP, and AI Chat, and is disabled outside those media
-        sessions. Each application keeps its existing audio ownership model.
-
 endmenu
 
-menu "AI Chat"
-
-config APP_AI_CHAT_VIDEO_ENABLE
-    bool "Upload local H264 camera video during AI Chat"
-    default y
-    help
-        Start the existing ESP32-P4 camera and hardware H264 uplink only after
-        start_session succeeds. AI Chat video uses stream 0 while PCM audio
-        remains on stream 1. If camera startup fails, the audio conversation
-        continues without video.
-
-endmenu
-
-menu "WeChat VoIP"
-
-config APP_WECHAT_VOIP_LOCAL_VIDEO_ENABLE
-    bool "Upload local camera video during WeChat calls"
-    default y
-    help
-        Advertise WeChat calls as video capable and proactively publish the
-        ESP32-P4 camera through the existing YUV420-to-H264 RTC pipeline after
-        the WeChat room is joined. The WeChat audio path remains externally
-        owned by the dedicated PCMA capture task.
-
-config APP_WECHAT_VOIP_REMOTE_VIDEO_ENABLE
-    bool "Display remote WeChat video during calls"
-    default y
-    help
-        Request the standard 640x480 landscape MJPEG downlink, decode the
-        received frames with the ESP32-P4 hardware JPEG decoder, and map them
-        once to the physical 480x320 display without non-uniform stretching or
-        local rotation. Smaller adaptive frames may be uniformly enlarged to
-        fill the display. The local camera uplink remains H264. Disable only
-        for an audio-only product variant.
-
-endmenu
-
+# Product AEC and call media are owned by starter_media, not Monitor switches.
 menu "RTC video uplink"
 
 # Product media values are owned by media/media_tuning.h. Keep this menu for

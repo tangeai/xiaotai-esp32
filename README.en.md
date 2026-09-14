@@ -16,7 +16,7 @@
 [![TiRTC SDK](https://img.shields.io/badge/TiRTC-SDK-0969DA?style=flat-square)](lckfb-szpi-esp32s3-tirtc/third_party/tirtc/README.md)
 [![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=flat-square&logo=webrtc&logoColor=white)](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)
 [![LVGL](https://img.shields.io/badge/UI-LVGL-008FBE?style=flat-square)](lckfb-szpi-esp32s3-tirtc/dependencies.lock)
-[![ESP-SR](https://img.shields.io/badge/Audio-ESP--SR-E7352C?style=flat-square&logo=espressif&logoColor=white)](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md#音频链路)
+[![ESP-SR](https://img.shields.io/badge/Audio-ESP--SR-E7352C?style=flat-square&logo=espressif&logoColor=white)](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md#音频经过哪些节点)
 [![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
 [![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#wechat-calls)
 
@@ -24,7 +24,7 @@
 
 </div>
 
-XiaoTai uses TiRTC/WebRTC for live monitoring, WeChat calls, device-to-device calls, and AI voice chat. Download the firmware for your board, flash it, connect to Wi-Fi, and bind it to your account. No compilation or self-hosted server is required.
+XiaoTai uses TiRTC/WebRTC for live monitoring, WeChat calls, device-to-device calls, group voice chat, and AI voice chat. Download the firmware for your board, flash it, connect to Wi-Fi, and bind it to your account. No compilation or self-hosted server is required.
 
 **Download BIN → Flash over USB → Connect to Wi-Fi → Bind on the website → Try the features**
 
@@ -36,12 +36,12 @@ Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi**
 
 | Board | Full BIN download (16 MB) | Features |
 | --- | --- | --- |
-| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.0.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.0.0/xiaotai-esp32-s3-app-v1.0.0-full-16MB.bin) | Voice calls and AI voice chat; no camera video |
-| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.0.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.0.0/xiaotai-esp32-p4-app-v1.0.0-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
+| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.1.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.1.0/xiaotai-esp32-s3-app-v1.1.0-full-16MB.bin) | Voice calls and AI voice chat; no camera video |
+| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.1.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.1.0/xiaotai-esp32-p4-app-v1.1.0-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
 
 Check the chip revision before flashing: **S3 rev 0.0–0.99 or P4 rev 1.0–1.99**. P4 rev 2.x/3.x is not supported by these images. The chip revision is different from the PCB version. Do not flash S3 firmware onto P4, or vice versa.
 
-These are **pre-release** images. See the [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.0.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.0.0) for flashing instructions, checksums, and validation status.
+These are **pre-release** images. See the [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.1.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.1.0) for flashing instructions, checksums, and validation status.
 
 ## Step 2: Flash from your browser
 
@@ -56,7 +56,7 @@ If no serial port appears, check that your USB cable supports data transfer. If 
 
 ## Step 3: Connect to Wi-Fi
 
-1. Follow the setup instructions on the device screen. S3 uses hotspot setup. P4 lets you select Wi-Fi on the screen or use hotspot setup.
+1. Follow the setup instructions on the device screen. Both S3 and P4 support entering Wi-Fi details from your phone through hotspot setup.
 2. For hotspot setup, connect your phone to the hotspot shown on the screen, then open the setup page. The S3 hotspot is named `XiaoTai-XXXX` and requires no password. If its setup page does not open automatically, visit `http://192.168.6.1`.
 3. Select your **2.4 GHz Wi-Fi** network, enter its password, and submit. Once connected, the device displays a **6-digit binding code**.
 
@@ -95,6 +95,14 @@ When WeChat contacts are already available, the **WeChat Call** shortcut calls t
 2. Sync contacts on the device. For devices on different accounts, add the other device through the website's **Contacts (联系人)** page and have the other user accept the request.
 3. Select the other device and start a call, then answer on that device. Video calls are available when both devices support video.
 
+### Group voice chat
+
+1. Prepare two or more bound, online devices. Open **Three-dot menu → Group Voice Chat (多人对讲)** and create a room on one device.
+2. Join from the other devices using the same six-digit room number. Enter the four-digit password if one is set.
+3. Once connected, hold the talk button to speak and release it to listen. Returning to the menu disconnects voice chat but keeps room membership; **Leave Room (退出房间)** removes membership.
+
+This feature requires room support on the platform and uses voice on both S3 and P4. See the [S3 guide](lckfb-szpi-esp32s3-tirtc/docs/GETTING_STARTED_CN.md#多人对讲) or [P4 guide](waveshare-esp32p4-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲) for details.
+
 ### AI voice chat
 
 1. End any active call and return to the device's home screen.
@@ -105,7 +113,7 @@ When WeChat contacts are already available, the **WeChat Call** shortcut calls t
 
 The linked development guides are in Chinese.
 
-- **Build and configuration:** [S3 guide](lckfb-szpi-esp32s3-tirtc/README.md) and [P4 guide](waveshare-esp32p4-xiaotai/README.md). Builds use ESP-IDF 5.5.4. Keep the full repository: P4 depends on the sibling S3 source and `common/` resources.
+- **Build and configuration:** [S3 guide](lckfb-szpi-esp32s3-tirtc/README.md) and [P4 guide](waveshare-esp32p4-xiaotai/README.md). Builds use ESP-IDF 5.5.4. Each project includes its own code, SDK, model, and resources and can be built independently.
 - **Architecture and code:** [S3 communication and audio](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md) and [P4 communication, audio, and video](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md).
 - **Troubleshooting and limitations:** [S3 known issues](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md) and [P4 troubleshooting](waveshare-esp32p4-xiaotai/docs/TESTING.md).
 - **Server, Web, and WeChat mini program:** [tirtc-server-example](https://github.com/tangeai/tirtc-server-example). For self-hosting, see the [deployment guide](https://github.com/tangeai/tirtc-server-example/blob/main/thing-connect/deployment.md).

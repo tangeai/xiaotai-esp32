@@ -4,7 +4,7 @@
 
 [![MIT License](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](../LICENSE)
 [![ESP32-S3](https://img.shields.io/badge/ESP32-S3-E7352C?style=flat-square&logo=espressif&logoColor=white)](../README.md)
-[![Source 1.0.0](https://img.shields.io/badge/Source-1.0.0-0969DA?style=flat-square)](https://github.com/tangeai/xiaotai-esp32/tree/esp32-s3-app-v1.0.0)
+[![Source 1.1.0](https://img.shields.io/badge/Source-1.1.0-0969DA?style=flat-square)](https://github.com/tangeai/xiaotai-esp32/tree/esp32-s3-app-v1.1.0)
 [![ESP-IDF 5.5.4](https://img.shields.io/badge/ESP--IDF-5.5.4-0969DA?style=flat-square)](https://github.com/espressif/esp-idf/releases/tag/v5.5.4)
 
 [返回项目首页](../README.md)
@@ -19,7 +19,7 @@ S3 这版专注语音，没有启用摄像头。想同时看到对方，去看 [
 
 ## 先烧录，再体验
 
-**[下载 1.0.0 的 16 MB 完整 BIN](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.0.0/xiaotai-esp32-s3-app-v1.0.0-full-16MB.bin)** · [烧录指南与校验文件](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.0.0)
+**[下载 1.1.0 的 16 MB 完整 BIN](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.1.0/xiaotai-esp32-s3-app-v1.1.0-full-16MB.bin)** · [烧录指南与校验文件](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.1.0)
 
 按[浏览器烧录步骤](../README.md#用浏览器烧录)从 `0x0` 写入，不用自己编译。固件适用 S3 芯片 rev 0.0–0.99，当前为体验版（Pre-release）；验证情况见发布说明。
 
@@ -35,6 +35,8 @@ S3 这版专注语音，没有启用摄像头。想同时看到对方，去看 [
 4. **说两句话**：轮流讲话，再同时讲话，听听双方是否清楚。挂断后再拨一次，确认下一通也能正常开始。
 
 只有一块板也能开始，用已授权的微信或 H5 做另一端即可。点击表情、说“你好小钛”或短按 BOOT，还可以和 AI 对话，再按 BOOT 结束。本仓提供设备端源码，联网业务使用平台服务。
+
+多台设备可以进入[多人对讲](docs/GETTING_STARTED_CN.md#多人对讲)：创建或加入同一个房间，按住讲话、松开收听。返回菜单会断开对讲，保留房间关系。
 
 ## TiRTC 与 WebRTC
 
@@ -53,9 +55,9 @@ S3 这版专注语音，没有启用摄像头。想同时看到对方，去看 [
 | 工具链 | Xtensa GCC 14.2.0，`esp-14.2.0_20260121` |
 | TiRTC SDK | 2.3.0，[SDK 编译配置](third_party/tirtc/README.md) |
 | 主要组件 | LVGL 8.3.11、ESP-SR 2.4.7，[完整依赖锁](dependencies.lock) |
-| 应用版本 | 1.0.0，[版本内容](RELEASE_NOTES.md) |
+| 应用版本 | 1.1.0，[版本内容](RELEASE_NOTES.md) |
 
-换了板卡修订，先核对音频、屏幕、触摸和电源引脚。保留 `../common/models/` 供模型校验；SDK、模型、字体和提示音也参与构建，不是可随意删除的附件。
+换了板卡修订，先核对音频、屏幕、触摸和电源引脚。本目录可独立构建；SDK、`components/starter_voice/model/` 中的模型、字体和提示音均为构建输入。
 
 打开 ESP-IDF 终端，进入本 README 所在目录。首次配置或目标选错时先执行 `idf.py set-target esp32s3`，然后构建：
 

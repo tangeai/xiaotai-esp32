@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-SHARED = ROOT.parent / 'lckfb-szpi-esp32s3-tirtc/components/starter_voice/vendor'
+VENDOR = ROOT / 'components/starter_voice/vendor'
 DSP = ROOT / 'managed_components/espressif__esp-dsp/modules/fft/float/dsps_fft2r_fc32_ansi.c'
 
 
@@ -126,8 +126,8 @@ def main():
         for p4 in (0, 1):
             subprocess.run(['cc', '-std=gnu11', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
                             '-fsanitize=address,undefined', f'-DCONFIG_IDF_TARGET_ESP32P4={p4}',
-                            '-I', str(temp), '-I', str(SHARED), str(temp/'test.c'),
-                            str(SHARED/'mel_extractor.c'), '-lm', '-o', str(temp/'test')], check=True)
+                            '-I', str(temp), '-I', str(VENDOR), str(temp/'test.c'),
+                            str(VENDOR/'mel_extractor.c'), '-lm', '-o', str(temp/'test')], check=True)
             subprocess.run([str(temp/'test')], check=True, timeout=20)
 
 

@@ -27,7 +27,7 @@ typedef struct {
 /** 从 tirtc_cfg 命名空间加载凭证；失败时清空输出结构。 */
 esp_err_t runtime_config_load_tirtc(runtime_tirtc_config_t *config);
 
-/** 校验并原子提交一组凭证到 NVS。 */
+/** 校验后由内部 NVS 任务保存并等待结果；多键写入不保证掉电原子性。 */
 esp_err_t runtime_config_save_tirtc(const runtime_tirtc_config_t *config);
 
 /** 清空整个 TiRTC 凭证命名空间。 */

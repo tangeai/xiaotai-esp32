@@ -6,9 +6,7 @@ import subprocess
 import tempfile
 root=Path(__file__).resolve().parents[1]
 product=(root/"components/starter_product/src/starter_product.c").read_text()
-lvroot=root.parent/"waveshare-esp32p4-xiaotai/managed_components/lvgl__lvgl/src"
-if not lvroot.exists():
-    lvroot=root/"managed_components/lvgl__lvgl/src"
+lvroot=root/"managed_components/lvgl__lvgl/src"
 events=(lvroot/"core/lv_event.c").read_text()
 obj=(lvroot/"core/lv_obj.h").read_text()
 count=re.search(r"uint8_t event_dsc_cnt\s*:\s*\d+;",obj).group()

@@ -1,18 +1,28 @@
 *.a binary
+*.bin binary
+*.zip binary
 *.png binary
 *.jpg binary
 *.jpeg binary
 *.h264 binary
 *.pcma binary
 *.ttf binary
-*.tflite binary
-*.wav binary
+
+# SDK headers and manifests are checksummed delivery artifacts; preserve bytes.
 components/tirtc_sdk/include/** -text -whitespace
 components/tirtc_sdk/VERSION.md -text -whitespace
 components/tirtc_sdk/SHA256SUMS.txt -text -whitespace
+
+# Preserve third-party source as delivered while keeping whitespace checks strict
+# for application code and release documentation.
 components/esp_lcd/** -whitespace
 components/espressif__esp_codec_dev/** -whitespace
 components/espressif__esp_h264/** -whitespace
 components/espressif__esp_hosted/** -whitespace
 components/espressif__esp_lvgl_port/** -whitespace
 components/espressif__esp_video/** -whitespace
+
+# Maintenance entries are local documentation, not public source exports.
+docs/history export-ignore
+.local export-ignore
+AGENTS.md export-ignore

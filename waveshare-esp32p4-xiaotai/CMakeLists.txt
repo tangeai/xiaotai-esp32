@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_VER "1.0.0")
+set(PROJECT_VER "1.1.0")
+# Wi-Fi Remote 0.14 includes Kconfig by this major.minor environment value.
+# Derive it from the selected IDF even on Ninja/CMake-triggered reconfigure;
+# a missing value silently drops C6/SDIO symbols before Hosted compilation.
+include($ENV{IDF_PATH}/tools/cmake/version.cmake)
+set(ENV{ESP_IDF_VERSION} "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # IDF serializes local overrides as absolute paths. Keep that generated lock in
 # build/, while the reviewed dependency versions and hashes stay portable in Git.
@@ -8,6 +13,12 @@ include(${CMAKE_CURRENT_LIST_DIR}/tools/dependency_lock.cmake)
 xiaotai_prepare_dependency_lock("${CMAKE_CURRENT_LIST_DIR}" "${CMAKE_BINARY_DIR}")
 idf_build_set_property(DEPENDENCIES_LOCK "${CMAKE_BINARY_DIR}/dependencies.lock")
 project(xiaotai_esp32p4)
+
+include(${CMAKE_CURRENT_LIST_DIR}/components/starter_voice/conv_channels.cmake)
+idf_component_get_property(tflm_lib espressif__esp-tflite-micro COMPONENT_LIB)
+idf_component_get_property(tflm_dir espressif__esp-tflite-micro COMPONENT_DIR)
+xiaotai_fix_conv_channels(${tflm_lib} "${tflm_dir}"
+    "${CMAKE_BINARY_DIR}/p4_tflm")
 
 # This Hosted port selects SDR flags. IDF 5.5.4 reserves 50000 for DDR50 and
 # rejects it before probing the C6. Check the effective config, not defaults.
@@ -24,10 +35,10 @@ add_custom_command(TARGET ${CMAKE_PROJECT_NAME}.elf POST_BUILD
             $<TARGET_FILE:${CMAKE_PROJECT_NAME}.elf>
             --config ${CMAKE_BINARY_DIR}/config/sdkconfig.json
  COMMAND ${CMAKE_COMMAND} -E env CROSS_NM=${CMAKE_NM}
-         ${PYTHON} -X utf8 ${CMAKE_CURRENT_LIST_DIR}/../lckfb-szpi-esp32s3-tirtc/tools/check_build_policies.py
+         ${PYTHON} -X utf8 ${CMAKE_CURRENT_LIST_DIR}/tools/check_build_policies.py
          --policy i2c_driver_family --nm ${CMAKE_NM}
          --elf $<TARGET_FILE:${CMAKE_PROJECT_NAME}.elf>
  VERBATIM)
 set_property(TARGET ${CMAKE_PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/tools/check_product_image.py"
-    "${CMAKE_CURRENT_LIST_DIR}/../lckfb-szpi-esp32s3-tirtc/tools/check_build_policies.py")
+    "${CMAKE_CURRENT_LIST_DIR}/tools/check_build_policies.py")

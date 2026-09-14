@@ -6,15 +6,9 @@ linked directly. These tests cover deterministic logic, not real RTOS timing,
 the closed-source speech model, or physical audio quality.
 """
 from pathlib import Path
-import contextlib
-import io
-import itertools
 import re
-import runpy
 import subprocess
-import sys
 import tempfile
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -261,6 +255,9 @@ int main(void) {
 def test_mqtt_lifetime():
     body = r'''
 #include <time.h>
+#undef ESP_LOGI
+#define ESP_LOGI(tag,...) printf(__VA_ARGS__)
+static int64_t esp_timer_get_time(void) {static int64_t t;return t+=1000;}
 #define ESP_ERR_INVALID_STATE 0x103
 #define ESP_ERR_TIMEOUT 0x107
 static void *s_mqtt_lifecycle=(void*)1, *s_mqtt=(void*)2;
@@ -308,12 +305,15 @@ def test_command_recovery():
     body = r'''
 #include "starter_tirtc.h"
 #define RUNTIME_TEXT_MAX 4096
+#define RUNTIME_ROOM_TEXT_MAX 32768
+#define STARTER_TIRTC_ROOM 4
 #define EVENT_COMMAND 1
-typedef struct {int type;starter_tirtc_mode_t mode;uint32_t generation,command;} runtime_event_t;
+typedef struct {int type;starter_tirtc_mode_t mode;uint32_t generation,command,received_at_ms;} runtime_event_t;
+static int64_t now_ms(void) {return 1234;}
 static atomic_bool s_transport_recovery_required;
 static bool copy_ok,queue_ok;static int released;
 static bool copy_event_text(runtime_event_t *e,const void *p,size_t n) {(void)e;(void)p;(void)n;return copy_ok;}
-static bool queue_event(const runtime_event_t *e) {(void)e;return queue_ok;}
+static bool queue_event(const runtime_event_t *e) {assert(e->received_at_ms==1234);return queue_ok;}
 static void release_event(runtime_event_t *e) {(void)e;++released;}
 '''
     # Only the callback's enum/type dependency is needed, not SDK transport headers.
@@ -329,45 +329,12 @@ int main(void) {
     atomic_store(&s_transport_recovery_required,false);queue_ok=true;
     on_tirtc_command(3,7,0x2001,NULL,0,NULL);
     assert(!atomic_load(&s_transport_recovery_required));
+    on_tirtc_command(STARTER_TIRTC_ROOM,7,0x2200,NULL,32769,NULL);
+    assert(atomic_load(&s_transport_recovery_required));
     return 0;
 }
 '''
     run("command loss: allocation/queue failure schedules session recovery", body)
-
-
-def test_logs():
-    module = runpy.run_path(str(ROOT / "tools/check_wake_acoustic_hil.py"))
-
-    def replay(lines, *options):
-        stream = iter((line + "\n").encode() for line in lines)
-        clock = itertools.count(0, .01)
-
-        class UART:
-            def __enter__(self): return self
-            def __exit__(self, *args): pass
-            def readline(self): return next(stream, b"")
-
-        with patch.object(module["serial"], "Serial", return_value=UART()), \
-             patch.object(module["time"], "monotonic", side_effect=lambda: next(clock)), \
-             patch.object(sys, "argv", ["check", "--port", "fake", "--seconds", "1",
-                                      "--post-trigger-seconds", "0", *options]), \
-             contextlib.redirect_stdout(io.StringIO()):
-            return module["main"]()
-
-    for i, phrase in module["PHRASES"].items():
-        detected = f"MultiNet prompt detected id={i} phrase={phrase} probability=0.8; starting remote AI"
-        assert replay([detected], "--expected-phrase", phrase) == 0
-        assert replay([detected, "AI wake request accepted token=5 session=7",
-                       "starter_runtime: state=ai-active session=7 connection=9"],
-                      "--require-ai-ready") == 0
-        assert replay([detected, "AI wake request accepted token=5 session=7",
-                       "starter_runtime: state=ai-active session=8 connection=10"],
-                      "--require-ai-ready") == 1
-    assert replay([], "--negative") == 2
-    assert replay(["local-pcm fed result=ESP_OK listening=1"], "--negative") == 0
-    assert replay(["local-pcm fed result=ESP_OK listening=1", "local-pcm blocked"], "--negative") == 2
-    assert replay([detected, "Guru Meditation Error"]) == 2
-    print("PASS: log replay: 13 phrase/readiness/negative-interval/crash cases", flush=True)
 
 
 def test_navigation_priority():
@@ -439,7 +406,7 @@ int main(void) {
 }
 ''')
     runtime_path = "components/starter_runtime/src/starter_runtime.c"
-    run("priority: incoming/outgoing preempt AI/H5, never another call (14 cases)", r'''
+    run("priority: incoming/outgoing preempt AI/H5/Room, never another call (18 cases)", r'''
 static atomic_int s_public_state;
 static int finishes, events;
 static void finish_session(int error) { assert(error==0); ++finishes; s_public_state=STARTER_RUNTIME_WAITING; }
@@ -447,10 +414,11 @@ static void diagnostic_event(const char *label, int value) { assert(label); asse
 ''' + function(runtime_path, "preempt_for_call") + r'''
 int main(void) {
     for (int incoming=0; incoming<2; ++incoming) {
-        for (int state=STARTER_RUNTIME_WAITING; state<=STARTER_RUNTIME_CALL_ACTIVE; ++state) {
+        for (int state=STARTER_RUNTIME_WAITING; state<=STARTER_RUNTIME_ROOM_ACTIVE; ++state) {
             s_public_state=state; finishes=events=0;
-            bool lower=state>=STARTER_RUNTIME_H5_ACTIVE && state<=STARTER_RUNTIME_AI_ACTIVE;
-            assert(preempt_for_call(incoming)==(state<=STARTER_RUNTIME_AI_ACTIVE));
+            bool lower=(state>=STARTER_RUNTIME_H5_ACTIVE && state<=STARTER_RUNTIME_AI_ACTIVE) ||
+                state==STARTER_RUNTIME_ROOM_CONNECTING || state==STARTER_RUNTIME_ROOM_ACTIVE;
+            assert(preempt_for_call(incoming)==(state==STARTER_RUNTIME_WAITING || lower));
             assert(finishes==(int)lower && events==(int)lower);
             assert(s_public_state==(lower ? STARTER_RUNTIME_WAITING : state));
         }
@@ -573,13 +541,96 @@ int main(void) {
 ''')
 
 
+def test_external_connect_memory():
+    path = "components/starter_runtime/src/starter_runtime.c"
+    source = (ROOT / path).read_text()
+    body = "\n".join(re.findall(r"^#define EXTERNAL_CONNECT_[^\n]+", source, re.M)) + r'''
+#define MALLOC_CAP_INTERNAL 1
+#define MALLOC_CAP_8BIT 2
+#define ESP_ERR_NO_MEM 3
+static char reserve;
+static void *s_external_connect_reserve=&reserve;
+static bool s_mqtt_suspended_for_connect, s_external_connect_reserve_loaned;
+static int64_t s_mqtt_resume_due_ms;
+static size_t available=100000, largest=65536;
+static unsigned stops, resumes, frees, allocs;
+static bool ready=true, online=true, fail_alloc;
+static int stop_error, resume_error;
+static bool platform_client_ready(void) { return ready; }
+static bool platform_client_mqtt_connected(void) { return online; }
+static int64_t now_ms(void) { return 100; }
+static size_t heap_caps_get_free_size(unsigned caps) { assert(caps==3); return available; }
+static size_t heap_caps_get_largest_free_block(unsigned caps) { assert(caps==3); return largest; }
+static void heap_caps_free(void *p) { assert(p==&reserve); ++frees; }
+static void *heap_caps_malloc(size_t n,unsigned caps) {
+    assert(n==17*1024 && caps==3); ++allocs; return fail_alloc ? NULL : &reserve;
+}
+static esp_err_t platform_client_suspend_mqtt_for_realtime(void) { ++stops; return stop_error; }
+static esp_err_t platform_client_resume_mqtt_after_realtime(void) { assert(ready); ++resumes; return resume_error; }
+'''
+    body += function(path, "starter_runtime_arm_external_connect_reserve")
+    body += function(path, "prepare_external_connect_memory")
+    body += function(path, "restore_external_connect_memory")
+    body += r'''
+int main(void) {
+    assert(prepare_external_connect_memory());
+    assert(stops==0 && !s_mqtt_suspended_for_connect && s_external_connect_reserve_loaned);
+    assert(!s_external_connect_reserve && frees==1);
+    assert(!prepare_external_connect_memory()); /* no overlapping reserve loans */
+    restore_external_connect_memory();
+    assert(resumes==0 && allocs==1 && s_external_connect_reserve==&reserve);
+    assert(!s_external_connect_reserve_loaned);
+    restore_external_connect_memory(); assert(allocs==1);
+    available=64*1024; largest=32*1024;
+    assert(prepare_external_connect_memory() && stops==0); /* exact boundaries */
+    restore_external_connect_memory();
+    available--; /* enough contiguous heap, insufficient total free */
+    assert(prepare_external_connect_memory() && stops==1 && s_mqtt_suspended_for_connect);
+    restore_external_connect_memory(); assert(resumes==1);
+    available=100000; largest=32*1024-1; /* fragmentation pressure */
+    assert(prepare_external_connect_memory() && stops==2);
+    restore_external_connect_memory(); assert(resumes==2);
+    largest=65536; online=false; stop_error=7;
+    unsigned released=frees;
+    assert(!prepare_external_connect_memory());
+    assert(frees==released && s_external_connect_reserve==&reserve);
+    assert(!s_external_connect_reserve_loaned && !s_mqtt_suspended_for_connect);
+    stop_error=0;
+    assert(prepare_external_connect_memory() && s_mqtt_suspended_for_connect);
+    fail_alloc=true; restore_external_connect_memory();
+    assert(s_mqtt_resume_due_ms==1100 && resumes==2 && s_external_connect_reserve_loaned);
+    assert(!prepare_external_connect_memory());
+    fail_alloc=false; resume_error=8; restore_external_connect_memory();
+    assert(resumes==3 && s_mqtt_resume_due_ms==1100 && s_external_connect_reserve==&reserve);
+    unsigned allocated=allocs;
+    resume_error=0; restore_external_connect_memory();
+    assert(resumes==4 && !s_external_connect_reserve_loaned && s_mqtt_resume_due_ms==0);
+    assert(allocs==allocated); /* resume failure cannot double-allocate reserve */
+    online=true; assert(prepare_external_connect_memory());
+    ready=false; restore_external_connect_memory();
+    assert(resumes==4 && s_external_connect_reserve==&reserve && !s_external_connect_reserve_loaned);
+    ready=true; online=false; assert(prepare_external_connect_memory());
+    ready=false; restore_external_connect_memory();
+    assert(resumes==4 && !s_mqtt_suspended_for_connect && s_external_connect_reserve==&reserve);
+    ready=true; online=true; assert(prepare_external_connect_memory());
+    fail_alloc=true; restore_external_connect_memory();
+    assert(s_external_connect_reserve_loaned && s_mqtt_resume_due_ms==1100);
+    fail_alloc=false; restore_external_connect_memory();
+    assert(resumes==4 && !s_external_connect_reserve_loaned && s_mqtt_resume_due_ms==0);
+    s_external_connect_reserve=NULL;
+    assert(!prepare_external_connect_memory());
+    return 0;
+}
+'''
+    run("external memory: MQTT coexistence, free/largest limits, failures, rebind and reserve ownership", body)
+
+
 def test_connection_lifecycle():
     path = "components/starter_runtime/src/starter_runtime.c"
     body = r'''
 #include "starter_tirtc.h"
 #define ESP_ERR_INVALID_STATE 1
 #define ESP_FAIL 2
-#define AI_START_SETTLE_MS 100
 #define AI_RESPONSE_TIMEOUT_MS 1000
 #define VOIP_CONNECTED_WAIT_TIMEOUT_MS 1000
 #define CALL_COMMAND_CONNECT 0x2000
@@ -591,11 +642,12 @@ typedef struct {
 } runtime_event_t;
 static atomic_int s_public_state, s_last_error;
 static uint32_t s_session_generation=8, s_connection_generation;
-static int64_t s_ai_start_at_ms, s_deadline_ms;
+static uint32_t s_ai_drain_started_ms;
+static int64_t s_deadline_ms;
 static bool s_call_waiting_confirm, s_call_outgoing=true;
 static bool s_call_p2p_connected, s_call_wechat;
 static char s_call_room_id[32];
-static unsigned finished, resumed, media_started;
+static unsigned finished, resumed, media_started, ai_sent;
 static bool binding_ready=true;
 static unsigned rejected_connection;
 static bool platform_client_ready(void) { return binding_ready; }
@@ -604,7 +656,8 @@ int starter_tirtc_disconnect(void) {++rejected_connection;return 0;}
 static int64_t now_ms(void) { return 100; }
 static void finish_session(int error) { (void)error; ++finished; }
 static void finish_call_session(int error,const char *text) { (void)text; finish_session(error); }
-static void resume_mqtt_after_external_connect(void) { ++resumed; }
+static void restore_external_connect_memory(void) { ++resumed; }
+static void send_ai_start(void) { ++ai_sent; }
 static void publish_state(starter_runtime_state_t state) { atomic_store(&s_public_state,state); }
 static esp_err_t starter_media_start(starter_tirtc_mode_t mode,uint32_t gen) {
     (void)mode; (void)gen; ++media_started; return ESP_OK;
@@ -613,6 +666,7 @@ int starter_tirtc_send_command(uint32_t command,const void *data,uint32_t length
     (void)command;(void)data;(void)length;return 0;
 }
 static void maybe_activate_outgoing_device_call(const char *source) { (void)source; }
+static void room_connection(const runtime_event_t *event) {(void)event;assert(!"room handled in test_room.py");}
 '''
     body += function(path, "handle_connection")
     body += r'''
@@ -637,10 +691,16 @@ int main(void) {
     e=(runtime_event_t){.mode=STARTER_TIRTC_AI,.generation=21,.request_tag=8,.flag=true};
     handle_connection(&e);
     assert(s_connection_generation==21 && resumed==1 && finished==0);
+    assert(ai_sent==1 && media_started==0); /* immediate RPC, not early audio */
+    handle_connection(&e);
+    assert(ai_sent==1 && resumed==1); /* duplicate success cannot resend RPC */
     atomic_store(&s_public_state,STARTER_RUNTIME_AI_ACTIVE);
     e=(runtime_event_t){.mode=STARTER_TIRTC_AI,.generation=20,.flag=false};
     handle_connection(&e); assert(finished==0 && resumed==1);
     e.generation=21; handle_connection(&e); assert(finished==1);
+    s_ai_drain_started_ms=100;
+    handle_connection(&e); assert(finished==1); /* EOS tail survives transport close */
+    s_ai_drain_started_ms=0;
     finished=resumed=0;
     s_connection_generation=0;
     atomic_store(&s_public_state,STARTER_RUNTIME_WAITING);
@@ -651,6 +711,12 @@ int main(void) {
     binding_ready=false;e.flag=true;e.generation=23;
     handle_connection(&e);assert(rejected_connection==1 && media_started==1);
     e.generation=22;handle_connection(&e);assert(rejected_connection==1);
+    binding_ready=true; s_connection_generation=0; s_call_wechat=true;
+    atomic_store(&s_public_state,STARTER_RUNTIME_CALL_CONNECTING);
+    e=(runtime_event_t){.mode=STARTER_TIRTC_VOIP,.generation=24,.request_tag=s_session_generation,.flag=true};
+    handle_connection(&e);
+    assert(s_call_waiting_confirm && media_started==1 && ai_sent==1);
+    /* WeChat must still wait for its separate 0x2000 business confirmation. */
     return 0;
 }
 '''
@@ -700,7 +766,8 @@ int main(void) {
 def test_finish_pending_connect():
     body = r'''
 static uint32_t s_connection_generation;
-static int64_t s_deadline_ms, s_ai_start_at_ms;
+static uint32_t s_ai_drain_started_ms=123;
+static int64_t s_deadline_ms;
 static char s_ai_role_id[2], s_ai_request_id[2], s_call_room_id[2], s_call_peer_id[2];
 static char s_call_peer_name[2], s_call_wx_app_id[2], s_call_wx_model_id[2];
 static char s_call_connect_peer[2], s_call_connect_token[2], s_call_wx_session_token[2];
@@ -712,6 +779,7 @@ static atomic_int s_last_error;
 static bool pending=true, connected=false, platform_ready=true, h5_allowed;
 static bool platform_client_ready(void) {return platform_ready;}
 static unsigned disconnects;
+static void room_detach(int error) {(void)error;}
 static void diagnostic_event(const char *s,int e) {(void)s;(void)e;}
 static void starter_media_stop(void) {}
 static bool starter_tirtc_connected(void) {return connected;}
@@ -720,7 +788,7 @@ static void starter_tirtc_accept_h5(bool a) {h5_allowed=a;}
 static void product_snapshot_reset(void) {}
 static void product_set_call(bool a,bool b,const char*c,bool d) {(void)a;(void)b;(void)c;(void)d;}
 static void publish_state(starter_runtime_state_t s) {(void)s;}
-static void resume_mqtt_after_external_connect(void) {}
+static void restore_external_connect_memory(void) {}
 '''
     body += function("components/starter_runtime/src/starter_runtime.c", "finish_session")
     body += r'''
@@ -729,7 +797,7 @@ int main(void) {
     strcpy(s_call_room_recovery.room_id,"d_old");
     s_call_room_recovery.stage=4; s_call_room_recovery.attempted=true;
     finish_session(0);
-    assert(!pending && disconnects==1);
+    assert(!pending && disconnects==1 && s_ai_drain_started_ms==0);
     assert(!s_call_room_recovery.room_id[0] && !s_call_room_recovery.stage &&
            !s_call_room_recovery.attempted);
     pending=true;connected=true;finish_session(0);
@@ -769,6 +837,7 @@ int main(void) {
 
 
 if __name__ == "__main__":
+    test_external_connect_memory()
     test_finish_pending_connect()
     test_connection_lifecycle()
     test_call_signal_room_match()
@@ -781,7 +850,6 @@ if __name__ == "__main__":
     test_preroll_handoff()
     test_mqtt_lifetime()
     test_command_recovery()
-    test_logs()
     test_navigation_priority()
     test_stop_and_diagnostics()
     test_wake_diagnostics()

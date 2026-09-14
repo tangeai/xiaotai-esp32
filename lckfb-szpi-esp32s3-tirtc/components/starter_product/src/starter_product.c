@@ -36,6 +36,7 @@
 #include "freertos/task.h"
 #include "lvgl.h"
 #include "nvs.h"
+#include "nvs_worker.h"
 #include "platform_client.h"
 #include "starter_media.h"
 #include "starter_runtime.h"
@@ -48,13 +49,8 @@
 
 /* Presentation is shared; hardware, video ownership and DSP remain board-local. */
 #define PRODUCT_MODERN_UI 1
-#if PRODUCT_MODERN_UI
 LV_FONT_DECLARE(ui_font_cn_18);
 #define PRODUCT_TEXT_FONT ui_font_cn_18
-#else
-LV_FONT_DECLARE(ui_font_cn_16);
-#define PRODUCT_TEXT_FONT ui_font_cn_16
-#endif
 
 #define LCD_HOST SPI3_HOST
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -137,6 +133,7 @@ typedef enum {
     PAGE_CALL,
     PAGE_CALL_RESULT,
     PAGE_DIAGNOSTICS,
+    PAGE_ROOM,
 } product_page_t;
 
 typedef enum {
@@ -249,7 +246,7 @@ static starter_ai_ui_phase_t s_previous_ai_phase = STARTER_AI_UI_IDLE;
 static char s_previous_subtitle[193];
 static char s_rendered_expression[16];
 static char s_last_history_subtitle[193];
-static char s_ai_history[2048];
+static EXT_RAM_BSS_ATTR char s_ai_history[2048];
 #if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
 static char s_ai_display[2304];
 #endif
@@ -260,7 +257,8 @@ static uint8_t s_selected_contact;
 static uint8_t s_preview_emoji;
 static product_page_t s_network_back_page = PAGE_MENU;
 static uint8_t s_previous_contact_count;
-static starter_product_contact_t s_previous_contacts[STARTER_PRODUCT_CONTACTS_MAX];
+static EXT_RAM_BSS_ATTR starter_product_contact_t
+    s_previous_contacts[STARTER_PRODUCT_CONTACTS_MAX];
 static int64_t s_ui_refresh_slow_last_us;
 
 /* 当前页面对象只在 LVGL 任务内创建和访问。 */
@@ -358,65 +356,94 @@ static void note_interaction(void)
     }
 }
 
-static void preferences_save_task(void *argument)
+static esp_err_t preferences_write(const product_preferences_t *snapshot)
 {
-    (void)argument;
     nvs_handle_t nvs = 0;
-    if (nvs_open(PRODUCT_NVS, NVS_READWRITE, &nvs) != ESP_OK) {
-        vTaskDelete(NULL);
-        return;
+    esp_err_t err = nvs_open(PRODUCT_NVS, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        return err;
     }
-    (void)nvs_set_u8(nvs, "volume", s_preferences.volume);
-    (void)nvs_set_u8(nvs, "spk_mute", s_preferences.speaker_muted ? 1U : 0U);
-    (void)nvs_set_u8(nvs, "mic_mute", s_preferences.microphone_muted ? 1U : 0U);
-    (void)nvs_set_u8(nvs, "ack_voice", s_preferences.acknowledgement_male ? 1U : 0U);
-    (void)nvs_set_u8(nvs, "sleep", s_preferences.sleep_index);
-    (void)nvs_set_u8(nvs, "emoji", s_preferences.emoji_index);
-    (void)nvs_commit(nvs);
+    const struct {
+        const char *key;
+        uint8_t value;
+    } values[] = {
+        {"volume", snapshot->volume},
+        {"spk_mute", snapshot->speaker_muted ? 1U : 0U},
+        {"mic_mute", snapshot->microphone_muted ? 1U : 0U},
+        {"ack_voice", snapshot->acknowledgement_male ? 1U : 0U},
+        {"sleep", snapshot->sleep_index},
+        {"emoji", snapshot->emoji_index},
+    };
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+        err = nvs_set_u8(nvs, values[i].key, values[i].value);
+        if (err != ESP_OK) {
+            break;
+        }
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs);
+    }
     nvs_close(nvs);
-    vTaskDelete(NULL);
+    return err;
+}
+
+static esp_err_t preferences_write_job(void *data, size_t size)
+{
+    if (size != sizeof(product_preferences_t)) return ESP_ERR_INVALID_SIZE;
+    return preferences_write(data);
 }
 
 static void preferences_save(void)
 {
-    /* NVS may disable the flash cache; never call it from the PSRAM-backed
-     * LVGL task, whose stack is invalid while cache is disabled. */
-    (void)xTaskCreatePinnedToCore(preferences_save_task,
-                                  "product_nvs",
-                                  3072,
-                                  NULL,
-                                  1,
-                                  NULL,
-                                  0);
+    /* Only the LVGL owner submits preferences. Copy all fields before return;
+     * newer edits replace only the queued snapshot, never the in-flight write.
+     * UI/media changes stay immediate; persistence never blocks that owner. */
+    esp_err_t err = nvs_worker_submit_latest(preferences_write_job,
+                                              &s_preferences, sizeof(s_preferences));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "preferences save not queued: %s", esp_err_to_name(err));
+    }
+}
+
+static esp_err_t preferences_load_job(void *data, size_t size)
+{
+    if (size != sizeof(product_preferences_t)) return ESP_ERR_INVALID_SIZE;
+    product_preferences_t *snapshot = data;
+    nvs_handle_t nvs = 0;
+    esp_err_t err = nvs_open(PRODUCT_NVS, NVS_READONLY, &nvs);
+    if (err == ESP_OK) {
+        uint8_t value = 0;
+        if (nvs_get_u8(nvs, "volume", &value) == ESP_OK && value <= 10U) {
+            snapshot->volume = value;
+        }
+        if (nvs_get_u8(nvs, "spk_mute", &value) == ESP_OK) {
+            snapshot->speaker_muted = value != 0U;
+        }
+        if (nvs_get_u8(nvs, "mic_mute", &value) == ESP_OK) {
+            snapshot->microphone_muted = value != 0U;
+        }
+        if (nvs_get_u8(nvs, "ack_voice", &value) == ESP_OK) {
+            snapshot->acknowledgement_male = value != 0U;
+        }
+        if (nvs_get_u8(nvs, "sleep", &value) == ESP_OK &&
+            value < sizeof(s_sleep_minutes) / sizeof(s_sleep_minutes[0])) {
+            snapshot->sleep_index = value;
+        }
+        if (nvs_get_u8(nvs, "emoji", &value) == ESP_OK &&
+            value < sizeof(s_emoji_names) / sizeof(s_emoji_names[0])) {
+            snapshot->emoji_index = value;
+        }
+        nvs_close(nvs);
+    }
+    return err;
 }
 
 static void preferences_load(void)
 {
-    nvs_handle_t nvs = 0;
-    if (nvs_open(PRODUCT_NVS, NVS_READONLY, &nvs) == ESP_OK) {
-        uint8_t value = 0;
-        if (nvs_get_u8(nvs, "volume", &value) == ESP_OK && value <= 10U) {
-            s_preferences.volume = value;
-        }
-        if (nvs_get_u8(nvs, "spk_mute", &value) == ESP_OK) {
-            s_preferences.speaker_muted = value != 0U;
-        }
-        if (nvs_get_u8(nvs, "mic_mute", &value) == ESP_OK) {
-            s_preferences.microphone_muted = value != 0U;
-        }
-        if (nvs_get_u8(nvs, "ack_voice", &value) == ESP_OK) {
-            s_preferences.acknowledgement_male = value != 0U;
-        }
-        if (nvs_get_u8(nvs, "sleep", &value) == ESP_OK &&
-            value < sizeof(s_sleep_minutes) / sizeof(s_sleep_minutes[0])) {
-            s_preferences.sleep_index = value;
-        }
-        if (nvs_get_u8(nvs, "emoji", &value) == ESP_OK &&
-            value < sizeof(s_emoji_names) / sizeof(s_emoji_names[0])) {
-            s_preferences.emoji_index = value;
-        }
-        nvs_close(nvs);
-    }
+    esp_err_t err = nvs_worker_call(preferences_load_job, &s_preferences,
+                                     sizeof(s_preferences), NVS_WORKER_WAIT_MS);
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND)
+        ESP_LOGE(TAG, "preferences load failed: %s", esp_err_to_name(err));
     (void)starter_media_set_speaker_volume(s_preferences.volume);
     (void)starter_media_set_speaker_muted(s_preferences.speaker_muted);
     starter_media_set_microphone_muted(s_preferences.microphone_muted);
@@ -516,7 +543,7 @@ static bool page_ends_ai(product_page_t page)
 {
     return page == PAGE_CONTACTS || page == PAGE_CONTACT_DETAIL ||
            page == PAGE_EMOJIS || page == PAGE_EMOJI_PREVIEW ||
-           page == PAGE_SETTINGS || page == PAGE_NETWORK;
+           page == PAGE_SETTINGS || page == PAGE_NETWORK || page == PAGE_ROOM;
 }
 
 static bool enter_page(product_page_t page)

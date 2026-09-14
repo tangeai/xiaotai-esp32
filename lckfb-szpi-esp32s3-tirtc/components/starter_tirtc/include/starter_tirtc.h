@@ -26,6 +26,7 @@ typedef enum {
     STARTER_TIRTC_AI,      /**< AI WHIP 外连，只有音频。 */
     STARTER_TIRTC_VOIP,    /**< 微信 VoIP WHIP 语音连接。 */
     STARTER_TIRTC_CALL,    /**< 设备互呼 P2P 语音连接。 */
+    STARTER_TIRTC_ROOM,    /**< Room WHIP, stream 1, explicit join/PTT. */
 } starter_tirtc_mode_t;
 
 /** SDK 帧元数据的稳定副本；payload 不包含在该结构中。 */
@@ -132,6 +133,8 @@ uint32_t starter_tirtc_generation(void);
 
 /** Match legacy/raw and SDK-encoded AI signaling words without changing them. */
 bool starter_tirtc_is_ai_command(uint32_t command);
+bool starter_tirtc_is_room_command(uint32_t command);
+int starter_tirtc_room_connect(const char *peer_id, const char *token, uint32_t request_tag);
 
 /** 向当前连接发送控制命令。 */
 int starter_tirtc_send_command(uint32_t command,

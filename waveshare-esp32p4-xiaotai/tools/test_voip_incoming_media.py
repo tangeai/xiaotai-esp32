@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Verify actual shared WeChat parser against P4 and S3 capability contracts."""
+"""Verify the local WeChat parser's platform capability branches."""
 from pathlib import Path
 import subprocess
 import tempfile
 
 project = Path(__file__).resolve().parents[1]
-source = (project.parent / 'lckfb-szpi-esp32s3-tirtc/components/starter_runtime/src/starter_runtime.c').read_text(encoding='utf-8')
+source = (project / 'components/starter_runtime/src/starter_runtime.c').read_text(encoding='utf-8')
 start = source.index('static const char *wechat_incoming_room_type(')
 function = source[start:source.index('\n}', start) + 2]
 cjson = project / 'managed_components/espressif__cjson/cJSON'

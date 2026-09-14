@@ -1,81 +1,171 @@
-# P4 通信与媒体链路
+# 系统与媒体架构
 
-把一通视频电话拆开看：平台处理呼叫请求，TiRTC 连接双方并传送媒体，P4 采集、编解码和呈现音视频，C6 提供网络。还没跑过设备的话，先从 [README](../README.md) 开始；有了画面，再来追每一帧的去向。
+本文介绍小钛 P4 的代码分工和媒体流程，供修改功能、调参数和定位问题时查阅。构建输入见[版本与依赖](DEPENDENCIES.md)。
 
-## TiRTC 连接与收发
+## 代码分工
 
-| 阶段 | 代码里发生了什么 |
+| 模块 | 负责什么 |
 | --- | --- |
-| 上线 | 配网、校时、获取身份，设置选项后执行 `TiRtcInit()` 和 `TiRtcStart()`；收到 `TIRTC_EVENT_SYS_STARTED` 才进入就绪状态 |
-| 连接 | 设备主动呼叫用 `TiRtcConnect()`，AI/微信用 `TiRtcWhipConnect()`；H5 入站走 `on_conn_accepted`，连接结果由回调通知 |
-| 发送 | 采集编码后调用 `TiRtcSendAudioStream()` / `TiRtcSendVideoStream()`；每次交付完整帧，关键帧标记要对应实际视频内容 |
-| 接收 | `on_audio` / `on_video` 经 runtime 交给媒体模块，复制入队后分别播放声音、解码显示画面 |
-| 挂断 | runtime 停止本次媒体，SDK 适配层断开；generation（会话代次）检查挡住旧连接迟到的回调与帧 |
+| `main/xiaotai_main.c` | 初始化 NVS、媒体、UI、Wi-Fi，启动后台上线流程 |
+| `platform_client` / `runtime_config` / `wifi_manager` | 平台请求、身份保存、配网及 C6 Wi-Fi 接口 |
+| `nvs_store` | 公共异步读写队列、完成结果和内部 RAM 存储任务 |
+| `starter_runtime` | 协调 AI、设备呼叫、微信、多人对讲和 H5 会话，处理取消、挂断与事件 |
+| `starter_tirtc` | SDK 初始化、连接、回调、订阅和媒体发送 |
+| `starter_product` | LVGL 页面、字幕、表情及用户操作 |
+| `starter_voice` | 从处理后的 PCM 识别唤醒词 |
+| `starter_media` | I2S、AEC、增益、预录、音频发送与播放 |
+| `p4_hardware` | 摄像头、编解码、视频显示、码率调节及板级接口 |
 
-这张表对应同仓 [starter_tirtc.c](../../lckfb-szpi-esp32s3-tirtc/components/starter_tirtc/src/starter_tirtc.c)，P4 链接自己的 [TiRTC SDK](../components/tirtc_sdk/VERSION.md)。留意设置顺序：最大发送缓冲等全局选项放在 Init 前，设备身份放在 Start 前。
+业务和驱动通过各自队列传递事件。耗时网络请求不在 LVGL 锁中执行，音频采集也不直接调用 SDK。
 
-业务授权通过后，才进入 RTC 建连。WebRTC 接入由 TiRTC SDK 和平台完成，对端需匹配客户端与呼叫信令。本版 TGTRP 的码率建议由媒体任务应用到编码器，不在 SDK 回调里阻塞处理；这项能力也不代表所有传输模式都支持同样的反馈。
+旧 `main/app_main.c` 不参与产品启动，但 `p4_hardware` 仍引用 `main/` 中的硬件、摄像头、编解码和显示模块。具体范围见 [p4_hardware/CMakeLists.txt](../components/p4_hardware/CMakeLists.txt)。
 
-## 音频链路
+## 启动与绑定
+
+启动依次初始化 NVS、媒体、UI 和 Wi-Fi，再由后台等待联网、绑定及 TiRTC 就绪。DSP 和媒体池准备完成后才启动 ADC/DAC 与采集任务。
+
+六位码在临时 MQTT 订阅就绪后展示，不等待提示音结束。HTTP/MQTT 结果带身份代次，用于识别解绑前的旧响应；解绑由平台模块完成身份转换和持久化。
+
+UI 读取缓存的 Wi-Fi 状态，C6 RSSI 查询在绘图锁之外执行。视频呈现与业务页面分开刷新，表情只更新受影响的区域。
+
+## 多人对讲
+
+沿用现有 runtime 和 HTTP worker，不另建一套会话任务。平台的房间归属、TiRTC 连接成功和 `join_room` 应答分别处理；只有应答确认了会话与音频格式，才允许媒体收发。默认收听，按住按钮才发送 G.711A / 8 kHz / 单声道音频。
+
+- 房间归属通过 HTTP 查询或修改；成员快照与麦克风状态通过房间 JSON-RPC 命令通道处理。修改成功的回执不直接当作最新成员列表。
+- 页面读取非阻塞快照，每次显示 3 位成员。成员表和快照放在 PSRAM，固定上限 100 位；解析和消息大小有界，不随服务端列表无限扩容。
+- PTT 绑定连接代次。松手、失去触摸、离开页面、麦克风静音或连接结束立即撤销发送许可；重连不会自动恢复上一次按住状态。
+- 退出旧连接时保存房间 ID、关系版本和会话 ID，联网后先上报旧会话释放，再申请新连接。`200` 才计为释放确认；旧代次或房间已关闭的返回只说明该事务已过时，随后重新查询归属。
+- 多人对讲只在自己的房间页或输入页打开时工作。UI 导航发布前台开关，runtime 负责关闭属于 ROOM 的媒体连接；不停止共享 RTC 监听、永久 MQTT 或其他应用会话。开关带导航代次，快速返回再进入也必须释放旧连接。
+- 返回菜单保留房间关系，停止 PTT、收听、心跳、成员刷新和自动重连；已提交的释放事务或用户明确要求的退房事务仍完成收尾。再次进入先核对最新关系，再申请新连接。右上角“退出房间”调用持久 `leave` 接口，与返回时的 `presence/suspended` 不同。
+- 成员快照中本机的可选 `device_name` 用于显示平台名称；空字符串清除旧名称，字段缺失时保留当前身份已获名称，否则回退设备 ID。其他设备使用通讯录备注或设备 ID。“（本机）”单独绘制，长名称省略时标记仍可见。
+
+上述释放事务保存在易失性的 PSRAM，断电后不会保留；这时仍需按服务端租约处理。不能把可恢复的断网退出和突然断电视为同一种完成保证。
+
+代码：[房间状态机](../components/starter_runtime/src/starter_room.inc)、[房间页面](../components/starter_product/src/starter_product_room.inc)。
+
+## NVS 与信令常驻
+
+应用读写统一走 [nvs_store](../components/nvs_store/include/nvs_store.h)。启动时先初始化 NVS 分区，再启动唯一存储任务。`nvs_get_*` 同样可能触发 Flash 关缓存，不能在 PSRAM 任务中直接读取。
+
+- `nvs_store_submit` 复制参数后立即返回票据；入队成功不代表保存完成。调用方用 `take_result` 获取真实结果，或 `abandon` 放弃接收结果。
+- `read_async` 提交单键读取，`take_read_result` 在完成后复制结果；不会将调用方输出指针交给后台。启动加载使用有界等待接口 `read`，仍由内部存储任务执行。
+- UI 最多保留一个在途票据和一份最新设置，快速连续操作会合并尚未提交的值。每次写入使用独立快照，不读取正在变化的 UI 状态。
+- 配网和绑定使用 `execute`，由同一 worker 写入，调用方最多等待 5 秒；只有保存成功才继续流程。超时不撤销已接受的写入，也不会触发自动重试。
+- 池固定 8 槽，写入每批最多 8 项，读取每批一个键；数据最多 512 bytes。排队及待读取结果位于 PSRAM，worker 使用 3072-byte 内部栈和 728-byte 内部暂存区；同步控制块另算。
+- 保持现有 NVS 键和 Wi-Fi 单 blob 格式。多键保存并非原子事务，错误不能解释为数据已经回滚。队列满、写入失败和栈水位不足都会保留错误信息。
+
+异步接口减少业务任务的阻塞和内部栈需求，但不消除 Flash 操作本身的短时关缓存。其他任务是否能迁到 PSRAM，仍须检查其完整调用链，不能只看是否移除了 NVS 写入。
+
+音量与扬声器静音也使用非阻塞请求，但不由 NVS 任务操作硬件。现有音频输出任务在空闲时、或当前播放者在 PCM 块边界应用最新值；验证码和铃声每块 20 ms，仍保持完整的播放互斥。这样播报不会让 UI 等待扬声器锁。`starter_media_status()` 分开提供请求值、已应用值和硬件错误；硬件失败会记录错误并提示，不与保存成功混为一谈，也不自行无限重试。
+
+永久 MQTT 由平台身份生命周期管理。AI、普通呼叫、微信和多人对讲建连时，只归还预留的 17 KiB 连续内部块，不停止 MQTT；接听、挂断、解绑及成员变动仍通过原信令通道接收。后续预留块申请失败不阻断当前信令和媒体，但下一次建连仍须取得所需内存。
+
+## 音频采集
 
 ```text
-ES8311 MIC + DAC 回采参考
-  -> 16 kHz / 16 bit 两槽采集 -> ESP-SR MR AEC
-  -> 约 100 Hz 高通 -> AGC
-      -> 16 kHz PCM 给唤醒
-      -> 降采样至 8 kHz -> 预录/实时队列
-      -> 单次 +6 dB 限幅增益
-      -> G.711 A-law，20 ms 分包 -> TiRTC
+ES8311：MIC 槽 0 + DAC 回采参考槽 1
+    -> I2S1，16 kHz / 16 bit / 双声道同步读取
+    -> ESP-SR MR 回声消除
+    -> 约 100 Hz 高通 -> 数字自动增益
+    ├─ 16 kHz PCM -> 唤醒识别
+    └─ 抗混叠降采样至 8 kHz -> 预录 / 实时队列
+        -> rtc_audio_tx：额外 +6 dB 带限幅增益
+        -> G.711 A-law，20 ms 分包 -> TiRTC
 ```
 
-两个槽分别是麦克风与播放参考，构成 **MR**。参考告诉 AEC“扬声器正在播什么”，用于抑制回声；高通和 AGC 继续处理麦克风信号。发送走独立队列，上传增益不重复作用于唤醒输入。
+这里的双声道是“一路麦克风 + 一路参考”，硬件只有一个物理麦克风。参考用于告诉 AEC 扬声器正在播放什么。
 
-对应代码：[采集与发送](../components/starter_media/src/starter_media.c)、[AEC](../components/starter_media/src/starter_aec.c)、[高通](../components/starter_media/src/p4_capture_highpass.c)。
-
-下行从 TiRTC 回调复制到 RX 槽，解码进 PSRAM PCM 环，再以不超过 20 ms 的小块写入 I2S。RX 为 **32 × 1500 bytes**，PCM 环为 **8000 个 int16**，另有包结束位图。
-
-| 业务 | 初始预缓冲 | 调整范围 |
-| --- | --- | --- |
-| H5 / 微信 VoIP | 20 ms | 20–100 ms |
-| 设备呼叫 | 120 ms | 120–560 ms |
-| AI 对话 | 120 ms | 120–320 ms |
-
-网络到包忽快忽慢，播放需要尽量连续。控制器调节缓冲和播放速度，I2S 时钟保持不变；跨块保留重采样相位，结束时限时排空尾音，部分写入失败也不重播已写入的数据。表中数值是本机缓冲策略，通话延时和听感还要在实际对端检查。
-
-对应代码：[PCM 队列](../components/starter_media/src/p4_audio_playout.c)、[播放控制器](../components/starter_media/src/audio_playout_controller.c)。
-
-## 视频链路
-
-从这块板看，上行是发出去的画面，下行是收到的画面。**屏幕的 480×320 只决定本机怎样显示**，传输分辨率要按场景看：
-
-| 场景 | 上行配置 | 下行 |
-| --- | --- | --- |
-| H5 查看 | OV5647 1280×960，经 PPA 旋转为 H264 960×1280@15fps，目标 2 Mbps | 仅接收对讲音频 |
-| 微信视频 | H264 960×1280@15fps，目标 2 Mbps | MJPEG，经 JPEG 硬解、旋转和等比例裁切 |
-| 设备视频呼叫 | H264 384×256@12fps，目标 256 kbps | 受限 baseline H264，软件解码 |
-
-微信下行按 JPEG 每帧尺寸解码，上限为最长边 640、总像素 640×480；对端可发送较小画面。视频下行统一适配到 480×320 显示。
-
-AI 和纯语音会话不采集视频。入站池 **4×256 KiB** 与 RGB565 画布放在 PSRAM，编解码池另算。码率反馈由视频模块执行，实际帧率与码率要看运行计数。
-
-对应代码：[视频会话](../components/p4_hardware/p4_video.c)、[媒体参数](../main/media/media_tuning.h)、[下行呈现](../main/services/call_video_renderer.c)。
-
-## 代码入口
-
-| 要修改什么 | 入口 |
+| 处理 | 当前配置与修改要点 |
 | --- | --- |
-| SDK 初始化、连接与媒体帧 | [starter_tirtc 组件入口](../components/starter_tirtc/CMakeLists.txt) |
-| 呼叫与会话切换 | [starter_runtime 组件入口](../components/starter_runtime/CMakeLists.txt) |
-| 麦克风、编解码与扬声器 | [starter_media.c](../components/starter_media/src/starter_media.c) |
-| 摄像头、编码与显示 | [p4_hardware](../components/p4_hardware/CMakeLists.txt)，沿引用进入 `main/` 中的 camera_pipeline、media_governor 和 call_video_renderer |
-| 绑定、联系人与平台请求 | [platform_client 组件入口](../components/platform_client/CMakeLists.txt) |
-| 唤醒与界面 | [starter_voice](../components/starter_voice/CMakeLists.txt)、[starter_product](../components/starter_product/CMakeLists.txt) |
+| AEC | 16 kHz，`mic_num=1`、`ref_num=1`、`FD_LOW_COST`、`NLP AGGR`、`filter_length=4`；处理块大小从库查询 |
+| 高通 | 极点 `31506/32768`，保留跨帧状态，只处理 AEC 输出 |
+| AGC | 自动调节 AEC 后的人声电平；参考信号不参与增益 |
+| 上传增益 | 在发送任务中施加一次，覆盖实时和预录，不再次放大唤醒输入 |
+| 预录 | 带会话代次和中断状态，网络发送与 I2S 采集分开 |
 
-1.0.0 复用 S3 的业务与 UI，点进组件 CMake 可以找到实际源码；P4 的 SDK、驱动和媒体实现在本目录。改通话流程先看 runtime，改画面先看视频模块，网络等待留在 UI 任务之外。
+AEC 随采集初始化。原 Monitor AEC 开关不控制这条链路；调节应落在当前组件中。检查连续性时记录 I2S 溢出、处理耗时、预录缺口和发送丢弃，再结合双讲录音判断效果。
 
-## 移植到自己的板卡
+代码：[采集与发送](../components/starter_media/src/starter_media.c)、[AEC](../components/starter_media/src/starter_aec.c)、[通道定义](../components/starter_media/src/starter_aec.h)、[高通](../components/starter_media/src/p4_capture_highpass.c)。
 
-- **先换驱动，保留通信接口。** 媒体帧格式保持一致；SDK 回调数据需在返回前复制，会话代次检查也要保留，避免旧帧进入新通话。
-- **按用途分配内存。** 媒体帧、PCM 等大缓冲用 PSRAM；DMA、驱动与关缓存路径保留必要的内部 RAM。排障同时看空闲量和最大连续块。
-- **先确认网络硬件。** 本板通过 C6/ESP-Hosted 联网，SDIO 为 **4 线 40 MHz SDR**，不是 S3 的原生 Wi-Fi。适配修改见 [Hosted 说明](../components/espressif__esp_hosted/LOCAL_CHANGES.md)。
-- **带齐构建输入。** 保留同级 S3 和根 `common/`，但 SDK 与单麦 MR 配置用 P4 自己的版本。接着看[排障与验证](TESTING.md)和[版本与依赖](../VERSION.md)。
+## 音频播放
+
+```text
+TiRTC 音频回调
+    -> 编码帧接收槽，记录到包时间和会话代次
+    -> board_audio_rx 解码为 8 kHz 单声道 PCM
+    -> 归还接收槽 -> PSRAM PCM 环形缓冲
+    -> 按目标水位等待，每次最多消费 20 ms
+    -> 小幅重采样变速 -> 16 kHz 双声道 I2S -> 扬声器
+```
+
+解码后先归还接收槽，避免 I2S 等待占住网络接收空间。物理容量固定：
+
+| 缓冲 | 容量 |
+| --- | --- |
+| 编码帧接收槽 | 32 个，每槽 payload 最多 1500 bytes |
+| PCM 环 | 8000 个 int16，即 16000 bytes |
+| 包结束位图 | 1000 bytes |
+
+结构字段、队列控制块和分配开销另算。自适应调整的是“积累多少音频再播放”，不反复申请或释放队列。
+
+| 场景 | 策略 | 初始目标 | 调整范围 |
+| --- | --- | --- | --- |
+| H5 / 微信 | LOW_LATENCY | 20 ms | 20–100 ms |
+| 设备呼叫 / 多人对讲 | ADAPTIVE_CALL | 120 ms | 120–560 ms |
+| AI 对讲 | JITTER_SAFE | 120 ms | 120–320 ms |
+
+控制器根据媒体时间戳和到包间隔区分欠载、恢复突发和本地写入压力。接近欠载时可减速 1.2%，积压时可加速 1.2% 或 2.5%；重采样相位跨块连续，不改变 I2S 时钟。
+
+不足一块的尾音，在 120 ms 没有新包后允许排空。I2S 写入失败可能已输出部分数据，因此记录错误但不重播同块。流号变化只重置到包估计；新会话按代次隔离旧数据。应用按 SDK 交付顺序消费，不负责网络重传。
+
+表中数值是本地缓冲目标。端到端延时还包含网络、编解码、服务端和对端播放时间。
+
+代码：[PCM 容量](../components/starter_media/src/p4_audio_playout.h)、[消费逻辑](../components/starter_media/src/p4_audio_playout.c)、[自适应控制器](../components/starter_media/src/audio_playout_controller.c)。
+
+## 视频
+
+AI 和纯语音会话不启动摄像头；设备/微信视频按会话类型启动，H5 按查看流程启动。麦克风、摄像头和远端播放分别控制。关摄像头时先停发，再由视频任务停止硬件。
+
+| 场景 | 设备上行 | 设备下行 |
+| --- | --- | --- |
+| H5 / 微信 | OV5647 1280×960，经 PPA 逆时针旋转 90°，输出 H264 960×1280、15 fps，目标 2 Mbps | H5 对讲为音频；微信 MJPEG 顺时针旋转 90° 显示 |
+| 设备视频呼叫 | H264 384×256、12 fps，目标 256 kbps | 受限 baseline H264，呈现尺寸 480×320 |
+
+视频回调只复制和排队，后续分别解析、解码、转换、显示。入站池为 4×256 KiB PSRAM，显示画布为 480×320×2 = 307200 bytes；编解码帧池另算。
+
+P4 的 TiRTC 发送缓存上限设为 2 MiB，配置在 `main/xiaotai_main.c`；这是容量上限，不等于实时占用量。
+
+SDK 码率回调提交目标，由视频模块执行。实际码率、帧率和反馈是否生效需要运行时测量，不能由目标值推断。
+
+代码：[视频任务](../components/p4_hardware/p4_video.c)、[媒体参数](../main/media/media_tuning.h)、[视频呈现](../main/services/call_video_renderer.c)。
+
+## 内存与时序
+
+| 资源 | 当前分配 |
+| --- | --- |
+| 采集、播放、发送任务栈 | 各 6144 bytes，PSRAM |
+| p4_video_owner 栈 | 8192 bytes，PSRAM |
+| 铃声/提示音任务 | 8192-byte 静态 PSRAM 栈，340-byte 内部 TCB；启动创建后常驻 |
+| 热点 DNS、配网页 HTTP 任务 | 各 8192-byte 动态 PSRAM 栈，仅在热点配网期间存在 |
+| Wi-Fi 信号/重启任务 | 3072-byte 内部栈；同时执行配网保存后的重启，不迁入 PSRAM |
+| 业务会话、唤醒、HTTP 请求任务 | 分别为 24576、12288、13312-byte PSRAM 栈，创建后复用 |
+| 微信 WHIP 建连任务 | 24576-byte PSRAM 栈，按建连创建；完成后通过 `vTaskDeleteWithCaps` 回收 |
+| 启动任务 | 13312-byte 内部栈，完成绑定和 SDK 启动后退出；不作为稳态常驻开销 |
+| AEC 工作帧、算法、音频帧池、预录、PCM 环、视频帧 | PSRAM |
+| AEC 的 I2S 读取目标 | 对齐的内部 RAM 缓冲 |
+| DMA 描述符、驱动必需内存、队列/TCB、关缓存路径 | 保留内部 RAM 要求 |
+| esp-mqtt 自建任务 | 6144-byte 内部栈；当前客户端接口没有任务栈 caps 配置项 |
+| I2S DMA | 90 ms 容量 |
+
+PSRAM 用于较大的工作区，内部 RAM 留给驱动和实时约束。优化前区分总空闲内存、最大连续块和任务栈水位。DMA 容量只吸收短时波动，处理速度仍需跟上采样。
+
+分配方式按生命周期选择：NVS 槽和铃声栈为编译期静态存储；媒体、模型和 HTTP 请求池在启动阶段一次申请后复用；HTTP 临时响应和配网服务按需申请、由所属模块回收。音频收发队列只传槽索引，不在每帧路径反复申请大块内存。将所有缓存都改成静态常驻会挤占闲置场景的可用空间。
+
+PSRAM 栈与内部 TCB 分开分配。`WithCaps` 任务仍须用匹配的删除接口：热点 DNS 先关闭自己的 socket，再由配网生命周期调用者回收任务；停止超时保留句柄，不能直接释放正在运行的栈。IDF 的 `vTaskDeleteWithCaps(NULL)` 会临时创建内部清理任务，不能将它当成完全不占内部 RAM 的操作。
+
+`sdkconfig.defaults` 的 192 KiB 内部预留是限制普通 `malloc` 使用的堆池，不是额外丢失的 192 KiB。通用 `malloc`、LVGL/cJSON 和 SDK 内部小对象仍受分配器策略影响；“优先 PSRAM”不等于“强制 PSRAM”。上述表格记录显式分配与已核对的客户端任务，不代表第三方库每个动态对象的实时位置。
+
+C6 关闭 modem sleep 并回读检查。SDIO 使用 4 线 40 MHz SDR；当前驱动不能把 50 MHz 当作同模式加速选项。RPC 按请求 UID 和响应类型匹配，初始化失败由所属模块回收资源，详见 [Hosted 修正](../components/espressif__esp_hosted/LOCAL_CHANGES.md)。
+
+修改后的验证顺序见[测试与排障](TESTING.md)。

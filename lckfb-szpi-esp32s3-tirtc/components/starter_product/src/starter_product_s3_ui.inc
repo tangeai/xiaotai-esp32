@@ -26,6 +26,14 @@ enum {
     S3_ACTION_QR_CLOSE,
     S3_ACTION_WIFI_DISCONNECT,
     S3_ACTION_BINDING_RETRY,
+    S3_ACTION_ROOM,
+    S3_ACTION_ROOM_BACK,
+    S3_ACTION_ROOM_CREATE,
+    S3_ACTION_ROOM_JOIN,
+    S3_ACTION_ROOM_LEAVE,
+    S3_ACTION_ROOM_PREVIOUS,
+    S3_ACTION_ROOM_NEXT,
+    S3_ACTION_ROOM_REFRESH,
 };
 
 /* UI-only state belongs in external RAM; it is never used with cache off. */
@@ -443,15 +451,17 @@ static void s3_render_home(lv_obj_t *screen)
     lv_obj_move_foreground(s3_ui.wechat_button);
 }
 
+#include "starter_product_s3_room.inc"
+
 static void s3_render_menu(lv_obj_t *screen)
 {
     s3_header(screen, "更多功能", ACTION_HOME);
-    (void)make_button(screen, "通讯录", 8, 50, 304, 48, ACTION_CONTACTS);
-    (void)make_label(screen, "设备", 12, 109, 280, lv_color_hex(S3_MUTED));
-    (void)make_button(screen, "设备设置", 8, 134, 148, 44, ACTION_SETTINGS);
-    (void)make_button(screen, "待机表情", 164, 134, 148, 44, ACTION_EMOJIS);
-    (void)make_button(screen, "网络信息", 8, 186, 148, 44, ACTION_NETWORK);
-    (void)make_button(screen, "运行状态", 164, 186, 148, 44, ACTION_DIAGNOSTICS);
+    (void)make_button(screen, "通讯录", 8, 46, 304, 42, ACTION_CONTACTS);
+    (void)make_button(screen, "多人对讲", 8, 94, 304, 42, (product_action_t)S3_ACTION_ROOM);
+    (void)make_button(screen, "设备设置", 8, 142, 148, 42, ACTION_SETTINGS);
+    (void)make_button(screen, "待机表情", 164, 142, 148, 42, ACTION_EMOJIS);
+    (void)make_button(screen, "网络信息", 8, 190, 148, 42, ACTION_NETWORK);
+    (void)make_button(screen, "运行状态", 164, 190, 148, 42, ACTION_DIAGNOSTICS);
 }
 
 static void s3_render_contacts(lv_obj_t *screen)
@@ -667,6 +677,10 @@ static void s3_render_emojis(lv_obj_t *screen)
 
 static void s3_reset_page(void)
 {
+    s3_room_navigation();
+    s3_room_release();
+    s3_room.keyboard = NULL;
+    s3_room.active_input = NULL;
     /* Top-layer toast and pending runtime intent survive page replacement. */
     if (s3_ui.toast && s_page == PAGE_CALL) lv_obj_add_flag(s3_ui.toast, LV_OBJ_FLAG_HIDDEN);
     s3_ui.caption_panel = NULL;
@@ -694,6 +708,7 @@ static bool s3_render_page(lv_obj_t *screen)
     case PAGE_HOME_FACE:
     case PAGE_HOME_CLOCK: s3_render_home(screen); break;
     case PAGE_MENU: s3_render_menu(screen); break;
+    case PAGE_ROOM: s3_room_render(screen); break;
     /* Old navigation intents now lead to the single home conversation view. */
     case PAGE_AI_CHAT: s_page = PAGE_HOME_FACE; s3_render_home(screen); break;
     case PAGE_SETTINGS: s3_render_settings(screen); break;
@@ -779,6 +794,7 @@ static bool s3_handle_action(product_action_t action)
     }
     /* Also reject clicks queued from a page that disappeared on Wi-Fi loss. */
     if (!wifi_manager_connected()) return true;
+    if (s3_room_action(action)) return true;
     starter_runtime_status_t runtime = starter_runtime_status();
     bool ai = runtime.state == STARTER_RUNTIME_AI_ACTIVE || runtime.state == STARTER_RUNTIME_AI_CONNECTING;
     if ((unsigned)action == S3_ACTION_QR_CLOSE) {
@@ -873,9 +889,49 @@ static bool s3_handle_action(product_action_t action)
     return true;
 }
 
+/* Header and hint share the same idle predicate. Room/call ownership must
+ * never look wake-ready while the hint correctly remains hidden. */
+static void s3_refresh_home_status(starter_runtime_status_t runtime,
+                                   const starter_runtime_product_snapshot_t *product,
+                                   bool ai_pending)
+{
+    bool idle = runtime.state == STARTER_RUNTIME_WAITING && !ai_pending;
+    const char *state;
+    if (idle) {
+        state = s_voice_feedback[0] ? s_voice_feedback :
+            s_preferences.microphone_muted ? "麦克风关闭" : "待唤醒";
+    } else if (ai_pending) {
+        state = (unsigned)s3_ui.pending_action == S3_ACTION_AI_STOP ? "结束对话中" : "正在连接 AI";
+    } else {
+        switch (runtime.state) {
+        case STARTER_RUNTIME_H5_ACTIVE: state = "远程查看中"; break;
+        case STARTER_RUNTIME_AI_CONNECTING: state = "正在连接 AI"; break;
+        case STARTER_RUNTIME_AI_ACTIVE: state = phase_text(product->ai_phase); break;
+        case STARTER_RUNTIME_CALL_INCOMING: state = "语音来电"; break;
+        case STARTER_RUNTIME_CALL_CONNECTING: state = "正在建立通话"; break;
+        case STARTER_RUNTIME_CALL_ACTIVE: state = "通话中"; break;
+        case STARTER_RUNTIME_ROOM_CONNECTING: state = "正在加入房间"; break;
+        case STARTER_RUNTIME_ROOM_ACTIVE: state = "房间对讲中"; break;
+        default: state = "状态同步中"; break;
+        }
+    }
+    label_set_text_if_changed(s_state, state);
+    if (idle) {
+        label_set_text_if_changed(s3_ui.wake_hint, s_preferences.microphone_muted ?
+            "麦克风已关闭\n点击表情唤醒对话" :
+            "尝试说“你好小钛”\n或者点击表情唤醒对话");
+        lv_obj_clear_flag(s3_ui.wake_hint, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s3_ui.caption_panel, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s3_ui.wake_hint, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s3_ui.caption_panel, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void s3_refresh_ui(int64_t now, starter_runtime_status_t runtime,
                           const starter_runtime_product_snapshot_t *product)
 {
+    s3_room_refresh(now, product);
     bool pending = s3_ui.pending_until > now && s3_ui.pending_state == runtime.state;
     if (!pending) s3_ui.pending_action = 0;
     if (s3_ui.toast && now >= s3_ui.toast_until)
@@ -887,25 +943,7 @@ static void s3_refresh_ui(int64_t now, starter_runtime_status_t runtime,
     if (s_page == PAGE_HOME_FACE || s_page == PAGE_HOME_CLOCK) {
         bool ai_pending = pending && (s3_ui.pending_action == ACTION_AI ||
                                      (unsigned)s3_ui.pending_action == S3_ACTION_AI_STOP);
-        const char *state = ai_pending ? ((unsigned)s3_ui.pending_action == S3_ACTION_AI_STOP ?
-            "结束对话中" : "正在连接 AI") :
-            runtime.state == STARTER_RUNTIME_H5_ACTIVE ? "远程查看中" :
-            runtime.state == STARTER_RUNTIME_AI_CONNECTING ? "正在连接 AI" :
-            ai ? phase_text(product->ai_phase) :
-            s_voice_feedback[0] ? s_voice_feedback :
-            s_preferences.microphone_muted ? "麦克风关闭" : "待唤醒";
-        label_set_text_if_changed(s_state, state);
-        bool idle = runtime.state == STARTER_RUNTIME_WAITING && !ai_pending;
-        if (idle) {
-            label_set_text_if_changed(s3_ui.wake_hint, s_preferences.microphone_muted ?
-                "麦克风已关闭\n点击表情唤醒对话" :
-                "尝试说“你好小钛”\n或者点击表情唤醒对话");
-            lv_obj_clear_flag(s3_ui.wake_hint, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(s3_ui.caption_panel, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(s3_ui.wake_hint, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(s3_ui.caption_panel, LV_OBJ_FLAG_HIDDEN);
-        }
+        s3_refresh_home_status(runtime, product, ai_pending);
         if (!ai && !ai_pending) {
             if (lv_label_get_text(s_subtitle)[0] != '\0') lv_label_set_text_static(s_subtitle, "");
         } else {

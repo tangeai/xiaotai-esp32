@@ -1,12 +1,10 @@
 """Exercise P4 sample chronology and allocation contracts, not acoustic quality."""
-import ast
 from pathlib import Path
 import re
 import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-shared = root.parent / 'lckfb-szpi-esp32s3-tirtc'
 media = (root / 'components/starter_media/src/starter_media.c').read_text(encoding='utf-8')
 aec = (root / 'components/starter_media/src/starter_aec.c').read_text(encoding='utf-8')
 init = media[media.index('esp_err_t starter_media_init(void)'):media.index('i2c_master_bus_handle_t starter_media_i2c_bus')]
@@ -35,10 +33,8 @@ assert 'starter_agc_boost_uplink(item->pcm, AUDIO_PACKET_SAMPLES)' in uplink
 assert 'TX gain failed: %s' in uplink and 'ready = false;' in uplink
 
 # Reuse the dependency stub, but execute the P4 conditional branch of real AGC code.
-tree = ast.parse((shared / 'tools/test_audio_boot_gain.py').read_text(encoding='utf-8'))
-prefix = next(ast.literal_eval(n.value) for n in tree.body
-              if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'prefix' for t in n.targets))
-source = (shared / 'components/starter_media/src/starter_agc.c').read_text(encoding='utf-8')
+from audio_agc_fixture import prefix
+source = (root / 'components/starter_media/src/starter_agc.c').read_text(encoding='utf-8')
 source = re.sub(r'^#include[^\n]*\n', '', source, flags=re.M)
 test = r'''
 int main(void) {
@@ -89,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix='p4-audio-') as tmp:
     (p/'agc.c').write_text(prefix+source+test, encoding='utf-8')
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
                     '-DCONFIG_IDF_TARGET_ESP32P4=1','-DCONFIG_XIAOTAI_CAPTURE_AGC_GAIN_DB=9',
-                    '-I'+str(shared/'components/starter_media/src'),str(p/'agc.c'),'-o',str(p/'agc')],check=True)
+                    '-I'+str(root/'components/starter_media/src'),str(p/'agc.c'),'-o',str(p/'agc')],check=True)
     subprocess.run([str(p/'agc')],check=True)
 
     loops = re.findall(r'    for \(size_t i = 0; i < (?:mono_samples|chunk_samples); \+\+i\) \{.*?\n    \}', media, re.S)

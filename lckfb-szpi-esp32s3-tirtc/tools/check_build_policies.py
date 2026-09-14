@@ -271,7 +271,7 @@ def time_sync(c):
            'ESP_SNTP_SERVER_LIST("ntp.aliyun.com", "pool.ntp.org")', "esp_netif_sntp_sync_wait")
     c.need("defaults", "CONFIG_LWIP_SNTP_MAX_SERVERS=2")
     c.need("main", "NTP_SYNC_BACKGROUND_TASK", 'setenv("TZ", "CST-8", 1)',
-           "xTaskCreate(starter_start_task", "temporarily disable the flash cache")
+           "xTaskCreateStaticPinnedToCore(starter_start_task", "nvs_worker_init()")
 
 
 def tirtc_startup_order(c):
@@ -296,10 +296,13 @@ def realtime_connect_memory(c):
     lines = c.text("runtime").splitlines()
     require(sum(bool(re.search(r"starter_tirtc_(ai|voip|call)_connect\(", s)) for s in lines) == 3,
             "unexpected number of TiRTC external-connect call sites")
-    require(sum(bool(re.search(r"if \(!suspend_mqtt_for_external_connect\(\)\)", s)) for s in lines) == 3,
-            "every TiRTC external connect must first suspend MQTT")
+    require(sum(bool(re.search(r"if \(!prepare_external_connect_memory\(\)\)", s)) for s in lines) == 3,
+            "every TiRTC external connect must check memory and release its reserve")
     c.need("runtime", "VOIP_CONNECT_TASK_STACK_BYTES (24U * 1024U)",
-           "xTaskCreateWithCaps(voip_connect_task", "resume_mqtt_after_external_connect();",
+           "xTaskCreateWithCaps(voip_connect_task", "restore_external_connect_memory();",
+           "EXTERNAL_CONNECT_MQTT_FREE_BYTES (64U * 1024U)",
+           "EXTERNAL_CONNECT_MQTT_LARGEST_BYTES (32U * 1024U)",
+           "s_external_connect_reserve_loaned", "platform_client_mqtt_connected()",
            "EXTERNAL_CONNECT_RESERVE_BYTES (17U * 1024U)",
            "starter_runtime_arm_external_connect_reserve();", "heap_caps_free(s_external_connect_reserve);")
     c.need("platform", "esp_mqtt_client_stop(mqtt)", "esp_mqtt_client_destroy(mqtt)")
@@ -477,6 +480,20 @@ def downlink_audio(c):
     c.need("console", "Downlink: decoded=")
 
 
+def lvgl_pool_placement(c):
+    if c.elf is None:
+        return
+    sizes = re.findall(r"^CONFIG_LV_MEM_SIZE_KILOBYTES=(\d+)$", c.text("resolved"), re.M)
+    require(len(sizes) == 1, "LVGL fixed pool size is missing from sdkconfig")
+    pools = re.findall(r"^([0-9a-fA-F]+)\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
+                       r"work_mem_int(?:[.$][^\s]*)?$", c.symbols("-S"), re.M)
+    require(len(pools) == 1, "cannot identify the linked LVGL fixed pool")
+    address, size = (int(value, 16) for value in pools[0])
+    require(0x3C000000 <= address and address + size <= 0x3E000000,
+            "LVGL fixed pool must be linked into S3 PSRAM")
+    require(size == int(sizes[0]) * 1024, "linked LVGL pool differs from sdkconfig size")
+
+
 def memory_placement(c):
     for name in ("defaults", "resolved"):
         for config in ("CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y",
@@ -486,12 +503,62 @@ def memory_placement(c):
             require(config in c.text(name).splitlines(), f"{c.path(name)} must contain {config}")
     c.need("main", "heap_caps_register_failed_alloc_callback(allocation_failed)", "platform_client_run_request_loop()",
            "#defineSTARTER_TASK_STACK_BYTES13312U",
-           'xTaskCreate(starter_start_task,"starter_start",STARTER_TASK_STACK_BYTES,NULL,4,NULL)',
-           "temporarilydisabletheflashcache",
-           'xTaskCreateWithCaps(platform_request_task,"platform_http",PLATFORM_REQUEST_TASK_STACK_BYTES,NULL,4,NULL,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)',
-           "platformrequestloopmovedtoPSRAM", compact=True)
-    c.need("runtime", 'xTaskCreateWithCaps(runtime_task,"starter_session",RUNTIME_TASK_STACK_BYTES,NULL,6,&s_task,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)', compact=True)
+           'xTaskCreateStaticPinnedToCore(starter_start_task,"platform_main",STARTER_TASK_STACK_BYTES,NULL,4,s_start_stack,&s_start_tcb,tskNO_AFFINITY)',
+           "staticEXT_RAM_BSS_ATTRStackType_ts_start_stack[STARTER_TASK_STACK_BYTES/sizeof(StackType_t)]",
+           "staticDRAM_ATTRStaticTask_ts_start_tcb", "platform_request_task(NULL)", compact=True)
+    c.need("runtime", 'xTaskCreateWithCaps(runtime_task,"starter_session",RUNTIME_TASK_STACK_BYTES,NULL,6,&task,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)', compact=True)
+    c.need("main", "platform task PSRAM stack remaining=%u bytes")
+    c.forbid("main", "starter task internal stack|PLATFORM_REQUEST_TASK_STACK_BYTES")
     c.need("product", ".task_stack_caps=MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT", compact=True)
+    c.need("CMakeLists.txt", "starter_enable_lvgl_psram_pool()")
+    c.need("cmake/lvgl_psram_pool.cmake", "TARGET_DIRECTORY", "COMPILE_DEFINITIONS",
+           "LV_ATTRIBUTE_LARGE_RAM_ARRAY=EXT_RAM_BSS_ATTR")
+    for declaration in (
+            "starter_runtime_product_snapshot_t s_product_snapshot",
+            "char s_call_connect_peer", "char s_call_connect_token",
+            "char s_call_wx_session_token", "char s_call_wx_payload"):
+        c.need("runtime", "static EXT_RAM_BSS_ATTR " + declaration)
+    c.need("runtime",
+           "event->text=heap_caps_malloc(length+1U,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",
+           "voip_connect_request_t*request=heap_caps_calloc(1,sizeof(*request),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",
+           "ai_credentials_t*credentials=heap_caps_calloc(1,sizeof(*credentials),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",
+           compact=True)
+    c.need("product", "static EXT_RAM_BSS_ATTR char s_ai_history",
+           "static EXT_RAM_BSS_ATTR starter_product_contact_t")
+    save = line_range(c.text("product"), r"^static void preferences_save\(void\)", r"^}")
+    require("nvs_worker_submit_latest(preferences_write_job," in save and "&s_preferences" in save and
+            "xTaskCreate" not in save, "settings must reuse the latest-snapshot writer")
+    writer = line_range(c.text("product"), r"^static esp_err_t preferences_write\(", r"^}")
+    require("s_preferences." not in writer and "err = nvs_commit(nvs)" in writer,
+            "NVS must write an owned snapshot and check commit failures")
+    c.need("product", "preferences save not queued: %s", "nvs_worker_call(preferences_load_job")
+    c.need("components/nvs_worker/src/nvs_worker.c",
+           "static EXT_RAM_BSS_ATTR nvs_job_t s_jobs[NVS_WORKER_SLOTS]",
+           "static DRAM_ATTR StackType_t s_stack", "#define NVS_WORKER_STACK_BYTES 4096U",
+           'xTaskCreateStaticPinnedToCore(worker_task, "nvs_worker"',
+           "job->abandoned = true", "job->state == SLOT_QUEUED")
+    c.need("components/nvs_worker/include/nvs_worker.h", "#define NVS_WORKER_SLOTS 4U",
+           "#define NVS_WORKER_DATA_BYTES 512U")
+    c.need("wifi", "config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", "config.stack_size = 8192")
+    for adapter in ("load_credentials_job", "save_credentials_job", "forget_credentials_job"):
+        c.need("wifi", "nvs_worker_call(" + adapter)
+    for adapter in ("load_tirtc_job", "save_tirtc_job", "clear_tirtc_job"):
+        c.need("components/runtime_config/src/runtime_config.c", "nvs_worker_call(" + adapter)
+    boot = line_range(c.text("main"), r"^void app_main\(void\)", r"^}")
+    require(boot.index("init_nvs();") < boot.index("nvs_worker_init()") < boot.index("starter_product_start()"),
+            "NVS worker must be ready before any adapters")
+    startup = line_range(c.text("runtime"), r"^esp_err_t starter_runtime_start\(", r"^}")
+    require("xTaskCreateWithCaps(" in startup and "starter_tirtc_set_handlers(" in startup,
+            "cannot locate runtime task/callback startup")
+    require(startup.index("xTaskCreateWithCaps(") < startup.index("starter_tirtc_set_handlers("),
+            "runtime callbacks must not publish partially initialized resources")
+    require("vSemaphoreDelete(mutex)" in startup and "vQueueDelete(queue)" in startup and
+            startup.index("vSemaphoreDelete(mutex)") < startup.index("s_product_mutex = mutex"),
+            "runtime failure must release only unpublished resources")
+    require(startup.index("platform_client_set_online_handler(") < startup.index("xTaskNotifyGive(task)"),
+            "runtime worker must wait for complete initialization")
+    c.need("runtime", "ulTaskNotifyTake(pdTRUE, portMAX_DELAY)")
+    lvgl_pool_placement(c)
     c.need("button", 'xTaskCreateWithCaps(button_task,"ai_button",BUTTON_TASK_STACK_BYTES,NULL,BUTTON_TASK_PRIORITY,&s_button_task,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)', compact=True)
     require("xTaskCreate(request_task" not in c.compact("platform"), "platform must not create another request task")
     c.need("platform", "heap_caps_calloc(PLATFORM_REQUEST_QUEUE_DEPTH,sizeof(*s_request_pool),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",

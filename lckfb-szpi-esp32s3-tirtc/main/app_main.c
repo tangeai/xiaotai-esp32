@@ -16,6 +16,7 @@
 #include <time.h>
 
 #include "esp_app_desc.h"
+#include "esp_attr.h"
 #include "esp_chip_info.h"
 #include "esp_heap_caps.h"
 #include "esp_idf_version.h"
@@ -28,6 +29,7 @@
 #include "freertos/idf_additions.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "nvs_worker.h"
 #include "platform_client.h"
 #include "runtime_config.h"
 #include "starter_button.h"
@@ -44,13 +46,14 @@
 #define DISCOVERY_URL CONFIG_XIAOTAI_DISCOVERY_URL
 #define START_RETRY_DELAY_MS 5000U
 #define STARTER_TASK_STACK_BYTES 13312U
-#define PLATFORM_REQUEST_TASK_STACK_BYTES 13312U
 #define VERIFICATION_PROMPT_REPEAT_COUNT 3U
 #define VERIFICATION_PROMPT_GAP_MS 350U
 #define TIRTC_INTERNAL_RESERVE_BYTES (20U * 1024U)
 
 static const char *TAG = "starter_main";
-static runtime_tirtc_config_t s_tirtc_config;
+static EXT_RAM_BSS_ATTR runtime_tirtc_config_t s_tirtc_config;
+static EXT_RAM_BSS_ATTR StackType_t s_start_stack[STARTER_TASK_STACK_BYTES / sizeof(StackType_t)];
+static DRAM_ATTR StaticTask_t s_start_tcb;
 static void *s_tirtc_internal_reserve;
 static char s_station_mac[18];
 static esp_err_t rebind_platform(bool *binding_restored);
@@ -98,8 +101,8 @@ static void log_heap_snapshot(const char *stage)
 }
 
 /*
- * 启动任务必须使用内部栈，因为它会读 NVS；平台已上线后，长期 HTTP 循环
- * 不再触碰 NVS/模型分区，迁到 PSRAM 栈，归还 TiRTC 外连需要的连续内部堆。
+ * 启动和长期 HTTP 循环共用 PSRAM 栈。NVS adapter 只复制请求并等待内部
+ * 存储任务的结果，不在这个栈上执行 Flash 操作；签名重绑保持已有身份。
  */
 static void platform_request_task(void *argument)
 {
@@ -362,7 +365,7 @@ static void starter_start_task(void *argument)
                        default_client_id);
     }
     ESP_LOGI(TAG,
-             "starter task internal stack remaining=%u bytes",
+             "platform task PSRAM stack remaining=%u bytes",
              (unsigned)uxTaskGetStackHighWaterMark(NULL));
 
     /*
@@ -505,20 +508,10 @@ static void starter_start_task(void *argument)
                 }
             }
             log_heap_snapshot("pre-platform-worker");
-            if (xTaskCreateWithCaps(platform_request_task,
-                                    "platform_http",
-                                    PLATFORM_REQUEST_TASK_STACK_BYTES,
-                                    NULL,
-                                    4,
-                                    NULL,
-                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) ==
-                pdPASS) {
-                ESP_LOGI(TAG,
-                         "platform request loop moved to PSRAM; releasing "
-                         "cache-safe startup stack");
-                break;
-            }
-            ESP_LOGE(TAG, "cannot create PSRAM platform request task");
+            /* Reuse the boot-owned PSRAM task instead of allocating a second
+             * stack during the busiest connection phase. This loop stays here. */
+            platform_request_task(NULL);
+            break;
         }
         ESP_LOGW(TAG, "startup incomplete; retrying in %u ms", START_RETRY_DELAY_MS);
         vTaskDelay(pdMS_TO_TICKS(START_RETRY_DELAY_MS));
@@ -542,6 +535,7 @@ void app_main(void)
     /* app_main 保持短小且不等待网络，耗时启动工作交给 starter_start_task。 */
     ESP_ERROR_CHECK(heap_caps_register_failed_alloc_callback(allocation_failed));
     init_nvs();
+    ESP_ERROR_CHECK(nvs_worker_init());
     if (setenv("TZ", "CST-8", 1) != 0) {
         ESP_LOGW(TAG, "cannot configure Asia/Shanghai timezone");
     }
@@ -577,20 +571,16 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_manager_start());
     log_heap_snapshot("post-wifi-start");
     /* NTP_SYNC_BACKGROUND_TASK: SNTP/HMAC waits never block app_main or LVGL. */
-    /* This worker reads/writes NVS and loads the model partition. Both paths
-     * temporarily disable the flash cache, so ESP-IDF requires an internal
-     * stack even when external task stacks are otherwise enabled. */
-    if (xTaskCreate(starter_start_task,
-                    "starter_start",
-                    STARTER_TASK_STACK_BYTES,
-                    NULL,
-                    4,
-                    NULL) != pdPASS) {
+    /* NVS adapters execute on nvs_worker's internal stack. Voice initializes
+     * its model in its own worker. Startup and HTTP share this PSRAM stack;
+     * the TCB remains internal and no heap stack is allocated at connection. */
+    if (xTaskCreateStaticPinnedToCore(starter_start_task,
+                    "platform_main", STARTER_TASK_STACK_BYTES, NULL, 4,
+                    s_start_stack, &s_start_tcb, tskNO_AFFINITY) == NULL) {
         ESP_LOGE(TAG, "cannot create startup task");
     }
     /*
-     * Wi-Fi and starter_start own long-lived internal stacks. Reserve the
-     * TiRTC bootstrap block only after both allocations have succeeded; the
+     * Reserve the TiRTC bootstrap block after Wi-Fi resources are ready; the
      * startup task is still waiting for a station IP at this point.
      */
     s_tirtc_internal_reserve = heap_caps_malloc(

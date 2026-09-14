@@ -1,5 +1,7 @@
-# 静态文字资源
+# 旧静态文字资源
 
-本目录保留早期界面的文字图片及关联源码。当前小钛 UI 使用共享 `starter_product` 与字体绘制，不以旧 `main/ui/display.c` 为界面入口。
+本目录保存旧 Monitor 的 Figma 文字图片及来源。小钛当前产品 UI 由共享的 starter_product 及字体实现，不以旧 `main/ui/display.c` 作为界面入口。
 
-动态中文、字幕和联系人名称的当前实现见 [系统与媒体架构](../../../../docs/P4_MEDIA_ARCHITECTURE.md)。修改资源前先核对 CMake、include 和嵌入符号的实际引用。
+旧生成流程已移到仓外历史资料，其脚本不作为当前可用命令。本次不删除、不重绘、不替换这些静态图片。
+
+动态中文、字幕、联系人名称的当前入口见[媒体与产品架构](../../../../docs/P4_MEDIA_ARCHITECTURE.md)。清理旧资源必须先检查实际 CMake/include/嵌入资源依赖，不能仅凭目录名称删除。

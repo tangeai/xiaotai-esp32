@@ -151,6 +151,17 @@ esp_err_t platform_client_request_timeout(platform_service_t service,
                                           platform_response_callback_t callback,
                                           void *user_data);
 
+/**
+ * 仅用于联系人/配置等元数据更新；回调不得触发实时连接或依赖 HTTP 资源已释放。
+ * 队列内有后续请求时允许短暂复用连接，空闲不保留；timeout_ms=0 使用默认值。
+ * AI token、入会及其他业务操作继续使用上面的默认接口，回调前先释放 HTTP。
+ */
+esp_err_t platform_client_request_metadata(platform_service_t service,
+                                           const char *path, const char *json_body,
+                                           unsigned timeout_ms,
+                                           platform_response_callback_t callback,
+                                           void *user_data);
+
 /** 注册永久 MQTT 的信令消费者；应在 platform_client_start() 前调用。 */
 void platform_client_set_signal_handler(platform_signal_callback_t callback,
                                         void *user_data);

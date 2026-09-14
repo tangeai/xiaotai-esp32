@@ -14,6 +14,8 @@ code = r'''
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdatomic.h>
+static atomic_int s_mode = 5;
 static char output[256];
 static const char *TAG = "test";
 static void capture(const char *tag, const char *format, ...) {
@@ -23,6 +25,7 @@ static void capture(const char *tag, const char *format, ...) {
     va_end(args);
 }
 #define ESP_LOGE capture
+#define ESP_LOGI capture
 #define ESP_LOGD(...) ((void)0)
 ''' + source[start:end] + r'''
 int main(void) {
@@ -58,6 +61,13 @@ int main(void) {
     assert(sdk_start_failure_code(not_terminated, sizeof(not_terminated), &http)==503);
     for (size_t n=0;n<11;++n)
         assert(sdk_start_failure_code(not_terminated, n, &http)==0);
+    const char *tgtrp="prefix peer_connection_tgtrp_init ok ice=secret mtu=1200";
+    sdk_log(tgtrp,strlen(tgtrp));assert(!strcmp(output,"SDK NET init=tgtrp mode=5"));
+    const char *kcp="peer_connection_kcp_init ikcp_nodelay(1 20 2 1) private";
+    sdk_log(kcp,strlen(kcp));assert(!strcmp(output,"SDK NET init=kcp mode=5"));
+    output[0]=0;sdk_log(tgtrp,10);assert(!output[0]);
+    assert(!sdk_log_contains(NULL,20,"needle"));
+    assert(!sdk_log_contains("short",2049,"needle"));
     return 0;
 }
 '''

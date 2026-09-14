@@ -58,10 +58,12 @@ const char *wifi_manager_provisioning_url(void);
 /** 面向本地配网页的可理解状态，不包含 Wi-Fi 密码。 */
 const char *wifi_manager_provisioning_status(void);
 
-/** 从 wifi_cfg 命名空间加载配置；失败时清空输出结构。 */
+/** 从 wifi_cfg 加载完整记录；仅在无新记录时读取旧 SSID/password；失败清空输出。 */
 esp_err_t wifi_manager_load_credentials(wifi_manager_credentials_t *credentials);
 
-/** 校验并提交 Wi-Fi 配置到 NVS；调用后不会自动重启。 */
+/** 用单条版本化记录更新整组配置；调用后不会自动重启。
+ *  返回错误不保证 NVS 回滚，但不会分两次写入 SSID/password。
+ *  Flash/NVS 由内部 RAM 栈的 nvs_worker 执行；调用方可使用 PSRAM 栈。 */
 esp_err_t wifi_manager_save_credentials(const char *ssid, const char *password);
 
 /** 删除 Wi-Fi NVS 配置；调用后不会自动重启。 */

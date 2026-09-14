@@ -11,6 +11,12 @@ MultiNet, SPIFFS loader, L1-L5 gates, or recognizer lifecycle was imported.
 `../model/` is the user's `docs/nihaoxiaotai_v9.3_voice_tflite` model/head,
 not the example Hey Robot assets. Both were copied byte-for-byte.
 
-The inspected upstream and model package did not include a license grant.
-This records provenance, not a new license. Confirm redistribution/commercial
-authorization with the provider before distributing a product.
+At the original import review, the inspected upstream and model package did not
+include a license grant. That is a historical provenance observation, not the
+current project's authorization status.
+
+The project owner has confirmed that the currently bundled source subset and
+model may be redistributed under MIT. See [the project authorization scope](../../../THIRD_PARTY.md).
+This owner-provided authorization applies to the bundled assets; it does not
+change the upstream repository's license or cover future assets. Existing
+copyright notices and provenance are retained.

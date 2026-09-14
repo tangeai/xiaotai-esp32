@@ -1,6 +1,7 @@
 #pragma once
 
-/* 设备应用版本信息。发布新版本时先更新这里，再同步 README 和 VERSION。 */
+/* Legacy Monitor metadata. The current Xiaotai application version comes from
+ * PROJECT_VER in the root CMakeLists.txt via esp_app_get_description(). */
 
 #define APP_DEMO_NAME "TiRTC ESP32-P4 Device App"
 #define APP_DEMO_VERSION "1.5.3"

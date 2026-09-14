@@ -65,8 +65,8 @@ static int platform_client_request_timeout(int service, const char *path, const 
  last_stage=(unsigned)(uintptr_t)tag&255;
  return submission_error;
 }
-static bool suspend_mqtt_for_external_connect(void) { return true; }
-static void resume_mqtt_after_external_connect(void) {}
+static bool prepare_external_connect_memory(void) { return true; }
+static void restore_external_connect_memory(void) {}
 static int starter_tirtc_call_connect(const char *id, const char *token, uint32_t g) {
  (void)id; (void)token; (void)g; return 0;
 }

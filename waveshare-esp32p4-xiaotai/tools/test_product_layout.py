@@ -5,8 +5,8 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-source = (root.parent / "lckfb-szpi-esp32s3-tirtc/components/starter_product/src/starter_product.c").read_text(encoding="utf-8")
-background = (root.parent / "lckfb-szpi-esp32s3-tirtc/components/starter_product/src/starter_product_p4_background.inc").read_text(encoding="utf-8")
+source = (root / "components/starter_product/src/starter_product.c").read_text(encoding="utf-8")
+background = (root / "components/starter_product/src/starter_product_p4_background.inc").read_text(encoding="utf-8")
 start = source.index("static lv_coord_t product_x(")
 end = source.index("#define lv_obj_set_pos product_set_pos", start)
 body = r'''
@@ -119,7 +119,7 @@ assert "p4_video_ui_tick(lv_scr_act(), s_page == PAGE_CALL)" in video_tick
 assert source.count("p4_video_ui_tick(") == 1
 assert "lv_timer_create(product_tick, 100, NULL)" in source
 assert "lv_timer_create(product_video_tick, 10, NULL)" in source
-ui = (root.parent / "lckfb-szpi-esp32s3-tirtc/components/starter_product/src/starter_product_s3_ui.inc").read_text(encoding="utf-8")
+ui = (root / "components/starter_product/src/starter_product_s3_ui.inc").read_text(encoding="utf-8")
 home = ui[ui.index("static void s3_render_home("):ui.index("static void s3_render_menu(")]
 draw = ui[ui.index("static void s3_draw_wechat("):ui.index("static lv_obj_t *s3_scroller(")]
 refresh = ui[ui.index("static void s3_refresh_ui(int64_t now,"):]
@@ -173,7 +173,7 @@ assert '#if CONFIG_IDF_TARGET_ESP32P4 && PRODUCT_MODERN_UI\n    p4_home_backgrou
 assert 'MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT' in background
 assert 'if (s_p4_home_background.pixels == NULL)' in background
 assert 'lv_timer_create' not in background and 'xTaskCreate' not in background
-face = (root.parent / "lckfb-szpi-esp32s3-tirtc/components/starter_product/src/starter_product_s3_face.inc").read_text(encoding="utf-8")
+face = (root / "components/starter_product/src/starter_product_s3_face.inc").read_text(encoding="utf-8")
 assert 'const lv_color_t background = product_face_background_color();' in face
 assert 'lv_color_mix(lv_color_hex(rgb), product_face_background_color(),' in face
 print("PASS: P4 geometry, two-line caption tail, home controls and video cadence")

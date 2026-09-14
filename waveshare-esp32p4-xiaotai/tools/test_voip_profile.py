@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-source = (root.parent / "lckfb-szpi-esp32s3-tirtc/components/starter_runtime/src/starter_runtime.c").read_text()
+source = (root / "components/starter_runtime/src/starter_runtime.c").read_text()
 start = source.index("static void request_voip_profile(void)")
 profiles = re.findall(r"static const char profile\[\] =\s*(.*?);", source[start:], re.S)
 def decode(text):

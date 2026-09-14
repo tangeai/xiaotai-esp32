@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 # Diagnostic firmware identity. Keep this explicit so ESP-IDF embeds the same
 # human-readable version in the app descriptor and bootloader startup output.
-set(PROJECT_VER "1.0.0")
+set(PROJECT_VER "1.1.0")
 
 # 生成器把 SDK 复制到 third_party/tirtc，使生成工程可以离开本仓库独立构建。
 # 高级用户仍可通过 -DTIRTC_SDK_DIR=<path> 指向另一份兼容 SDK。
@@ -14,6 +14,12 @@ project(lckfb_szpi_esp32s3_tirtc)
 
 include(cmake/tflm_conv_channels.cmake)
 starter_enable_tflm_conv_channels()
+
+include(cmake/mqtt_psram_buffers.cmake)
+starter_enable_mqtt_psram_buffers()
+
+include(cmake/lvgl_psram_pool.cmake)
+starter_enable_lvgl_psram_pool()
 
 # This Kconfig symbol is hidden when trace support is off, so confgen omits its
 # explicit "not set" line even though the value is correct. Device Kit Doctor

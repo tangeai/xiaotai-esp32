@@ -18,6 +18,10 @@ assert '.post_level = {highpass_level, gain_level}' in process
 assert 'EXT_RAM_BSS_ATTR capture_post_diagnostics_t s_capture_post_acc, s_capture_post_diag' in media
 capture = media[media.index('static void audio_capture_task('):media.index('static bool buffer_audio_item(')]
 assert '"CP ' not in capture  # Printing must never block the acquisition owner.
+diagnostics = media[media.index('static void playout_diagnostics('):media.index('static void audio_sink_task(')]
+assert diagnostics.index('capture = s_capture_post_diag;') < diagnostics.index('uint32_t capture_age_ms =')
+assert 'capture_age_ms = (uint32_t)(esp_timer_get_time() / 1000) - capture.at_ms;' in diagnostics
+assert '(now_ms - capture.at_ms)' not in diagnostics
 
 code = r'''
 #include "p4_capture_highpass.h"

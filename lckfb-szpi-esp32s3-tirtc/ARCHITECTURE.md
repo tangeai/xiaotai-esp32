@@ -1,52 +1,99 @@
-# S3 通信与媒体链路
+# 架构与代码入口
 
-把一通电话拆开看：平台处理呼叫请求，TiRTC 连接双方并传送声音，设备完成采集和播放。还没跑过设备的话，先从 [README](README.md) 开始；听到声音后，再来追它经过了哪些函数。
+先按[开发指南](docs/GETTING_STARTED_CN.md)跑通功能，再从下面的表格定位修改位置。本页描述当前 S3 的模块边界和数据流，运行条件见[已知限制](KNOWN_LIMITATIONS.md)。
 
-## TiRTC 连接与收发
+## 要改什么，去哪里找
 
-| 阶段 | 代码里发生了什么 |
-| --- | --- |
-| 上线 | 配网、校时、获取身份，设置选项后执行 `TiRtcInit()` 和 `TiRtcStart()`；收到 `TIRTC_EVENT_SYS_STARTED` 才进入就绪状态 |
-| 连接 | 设备主动呼叫用 `TiRtcConnect()`，AI/微信用 `TiRtcWhipConnect()`；H5 入站走 `on_conn_accepted`，连接结果由回调通知 |
-| 发送 | `starter_media` 采集编码，经 `starter_tirtc_send_alaw()` 调用 `TiRtcSendAudioStream()`；帧描述中的格式、时间戳和长度要对应实际数据 |
-| 接收 | `on_audio` 经 runtime 交给 `starter_media_submit_audio()`，复制数据后由播放任务处理 |
-| 挂断 | runtime 停止本次媒体，SDK 适配层断开；generation（会话代次）检查挡住旧连接迟到的回调与音频包 |
+以下组件都位于 `components/`。
 
-这张表对应 [starter_tirtc.c](components/starter_tirtc/src/starter_tirtc.c)；参数说明在随包 [tiRTC.h](third_party/tirtc/include/tirtc/tiRTC.h)。留意设置顺序：最大发送缓冲等全局选项放在 Init 前，设备身份放在 Start 前。
+| 需求 | 主要入口 | 职责 |
+| --- | --- | --- |
+| 启动、绑定流程 | [main/app_main.c](main/app_main.c) | 初始化、身份检查、异步平台请求 |
+| 保存设备身份 | [runtime_config](components/runtime_config/include/runtime_config.h) | 校验并持久化 TiRTC 凭据；不处理 Wi-Fi |
+| NVS 执行与异步保存 | [nvs_worker](components/nvs_worker/include/nvs_worker.h) | 持有请求副本，串行执行存储；区分入队、完成与超时 |
+| 配网、重连 | [wifi_manager](components/wifi_manager/include/wifi_manager.h) | Wi-Fi 凭据、STA 重连、热点 HTTP/DNS |
+| 平台接口、联系人 | [platform_client](components/platform_client/include/platform_client.h) | 服务发现、绑定、MQTT、联系人及呼叫 API |
+| SDK 连接与回调 | [starter_tirtc](components/starter_tirtc/include/starter_tirtc.h) | SDK 生命周期、订阅和事件转换 |
+| 会话切换、呼叫状态 | [starter_runtime](components/starter_runtime/include/starter_runtime.h) | AI、H5、设备、微信与多人对讲的业务仲裁及状态快照 |
+| 多人对讲 | [starter_room.inc](components/starter_runtime/src/starter_room.inc)、[房间页面](components/starter_product/src/starter_product_s3_room.inc) | 房间归属、连接、成员、租约及按住讲话 |
+| 采集、AEC、播放 | [starter_media](components/starter_media/include/starter_media.h) | Codec/I2S、AFE、增益、收发与播放队列 |
+| 唤醒识别 | [starter_voice](components/starter_voice/include/starter_voice.h) | 音频窗口、模型推理、唤醒意图 |
+| 页面、字幕、表情 | [starter_product](components/starter_product/src/starter_product.c) | LCD、触摸、LVGL 对象、背光 |
+| BOOT、开发命令 | `starter_button`、`starter_console` | 向 runtime 提交操作；开发控制台默认关闭 |
 
-业务授权通过后，才进入 RTC 建连。WebRTC 接入以及本版 TGTRP/KCP 传输适配由 SDK 处理，应用统一调用 TiRTC API。接自己的 Web 或手机端时，还需对齐客户端和呼叫信令；“支持 WebRTC”本身不等于已经接通。
+## 操作如何到达界面
 
-## 音频链路
-
-```text
-上行：ES7210 -> 双麦 + 播放回采参考 -> AFE -> 单声道 PCM
-      -> 8 kHz G.711 A-law -> TiRTC -> 对端
-下行：对端 -> TiRTC 回调 -> PSRAM 缓冲 -> 解码与播放控制
-      -> I2S -> ES8311 -> 扬声器
+```mermaid
+flowchart LR
+    Input["触摸 / BOOT / 唤醒"] --> Runtime["runtime 会话仲裁"]
+    Cloud["平台 / TiRTC 事件"] --> Runtime
+    Runtime --> Session["连接 / 收发 / 挂断"]
+    Runtime --> Snapshot["状态快照"]
+    Session --> Snapshot
+    Snapshot --> UI["product 更新界面"]
 ```
 
-ES7210 四槽数据重排为 **MMR**：两路麦克风加一路播放参考。参考告诉 AEC“扬声器正在播什么”，用于抑制声音回到麦克风后形成的回声；AGC 再调整增益。双麦处理后的输出是**单声道**，其中 16 kHz PCM 用于唤醒，通信上行转为 8 kHz。
+UI 提交意图并显示快照，不在点击回调中等待网络。网络回调需要异步处理数据时，先复制有效载荷，不能保留 SDK 的临时指针。
 
-网络到包不总是匀速，播放却需要连续。下行用 **32 × 1500 bytes** 的槽池暂存数据，预缓冲从 **200 ms** 起、在 **60–500 ms** 内调整，播放速度微调约 **±0.625%**。这些数值是本机播放策略，不是端到端延时承诺。
+AI、H5、设备和微信通话共用音频资源。人际通话可抢占 AI/H5；人际通话之间按忙线、接听状态处理。重复挂断需要幂等，同一连接不能由两个退出入口重复释放。
 
-采集和 AFE 常驻，挂断只停止本次传输与播放，下一次唤醒仍需要麦克风。双讲、底噪和唤醒效果要用真实声音检查。
+多人对讲同样复用这套 RTC 和音频资源，只在房间页面打开期间连接。返回菜单停止收发、断连并释放租约，保留服务端房间归属；“退出房间”才调用解除归属接口。房间页面不直接操作 SDK，也不创建独立的采集或播放任务。
 
-## 代码入口
+音频帧携带会话代次（epoch）。静音或切换会话后，消费端丢弃旧代次数据，避免上一通电话的尾音进入下一通。重启后若平台返回 `40202/data.room_id`，按返回房间及当前角色处理遗留业务房间。
 
-| 要修改什么 | 入口 |
+## 启动、配网与绑定
+
+```text
+NVS 执行器 → 配置加载 → 音频资源就绪 → Wi-Fi / UI
+                             ↓
+                         联网 → 发现 / 绑定 → TiRTC 就绪
+```
+
+采集、AFE 和媒体工作任务常驻。结束通话停止该会话的传输与播放，不反复销毁整个采集链。
+
+NVS 执行器使用 4096 B 内部任务栈，四个请求槽的载荷放在 PSRAM，每槽最多 512 B。同步调用返回完成结果；异步偏好保存只合并同类待处理快照，不覆盖正在写入的数据。入队成功不等于持久化完成，调用超时也不等于已回滚正在执行的写入。
+
+| 网络情况 | 设备行为 |
 | --- | --- |
-| SDK 初始化、连接与媒体帧 | [starter_tirtc](components/starter_tirtc/src/starter_tirtc.c) |
-| 呼叫与会话切换 | [starter_runtime](components/starter_runtime/src/starter_runtime.c) |
-| 麦克风、编解码与扬声器 | [starter_media](components/starter_media/src/starter_media.c) |
-| 绑定、联系人、平台请求 | [platform_client](components/platform_client/) |
-| 启动、配网与身份保存 | [app_main.c](main/app_main.c)、[wifi_manager](components/wifi_manager/)、[runtime_config](components/runtime_config/) |
-| 唤醒与界面 | [starter_voice](components/starter_voice/)、[starter_product](components/starter_product/) |
+| 没有保存凭据 | 开放热点，停留在配网页 |
+| 已保存网络暂时不可用 | 退避重连，间隔上限 30 秒；连续 5 次失败后同时开放热点 |
+| 用户主动断开 | 本次开机暂停回连，开放热点；保留凭据供下次启动使用 |
+| 已获得 IP | 退出配网 HTTP/DNS/AP，继续平台连接 |
 
-想改通话流程，从 runtime 开始；想改声音，从 media 开始。UI 只读取状态并绘制页面，网络等待和媒体发送留给对应任务，避免一次慢请求卡住屏幕。
+SSID 和密码保存为同一条版本化 NVS 记录。配网页先确认常驻 `wifi_signal` 任务可处理重启，再保存并提交重启通知；浏览器关闭不撤销已接纳的操作。格式迁移和失败语义见[配网兼容说明](KNOWN_LIMITATIONS.md#配网与版本迁移)。
 
-## 移植到自己的板卡
+绑定提示音与身份状态分开处理。有效绑定确认会取消后续播报；正在下载提示音时，取消检查仍受下载返回时机约束。
 
-- **先换驱动，保留通信接口。** 音频帧格式保持一致；SDK 回调数据需在返回前复制，异步任务才能继续使用。设备/微信会抢占 AI/H5，代次检查也要保留。
-- **按用途分配内存。** DMA、驱动和 NVS/Flash 关缓存路径有内部 RAM 要求，不能全部搬进 PSRAM。
-- **带齐构建输入。** 保留 SDK 配置、`components/starter_voice/model/` 与根 `common/models/`。1.0.0 的 P4 还引用 S3 业务、字体和提示音。
-- **按真实麦克风布置配置 AFE。** S3 的双麦 MMR 与 P4 的单麦加参考 MR 不可互换。接入生产环境前，阅读[排障与安全说明](KNOWN_LIMITATIONS.md)。
+## 音频经过哪些节点
+
+```text
+ES7210：MIC1 + MIC2 + MIC3 电气回采
+  → 重排为 MMR → ESP-SR 双麦 AFE → 单声道 PCM / AGC
+  ├─ 16 kHz 唤醒识别
+  └─ 8 kHz、20 ms G.711A → TiRTC
+
+TiRTC 下行
+  → PSRAM 固定池 → 自适应缓冲 → 解码 / 跨包 PCM
+  → 微幅调速 → 有界 I2S 写入 → ES8311 / 扬声器
+```
+
+双麦进入算法，唤醒和上行使用处理后的单声道。应用按 SDK 回调顺序消费，不自行实现网络重传或乱序重排。
+
+修改采集、播放或提示音时，重点检查帧连续性、参考信号时序、输出锁和会话代次。参数变更应同时回归 AI、H5、设备、微信及多人对讲。
+
+## 页面与字幕
+
+首页布局位于 [starter_product_s3_ui.inc](components/starter_product/src/starter_product_s3_ui.inc)，表情绘制位于 [starter_product_s3_face.inc](components/starter_product/src/starter_product_s3_face.inc)。
+
+- 同页状态变化更新现有对象，不反复创建整页。
+- 文本先按协议合并，再裁成最新两行显示。ASR 快照替换当前话语；TTS 按模式和话语编号合并。
+- 图标大小与触摸区域分开设置；音量、挂断等动作通过异步入口处理。
+- 表情使用参数化实心图形、缓动和眨眼，保持 RGB565 字节序一致。
+
+## 构建与资源约束
+
+本工程自带 SDK、模型和资源，不读取其他平台目录。下载依赖按 `dependencies.lock` 锁定。
+
+`cmake/tflm_conv_channels.cmake` 修正锁定 TFLM 版本的卷积通道字段，使 S3 使用预期的加速路径；它会校验源文件哈希，升级依赖时需重新审查。
+
+普通工作池和适合的任务栈使用 PSRAM；DMA、实时控制及 Flash 受限调用保留必要内部 RAM。链接后的 Python 检查会核对部分资源和调用约束，不能代替运行时栈余量与连续通话测试。

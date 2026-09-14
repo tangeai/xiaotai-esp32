@@ -1,12 +1,58 @@
-/build*/
+/build/
 /managed_components/
 /sdkconfig
 /sdkconfig.old
+
+# Local firmware snapshots are generated deliverables, not source files.
+# Publish firmware separately as release attachments; never force-add it here.
+/artifacts/
+
+# Local editor configuration and private development output.
 /.vscode/
+/.idea/
 /.clangd
-/.local/
-/AGENTS.md
-**/__pycache__/
+/.cache/
+/logs/
+/captures/
+/release_assets/
+/firmware/
+*.log
 *.bin
 *.elf
 *.map
+*.zip
+*.tgz
+*.tar.gz
+__pycache__/
+*.pyc
+/build-*/
+/build_*/
+
+# Local-only working notes, private scaffolding and transient host output.
+/.local/
+/.codex/
+/.pytest_cache/
+/.mypy_cache/
+/.ruff_cache/
+/.coverage
+/htmlcov/
+/compile_commands.json
+*.o
+*.obj
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Retired private UART/HIL tools: keep them outside the source repository.
+/tools/check_ai_connect_hil.py
+/tools/check_voice_boot_hil.py
+/tools/check_wake_acoustic_hil.py
+/tools/hitl_downlink_audio_status.py
+/tools/monitor_device.py
+/tools/serial_console_command.py
+
+# Superseded shell adapters; use tools/check_build_policies.py directly.
+/tools/check_*_policy.sh
+/tools/check_i2c_driver_family.sh

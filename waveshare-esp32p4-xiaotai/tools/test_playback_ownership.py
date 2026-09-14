@@ -1,4 +1,5 @@
 """Reproduce prompt/call scratch-buffer contention using the actual RX function."""
+import argparse
 from pathlib import Path
 import subprocess
 import tempfile
@@ -6,9 +7,17 @@ import sys
 
 root = Path(__file__).resolve().parents[1]
 relative = 'components/starter_media/src/starter_media.c'
-if '--baseline' in sys.argv:
-    source = subprocess.check_output(['git','show','HEAD:waveshare-esp32p4-xiaotai/'+relative],
-                                     cwd=root,text=True)
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--baseline', type=Path, metavar='SOURCE_FILE',
+                    help='Explicit historical source containing play_audio_item; never infer it from HEAD')
+args = parser.parse_args()
+if args.baseline is not None:
+    try:
+        source = args.baseline.read_text(encoding='utf-8')
+    except (OSError, UnicodeError) as error:
+        parser.error(f'cannot read baseline source: {error}')
+    if 'static bool play_audio_item(' not in source:
+        parser.error('baseline must contain the historical play_audio_item implementation')
 else:
     source = (root/relative).read_text(encoding='utf-8')
     start = source.index('static esp_err_t play_audio_chunk(')
@@ -33,6 +42,7 @@ static struct {
     struct {struct {unsigned local_wait_ms;} window;} queue;
 } s_playout={.mode=1,.generation=7};
 static atomic_bool s_speaker_muted;
+static atomic_bool s_active=true;
 static atomic_uint s_audio_write_failed,s_audio_playback_blocked;
 static bool s_amp_enabled=true,busy=true,locked;
 static void *s_speaker_dev=(void*)1;
@@ -49,6 +59,9 @@ static int xSemaphoreTake(int mutex,int timeout) {
     locked=true; return 1;
 }
 static void xSemaphoreGive(int mutex) {assert(mutex==1 && locked);locked=false;}
+/* Control policy is covered by test_speaker_controls.py; this suite checks
+ * that applying it never escapes the existing PCM owner's lock. */
+static void apply_speaker_controls_locked(bool active) {assert(locked && active);}
 static int esp_codec_dev_write(void *dev,const void *data,size_t bytes) {
     assert(dev==(void*)1 && locked && data==s_play_stereo && bytes==32); ++writes; return 0;
 }

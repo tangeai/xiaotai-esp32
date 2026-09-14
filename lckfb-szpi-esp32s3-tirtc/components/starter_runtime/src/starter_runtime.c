@@ -40,6 +40,7 @@
 
 #define RUNTIME_QUEUE_DEPTH 12U
 #define RUNTIME_TEXT_MAX 4096U
+#define RUNTIME_ROOM_TEXT_MAX 32768U
 /*
  * AI token/command JSON handling and call signalling share this state-owner
  * task.  Hardware high-water telemetry reached 428 bytes with the former
@@ -49,13 +50,18 @@
 #define RUNTIME_TASK_STACK_BYTES 24576U
 #define VOIP_CONNECT_TASK_STACK_BYTES (24U * 1024U)
 #define EXTERNAL_CONNECT_RESERVE_BYTES (17U * 1024U)
+/* Measured S3 connections retain >90 KiB internal free after setup. Keep a
+ * conservative admission floor while the 17 KiB reserve is still held; an
+ * offline/reconnecting MQTT client or tighter heap uses the pressure path.
+ * These are headroom limits, not an exact SDK allocation-size contract. */
+#define EXTERNAL_CONNECT_MQTT_FREE_BYTES (64U * 1024U)
+#define EXTERNAL_CONNECT_MQTT_LARGEST_BYTES (32U * 1024U)
 #define AI_PEER_ID_MAX 1024U
 #define AI_TOKEN_MAX 1024U
 #define AI_COMMAND 0x2100U
 #define AI_REQUEST_TIMEOUT_MS 17000
 #define AI_CONNECT_TIMEOUT_MS 12000
 #define AI_RESPONSE_TIMEOUT_MS 10000
-#define AI_START_SETTLE_MS 300
 #define CALL_PENDING_TIMEOUT_MS 45000
 #define CALL_CONNECT_TIMEOUT_MS 30000
 #define VOIP_CONNECTED_WAIT_TIMEOUT_MS 35000
@@ -86,6 +92,8 @@ typedef enum {
     EVENT_CALL_CAMERA,
     EVENT_CALL_HTTP,
     EVENT_CONTACT_QUERY_RESULT,
+    EVENT_ROOM_INTENT,
+    EVENT_ROOM_HTTP,
 } runtime_event_type_t;
 
 typedef enum {
@@ -106,8 +114,14 @@ typedef struct {
     starter_tirtc_mode_t mode;  /* 事件所属 H5/AI 模式。 */
     uint32_t generation;        /* TiRTC 连接代次。 */
     uint32_t request_tag;       /* 发起 AI 请求时的业务会话代次。 */
-    uint32_t platform_epoch;    /* Reject HTTP/MQTT data from a previous owner. */
-    uint32_t command;           /* TiRTC 命令号。 */
+    union {
+        uint32_t platform_epoch; /* HTTP/MQTT binding ownership. */
+        uint32_t received_at_ms; /* EVENT_COMMAND only; same event size. */
+    };
+    union {
+        uint32_t command;       /* TiRTC command or CALL_HTTP stage. */
+        uint32_t queued_at_ms;  /* EVENT_AI_TOKEN only; no event size increase. */
+    };
     uint32_t length;            /* text 有效字节数，不含结尾 NUL。 */
     bool flag;                  /* started/connected 等布尔结果。 */
     int error;                  /* ESP-IDF 或 TiRTC 错误码。 */
@@ -129,10 +143,11 @@ typedef struct {
 } voip_connect_request_t;
 
 static const char *TAG = "starter_runtime";
-static QueueHandle_t s_queue;
-static TaskHandle_t s_task;
-static SemaphoreHandle_t s_product_mutex;
-static starter_runtime_product_snapshot_t s_product_snapshot;
+static _Atomic(QueueHandle_t) s_queue;
+static _Atomic(TaskHandle_t) s_task;
+static _Atomic(SemaphoreHandle_t) s_product_mutex;
+/* Payloads are task-context data; synchronization and ISR state stay internal. */
+static EXT_RAM_BSS_ATTR starter_runtime_product_snapshot_t s_product_snapshot;
 /* Do not enlarge the by-value status snapshot or any task's internal stack. */
 static EXT_RAM_BSS_ATTR starter_runtime_caption_t s_caption;
 static void *s_external_connect_reserve;
@@ -142,10 +157,11 @@ static char s_device_id[65];
 static char s_ai_role_id[65];
 static char s_ai_request_id[24];
 static int64_t s_deadline_ms;
-static int64_t s_ai_start_at_ms;
+static uint32_t s_ai_drain_started_ms;
 static uint32_t s_session_generation;
 static uint32_t s_connection_generation;
 static bool s_mqtt_suspended_for_connect;
+static bool s_external_connect_reserve_loaned;
 static int64_t s_mqtt_resume_due_ms;
 static char s_call_room_id[129];
 /* A reboot loses the local room, not the server's device-room lock. Recovery
@@ -160,10 +176,10 @@ static char s_call_peer_id[65];
 static char s_call_peer_name[65];
 static char s_call_wx_app_id[65];
 static char s_call_wx_model_id[65];
-static char s_call_connect_peer[AI_PEER_ID_MAX];
-static char s_call_connect_token[AI_TOKEN_MAX];
-static char s_call_wx_session_token[257];
-static char s_call_wx_payload[513];
+static EXT_RAM_BSS_ATTR char s_call_connect_peer[AI_PEER_ID_MAX];
+static EXT_RAM_BSS_ATTR char s_call_connect_token[AI_TOKEN_MAX];
+static EXT_RAM_BSS_ATTR char s_call_wx_session_token[257];
+static EXT_RAM_BSS_ATTR char s_call_wx_payload[513];
 static char s_call_id[65];
 static bool s_call_wechat;
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -194,6 +210,7 @@ static atomic_int s_last_error;
 static portMUX_TYPE s_diagnostic_lock = portMUX_INITIALIZER_UNLOCKED;
 static starter_runtime_diagnostics_t s_diagnostics;
 static int64_t s_diagnostic_ai_started_ms;
+static EXT_RAM_BSS_ATTR uint32_t s_ai_rpc_sent_ms;
 
 static void diagnostic_event(const char *label, int value)
 {
@@ -227,6 +244,7 @@ void starter_runtime_diagnostics(starter_runtime_diagnostics_t *out)
  */
 static atomic_bool s_transport_recovery_required;
 static atomic_bool s_platform_reconcile_required;
+static void room_detach(int error);
 
 static void product_snapshot_reset(void)
 {
@@ -457,10 +475,13 @@ static bool copy_event_text(runtime_event_t *event,
 {
     /* 加结尾 NUL 便于 JSON 解析，但 length 仍保留协议原始长度。 */
     if (event == NULL || (length > 0U && text == NULL) ||
-        length > RUNTIME_TEXT_MAX) {
+        length > ((event->type == EVENT_COMMAND && event->mode == STARTER_TIRTC_ROOM) ?
+                  RUNTIME_ROOM_TEXT_MAX : RUNTIME_TEXT_MAX)) {
         return false;
     }
-    event->text = malloc(length + 1U);
+    /* Queue ownership/freeing is unchanged; payloads must not split the small
+     * internal blocks needed by RTOS and SDK connection control objects. */
+    event->text = heap_caps_malloc(length + 1U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (event->text == NULL) {
         return false;
     }
@@ -480,28 +501,39 @@ static void release_event(runtime_event_t *event)
     }
 }
 
-static bool suspend_mqtt_for_external_connect(void)
+static bool prepare_external_connect_memory(void)
 {
-    if (s_mqtt_suspended_for_connect) {
-        return true;
+    if (s_external_connect_reserve_loaned) {
+        ESP_LOGW(TAG, "previous external-connect memory restore is still pending");
+        return false;
     }
     if (s_external_connect_reserve == NULL) {
         ESP_LOGE(TAG, "external connect reserve is not armed");
         return false;
     }
-    esp_err_t err = platform_client_suspend_mqtt_for_realtime();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "cannot reserve realtime connect memory: %s",
-                 esp_err_to_name(err));
-        return false;
+    size_t free_bytes = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    bool keep_mqtt = platform_client_ready() && platform_client_mqtt_connected() &&
+                     free_bytes >= EXTERNAL_CONNECT_MQTT_FREE_BYTES &&
+                     largest >= EXTERNAL_CONNECT_MQTT_LARGEST_BYTES;
+    if (!keep_mqtt) {
+        esp_err_t err = platform_client_suspend_mqtt_for_realtime();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "cannot reserve realtime connect memory: %s",
+                     esp_err_to_name(err));
+            return false;
+        }
     }
-    /* MQTT 已完全销毁；立即交还启动期保留的连续块给 TiRtc*Connect。 */
+    /* Loan the same contiguous block in either path. MQTT ownership and the
+     * reserve loan are separate: keeping MQTT must not lose the next reserve. */
     heap_caps_free(s_external_connect_reserve);
     s_external_connect_reserve = NULL;
-    s_mqtt_suspended_for_connect = true;
+    s_mqtt_suspended_for_connect = !keep_mqtt;
+    s_external_connect_reserve_loaned = true;
     s_mqtt_resume_due_ms = 0;
     ESP_LOGI(TAG,
-             "realtime connect gate opened: internal-free=%u largest=%u",
+             "CONN memory: mqtt=%s before=%u/%u internal-free=%u largest=%u",
+             keep_mqtt ? "keep" : "paused", (unsigned)free_bytes, (unsigned)largest,
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL |
                                                 MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
@@ -509,26 +541,28 @@ static bool suspend_mqtt_for_external_connect(void)
     return true;
 }
 
-static void resume_mqtt_after_external_connect(void)
+static void restore_external_connect_memory(void)
 {
-    if (!platform_client_ready()) {
-        s_mqtt_suspended_for_connect = false;
-        s_mqtt_resume_due_ms = 0;
+    if (!s_external_connect_reserve_loaned) {
         return;
     }
-    if (!s_mqtt_suspended_for_connect) {
-        return;
+    if (!platform_client_ready()) {
+        /* Binding owns the old MQTT client now. Still restore the reserve;
+         * otherwise a rebind would strand every subsequent external connect. */
+        s_mqtt_suspended_for_connect = false;
     }
     esp_err_t reserve_err = starter_runtime_arm_external_connect_reserve();
     if (reserve_err != ESP_OK) {
         s_mqtt_resume_due_ms = now_ms() + 1000;
-        ESP_LOGW(TAG, "MQTT resume waits for external-connect reserve: %s",
+        ESP_LOGW(TAG, "external-connect reserve restore deferred: %s",
                  esp_err_to_name(reserve_err));
         return;
     }
-    esp_err_t err = platform_client_resume_mqtt_after_realtime();
+    esp_err_t err = s_mqtt_suspended_for_connect
+                        ? platform_client_resume_mqtt_after_realtime() : ESP_OK;
     if (err == ESP_OK) {
         s_mqtt_suspended_for_connect = false;
+        s_external_connect_reserve_loaned = false;
         s_mqtt_resume_due_ms = 0;
         return;
     }
@@ -557,7 +591,9 @@ esp_err_t starter_runtime_arm_external_connect_reserve(void)
 
 static void finish_session(int error)
 {
+    room_detach(error);
     diagnostic_event("session end/error", error);
+    s_ai_drain_started_ms = 0;
     /* 所有退出路径汇聚到这里，确保媒体、连接、超时和 H5 门禁一起复位。 */
     starter_media_stop();
     /* Also invalidates pending external requests / inbound call expectations.
@@ -566,7 +602,6 @@ static void finish_session(int error)
     starter_tirtc_accept_h5(platform_client_ready());
     s_connection_generation = 0;
     s_deadline_ms = 0;
-    s_ai_start_at_ms = 0;
     s_ai_role_id[0] = '\0';
     s_ai_request_id[0] = '\0';
     s_call_room_id[0] = '\0';
@@ -594,7 +629,7 @@ static void finish_session(int error)
     product_snapshot_reset();
     product_set_call(false, false, "", false);
     publish_state(STARTER_RUNTIME_WAITING);
-    resume_mqtt_after_external_connect();
+    restore_external_connect_memory();
 }
 
 static void finish_call_session(int error, const char *result)
@@ -645,6 +680,7 @@ static void request_ai_token_response(const char *body, void *user_data)
         ESP_LOGE(TAG, "AI token response is too large or cannot be copied");
         return;
     }
+    event.queued_at_ms = (uint32_t)now_ms();
     if (!queue_event(&event)) {
         ESP_LOGE(TAG, "AI token response dropped: runtime queue is full");
         release_event(&event);
@@ -779,8 +815,10 @@ static void on_tirtc_command(starter_tirtc_mode_t mode,
 {
     /* 命令 payload 的生命周期只到回调返回，因此需要有界复制。 */
     (void)user_data;
-    if ((length > 0U && data == NULL) || length > RUNTIME_TEXT_MAX) {
+    if ((length > 0U && data == NULL) ||
+        length > (mode == STARTER_TIRTC_ROOM ? RUNTIME_ROOM_TEXT_MAX : RUNTIME_TEXT_MAX)) {
         ESP_LOGW(TAG, "command 0x%lx is too large", (unsigned long)command);
+        if (mode == STARTER_TIRTC_ROOM) atomic_store(&s_transport_recovery_required, true);
         return;
     }
     runtime_event_t event = {
@@ -788,6 +826,7 @@ static void on_tirtc_command(starter_tirtc_mode_t mode,
         .mode = mode,
         .generation = generation,
         .command = command,
+        .received_at_ms = (uint32_t)now_ms(),
     };
     if (!copy_event_text(&event, data, length)) {
         ESP_LOGE(TAG, "command 0x%lx cannot be copied", (unsigned long)command);
@@ -879,14 +918,18 @@ static bool response_ok(const cJSON *root)
     return cJSON_IsNumber(code) && (code->valueint == 0 || code->valueint == 200);
 }
 
+#include "starter_room.inc"
+
 static void refresh_contacts(void)
 {
     if (!platform_client_ready()) {
         return;
     }
-    esp_err_t err = platform_client_request(PLATFORM_SERVICE_CALL,
+    /* This response only updates contacts; it cannot admit a media session. */
+    esp_err_t err = platform_client_request_metadata(PLATFORM_SERVICE_CALL,
                                              "/v1/call/device/contacts",
                                              NULL,
+                                             0,
                                              contacts_response,
                                              NULL);
     if (err != ESP_OK) {
@@ -919,7 +962,8 @@ static void request_voip_profile(void)
         "\"down_audio_mt\":\"alaw\",\"no_video\":true,"
         "\"calling_timeout_sec\":30}";
 #endif
-    esp_err_t err = platform_client_request_timeout(
+    /* Profile registration also has no realtime-connect callback. */
+    esp_err_t err = platform_client_request_metadata(
         PLATFORM_SERVICE_VOIP, "/v1/voip/device/profile", profile,
         10000U, voip_profile_response, NULL);
     if (err == ESP_OK) {
@@ -1036,7 +1080,8 @@ static bool preempt_for_call(bool incoming)
      * and H5 just as an incoming call already does below. */
     if (state == STARTER_RUNTIME_AI_CONNECTING ||
         state == STARTER_RUNTIME_AI_ACTIVE ||
-        state == STARTER_RUNTIME_H5_ACTIVE) {
+        state == STARTER_RUNTIME_H5_ACTIVE ||
+        state == STARTER_RUNTIME_ROOM_CONNECTING || state == STARTER_RUNTIME_ROOM_ACTIVE) {
         ESP_LOGI(TAG, "call preempts foreground owner=%s",
                  starter_runtime_state_name(state));
         diagnostic_event(incoming ? "incoming preempts" : "outgoing preempts", state);
@@ -1227,8 +1272,9 @@ static void connect_voip(void)
     if (s_voip_connect_inflight) {
         return;
     }
-    /* 先完成小对象分配，不能在释放 17 KiB 连续块后把它切碎。 */
-    voip_connect_request_t *request = calloc(1, sizeof(*request));
+    /* Keep the worker-owned copy alive through the existing WHIP call. */
+    voip_connect_request_t *request = heap_caps_calloc(
+        1, sizeof(*request), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (request == NULL) {
         finish_call_session(ESP_ERR_NO_MEM, "内存不足");
         return;
@@ -1238,7 +1284,7 @@ static void connect_voip(void)
                    s_call_connect_peer);
     (void)snprintf(request->token, sizeof(request->token), "%s",
                    s_call_connect_token);
-    if (!suspend_mqtt_for_external_connect()) {
+    if (!prepare_external_connect_memory()) {
         free(request);
         finish_call_session(ESP_ERR_NO_MEM, "内存不足");
         return;
@@ -1249,7 +1295,7 @@ static void connect_voip(void)
                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         s_voip_connect_inflight = false;
         free(request);
-        resume_mqtt_after_external_connect();
+        restore_external_connect_memory();
         finish_call_session(ESP_ERR_NO_MEM, "内存不足");
         return;
     }
@@ -1268,7 +1314,7 @@ static void handle_voip_connect_result(const runtime_event_t *event)
     }
     s_voip_connect_inflight = false;
     if (event->error != 0) {
-        resume_mqtt_after_external_connect();
+        restore_external_connect_memory();
         finish_call_session(event->error, "网络中断");
         return;
     }
@@ -1357,7 +1403,8 @@ static void begin_ai_session(uint32_t wake_token)
     starter_runtime_state_t state = (starter_runtime_state_t)atomic_load_explicit(
         &s_public_state, memory_order_acquire);
     if ((state != STARTER_RUNTIME_WAITING &&
-         state != STARTER_RUNTIME_H5_ACTIVE) ||
+         state != STARTER_RUNTIME_H5_ACTIVE && state != STARTER_RUNTIME_ROOM_CONNECTING &&
+         state != STARTER_RUNTIME_ROOM_ACTIVE) ||
         !ai_network_ready() || !platform_client_ready() || !starter_tirtc_started() ||
         starter_media_status().microphone_muted) {
         ESP_LOGW(TAG, "AI start ignored: network, platform or TiRTC is not ready");
@@ -1365,6 +1412,7 @@ static void begin_ai_session(uint32_t wake_token)
         return;
     }
 
+    if (room_owns_media()) finish_session(0);
     starter_tirtc_accept_h5(false);
     starter_media_set_wake_allowed(false);
     if (starter_media_stop_for_ai(wake_token) != ESP_OK) {
@@ -1388,6 +1436,7 @@ static void begin_ai_session(uint32_t wake_token)
 
     /* MQTT bearer 由 platform_client 内部添加，状态机不接触设备密钥。 */
     s_diagnostic_ai_started_ms = now_ms();
+    s_ai_rpc_sent_ms = 0;
     diagnostic_event(wake_token != 0 ? "wake accepted" : "manual AI start", 0);
     if (wake_token != 0) {
         ESP_LOGI(TAG, "AI wake request accepted token=%lu session=%lu",
@@ -1414,6 +1463,7 @@ static void handle_ai_token(const runtime_event_t *event)
             STARTER_RUNTIME_AI_CONNECTING) {
         return;
     }
+    uint32_t handled_ms = (uint32_t)now_ms();
     cJSON *root = event->length == 0U || event->text == NULL
                       ? NULL
                       : cJSON_Parse(event->text);
@@ -1423,9 +1473,13 @@ static void handle_ai_token(const runtime_event_t *event)
     const cJSON *data = root == NULL
                             ? NULL
                             : cJSON_GetObjectItemCaseSensitive(root, "data");
-    ai_credentials_t *credentials = calloc(1, sizeof(*credentials));
+    ai_credentials_t *credentials = heap_caps_calloc(
+        1, sizeof(*credentials), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (credentials == NULL) {
         cJSON_Delete(root);
+        ESP_LOGE(TAG, "CONN token_handle failed: session=%lu stage=alloc q_ms=%lu",
+                 (unsigned long)s_session_generation,
+                 (unsigned long)(handled_ms - event->queued_at_ms));
         finish_session(ESP_ERR_NO_MEM);
         return;
     }
@@ -1448,17 +1502,24 @@ static void handle_ai_token(const runtime_event_t *event)
                                sizeof(s_ai_role_id),
                                false);
     cJSON_Delete(root);
+    uint32_t parsed_ms = (uint32_t)now_ms();
+    ESP_LOGI(TAG,
+             "CONN token_handle: session=%lu q_ms=%lu parse_ms=%lu since_start_ms=%lu ok=%d",
+             (unsigned long)s_session_generation,
+             (unsigned long)(handled_ms - event->queued_at_ms),
+             (unsigned long)(parsed_ms - handled_ms),
+             (unsigned long)(parsed_ms - (uint32_t)s_diagnostic_ai_started_ms),
+             (int)ok);
     if (!ok) {
         free(credentials);
         ESP_LOGE(TAG, "AI token response is invalid");
         finish_session(ESP_ERR_INVALID_RESPONSE);
         return;
     }
-    /*
-     * MQTT/TLS 的常驻分配会切碎内部堆；WHIP 提交前短暂停止 MQTT，给 SDK
-     * 的 16+ KiB 连续分配让路，连接回调到达后立即恢复。
-     */
-    if (!suspend_mqtt_for_external_connect()) {
+    /* Release the startup-reserved contiguous block. Keep healthy MQTT online
+     * when the measured internal heap admits coexistence; do not redial it on
+     * every AI session merely because older memory layouts needed that. */
+    if (!prepare_external_connect_memory()) {
         free(credentials);
         finish_session(ESP_ERR_NO_MEM);
         return;
@@ -1468,7 +1529,7 @@ static void handle_ai_token(const runtime_event_t *event)
                                       s_session_generation);
     free(credentials);
     if (rc != 0) {
-        resume_mqtt_after_external_connect();
+        restore_external_connect_memory();
         ESP_LOGE(TAG, "AI connection submission failed rc=%d", rc);
         finish_session(rc);
         return;
@@ -1655,7 +1716,7 @@ static void handle_call_http(const runtime_event_t *event)
             finish_call_session(ESP_ERR_INVALID_RESPONSE, "呼叫失败");
             return;
         }
-        if (!suspend_mqtt_for_external_connect()) {
+        if (!prepare_external_connect_memory()) {
             finish_call_session(ESP_ERR_NO_MEM, "内存不足");
             return;
         }
@@ -1664,7 +1725,7 @@ static void handle_call_http(const runtime_event_t *event)
         ESP_LOGI(TAG, "[DEBUG-call] callee p2p submitted room=%s peer=%s rc=%d",
                  s_call_room_id, remote_id, rc);
         if (rc != 0) {
-            resume_mqtt_after_external_connect();
+            restore_external_connect_memory();
             finish_call_session(rc, "网络中断");
         }
         return;
@@ -1678,7 +1739,6 @@ static void send_ai_start(void)
      * WHIP 连接成功后发送业务层 start_session。媒体仍保持关闭，直到
      * handle_ai_command() 收到匹配 request id 的 result。
      */
-    s_ai_start_at_ms = 0;
     if (!starter_tirtc_connected() || s_connection_generation == 0U) {
         finish_session(ESP_ERR_INVALID_STATE);
         return;
@@ -1705,12 +1765,18 @@ static void send_ai_start(void)
               cJSON_AddNumberToObject(output, "sample_rate", 8000) &&
               cJSON_AddNumberToObject(output, "channels", 1);
     if (ok) {
-        cJSON_AddItemToObject(params, "input_audio", input);
-        input = NULL;
-        cJSON_AddItemToObject(params, "output_audio", output);
-        output = NULL;
-        cJSON_AddItemToObject(root, "params", params);
-        params = NULL;
+        /* cJSON allocates the member name here. Ownership transfers only on
+         * success; otherwise cleanup must still own the unattached subtree. */
+        ok = cJSON_AddItemToObject(params, "input_audio", input);
+        if (ok) input = NULL;
+    }
+    if (ok) {
+        ok = cJSON_AddItemToObject(params, "output_audio", output);
+        if (ok) output = NULL;
+    }
+    if (ok) {
+        ok = cJSON_AddItemToObject(root, "params", params);
+        if (ok) params = NULL;
     }
     char *json = ok ? cJSON_PrintUnformatted(root) : NULL;
     cJSON_Delete(input);
@@ -1721,6 +1787,7 @@ static void send_ai_start(void)
         finish_session(ESP_ERR_NO_MEM);
         return;
     }
+    s_ai_rpc_sent_ms = (uint32_t)now_ms();
     int rc = starter_tirtc_send_command(AI_COMMAND, json, (uint32_t)strlen(json));
     cJSON_free(json);
     if (rc < 0) {
@@ -1729,7 +1796,11 @@ static void send_ai_start(void)
         return;
     }
     s_deadline_ms = now_ms() + AI_RESPONSE_TIMEOUT_MS;
-    ESP_LOGI(TAG, "AI start_session sent; audio remains stopped until accepted");
+    ESP_LOGI(TAG,
+             "CONN AI start_session sent; audio remains stopped until accepted: session=%lu rpc_id=%s send_ms=%lu since_start_ms=%lu",
+             (unsigned long)s_session_generation,
+             s_ai_request_id, (unsigned long)((uint32_t)now_ms() - s_ai_rpc_sent_ms),
+             (unsigned long)((uint32_t)now_ms() - (uint32_t)s_diagnostic_ai_started_ms));
 }
 
 static bool ai_audio_profile_valid(const cJSON *profile)
@@ -1774,8 +1845,39 @@ static void maybe_activate_outgoing_device_call(const char *source)
     publish_state(STARTER_RUNTIME_CALL_ACTIVE);
 }
 
+static void begin_ai_audio_drain(void)
+{
+    if (s_ai_drain_started_ms != 0) return;
+    if (!starter_media_begin_audio_drain(s_connection_generation)) {
+        finish_session(0);
+        return;
+    }
+    s_ai_drain_started_ms = (uint32_t)now_ms();
+    if (s_ai_drain_started_ms == 0) s_ai_drain_started_ms = UINT32_MAX;
+    s_deadline_ms = 0;
+    /* Network ownership ends now. Local PCM belongs to the sink until its
+     * acknowledgement; do not sleep here or block hangup/incoming calls. */
+    (void)starter_tirtc_disconnect();
+    ESP_LOGI(TAG, "AI tail drain begin generation=%lu", (unsigned long)s_connection_generation);
+}
+
+static void poll_ai_audio_drain(uint32_t current_ms)
+{
+    if (s_ai_drain_started_ms == 0) return;
+    uint32_t elapsed = current_ms - s_ai_drain_started_ms;
+    bool drained = starter_media_audio_drained(s_connection_generation);
+    if (drained || elapsed >= STARTER_MEDIA_DRAIN_TIMEOUT_MS) {
+        if (drained) ESP_LOGI(TAG, "AI tail drained generation=%lu elapsed_ms=%lu",
+                             (unsigned long)s_connection_generation, (unsigned long)elapsed);
+        else ESP_LOGE(TAG, "AI tail drain timeout generation=%lu elapsed_ms=%lu",
+                      (unsigned long)s_connection_generation, (unsigned long)elapsed);
+        finish_session(drained ? 0 : ESP_ERR_TIMEOUT);
+    }
+}
+
 static void handle_connection(const runtime_event_t *event)
 {
+    if (event->mode == STARTER_TIRTC_ROOM) { room_connection(event); return; }
     if (event->flag && !platform_client_ready()) {
         if (event->generation != 0 && event->generation == starter_tirtc_generation())
             (void)starter_tirtc_disconnect();
@@ -1818,9 +1920,15 @@ static void handle_connection(const runtime_event_t *event)
     if (event->mode == STARTER_TIRTC_AI ||
         event->mode == STARTER_TIRTC_CALL ||
         event->mode == STARTER_TIRTC_VOIP) {
-        resume_mqtt_after_external_connect();
+        restore_external_connect_memory();
     }
     if (!event->flag) {
+        if (event->mode == STARTER_TIRTC_AI && s_ai_drain_started_ms != 0) {
+            /* Matching remote EOS has already closed transport. Preserve only
+             * its admitted audio; unexpected disconnects keep the error path. */
+            ESP_LOGI(TAG, "AI transport closed during tail drain error=%d", event->error);
+            return;
+        }
         /* AI 意图转呼叫时 finish_session() 会主动断开旧 AI 连接。该断开
          * 回调可能晚于新呼叫的 HTTP 房间创建；它属于旧媒体所有者，绝不能
          * 终止正在等待被叫接入的 CALL/VOIP 会话。 */
@@ -1881,9 +1989,10 @@ static void handle_connection(const runtime_event_t *event)
         event->request_tag == s_session_generation) {
         s_connection_generation = event->generation;
         publish_state(STARTER_RUNTIME_AI_CONNECTING);
-        /* 给底层数据通道一个短暂稳定窗口，再发 JSON-RPC 控制命令。 */
-        s_ai_start_at_ms = now_ms() + AI_START_SETTLE_MS;
-        s_deadline_ms = now_ms() + AI_RESPONSE_TIMEOUT_MS;
+        /* The successful SDK callback is the transport-ready boundary. Send
+         * from this state owner, never the SDK callback; no arbitrary settle
+         * timer. Media still waits for the matching start_session response. */
+        send_ai_start();
         return;
     }
     if ((event->mode == STARTER_TIRTC_CALL ||
@@ -2142,23 +2251,31 @@ static void send_device_action_result(const cJSON *request_id,
     }
     cJSON *root = cJSON_CreateObject();
     cJSON *result = cJSON_CreateObject();
-    bool valid = root != NULL && result != NULL &&
+    cJSON *id = cJSON_Duplicate(request_id, true);
+    bool valid = root != NULL && result != NULL && id != NULL &&
                  cJSON_AddStringToObject(root, "jsonrpc", "2.0") &&
-                 cJSON_AddItemToObject(root, "id", cJSON_Duplicate(request_id, true)) &&
                  cJSON_AddBoolToObject(result, "ok", ok) &&
                  cJSON_AddStringToObject(result, "status", status) &&
                  cJSON_AddStringToObject(result, "message", message);
     if (valid) {
-        cJSON_AddItemToObject(root, "result", result);
-        result = NULL;
-        char *json = cJSON_PrintUnformatted(root);
-        if (json != NULL) {
-            (void)starter_tirtc_send_command(AI_COMMAND, json, (uint32_t)strlen(json));
-            cJSON_free(json);
-        }
+        valid = cJSON_AddItemToObject(root, "id", id);
+        if (valid) id = NULL;
     }
+    if (valid) {
+        valid = cJSON_AddItemToObject(root, "result", result);
+        if (valid) result = NULL;
+    }
+    char *json = valid ? cJSON_PrintUnformatted(root) : NULL;
+    cJSON_Delete(id);
     cJSON_Delete(result);
     cJSON_Delete(root);
+    if (json == NULL) {
+        ESP_LOGW(TAG, "AI action result allocation failed");
+        return;
+    }
+    int rc = starter_tirtc_send_command(AI_COMMAND, json, (uint32_t)strlen(json));
+    cJSON_free(json);
+    if (rc < 0) ESP_LOGW(TAG, "AI action result send failed rc=%d", rc);
 }
 
 static contact_match_t parse_ai_call_action(const cJSON *params,
@@ -2217,7 +2334,7 @@ static void handle_ai_command(const runtime_event_t *event)
 {
     /* 当前 AI 连接上的 start_session 响应与 UI 通知都在状态任务串行处理。 */
     if (event->mode != STARTER_TIRTC_AI ||
-        event->generation != s_connection_generation) {
+        event->generation != s_connection_generation || s_ai_drain_started_ms != 0) {
         diagnostic_event("AI stale command", (int)event->generation);
         return;
     }
@@ -2261,6 +2378,16 @@ static void handle_ai_command(const runtime_event_t *event)
                     ai_audio_profile_valid(output_audio);
     starter_runtime_state_t state = (starter_runtime_state_t)atomic_load_explicit(
         &s_public_state, memory_order_acquire);
+    if (id_matches && state == STARTER_RUNTIME_AI_CONNECTING) {
+        /* Separate callback arrival from local queue/JSON and codec startup.
+         * The random RPC id is not the cloud session_id or a credential. */
+        ESP_LOGI(TAG,
+                 "CONN rpc response: api=start_session cmd=0x2100 rpc_id=%s session=%lu response_ms=%lu dispatch_ms=%lu accepted=%d rejected=%d",
+                 s_ai_request_id, (unsigned long)s_session_generation,
+                 (unsigned long)(event->received_at_ms - s_ai_rpc_sent_ms),
+                 (unsigned long)((uint32_t)now_ms() - event->received_at_ms),
+                 (int)accepted, (int)rejected);
+    }
     if (rejected) {
         ESP_LOGE(TAG, "AI start_session was rejected");
         cJSON_Delete(root);
@@ -2280,6 +2407,9 @@ static void handle_ai_command(const runtime_event_t *event)
         s_deadline_ms = 0;
         product_set_phase(STARTER_AI_UI_LISTENING);
         publish_state(STARTER_RUNTIME_AI_ACTIVE);
+        ESP_LOGI(TAG, "CONN ai_active: session=%lu since_start_ms=%lu",
+                 (unsigned long)s_session_generation,
+                 (unsigned long)((uint32_t)now_ms() - (uint32_t)s_diagnostic_ai_started_ms));
         diagnostic_event("AI ready ms", (int)(now_ms() - s_diagnostic_ai_started_ms));
     } else if (state == STARTER_RUNTIME_AI_ACTIVE) {
         const cJSON *method = cJSON_GetObjectItemCaseSensitive(root, "method");
@@ -2399,7 +2529,7 @@ static void handle_ai_command(const runtime_event_t *event)
                          "AI session ended by remote end_session/idle policy generation=%lu",
                          (unsigned long)s_connection_generation);
                 cJSON_Delete(root);
-                finish_session(0);
+                begin_ai_audio_drain();
                 return;
             } else {
                 diagnostic_event("AI unknown method/params", 0);
@@ -2483,6 +2613,13 @@ static void handle_platform_signal(const runtime_event_t *event)
         return;
     }
     if (!platform_client_ready()) { cJSON_Delete(root); return; }
+    if (strcmp(signal, "room_assignment_changed") == 0) {
+        /* A notification only invalidates the assignment cache, never grants
+         * microphone permission or supplies trusted connection credentials. */
+        room_invalidate_assignment();
+        cJSON_Delete(root);
+        return;
+    }
     if (strcmp(signal, "callers_update") == 0 ||
         strcmp(signal, "contacts_update") == 0) {
         cJSON_Delete(root);
@@ -2677,6 +2814,8 @@ static void handle_platform_signal(const runtime_event_t *event)
     if (!outgoing_wechat && state != STARTER_RUNTIME_WAITING &&
         state != STARTER_RUNTIME_AI_ACTIVE &&
         state != STARTER_RUNTIME_AI_CONNECTING &&
+        state != STARTER_RUNTIME_ROOM_CONNECTING &&
+        state != STARTER_RUNTIME_ROOM_ACTIVE &&
         state != STARTER_RUNTIME_H5_ACTIVE) {
         if (wechat) {
             char app_id[65] = "";
@@ -2765,6 +2904,9 @@ static void handle_platform_signal(const runtime_event_t *event)
 static void runtime_task(void *argument)
 {
     (void)argument;
+    /* One-time startup handoff: no globals/callback targets are published
+     * until all allocations succeed. This notification is not a retry timer. */
+    (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     publish_state(STARTER_RUNTIME_WAITING);
     for (;;) {
         /* A lost platform signal requires a server-side binding check, not a
@@ -2785,18 +2927,18 @@ static void runtime_task(void *argument)
             ESP_LOGW(TAG, "VoIP profile response was not delivered; retrying");
         }
         contact_query_tick();
-        if (s_mqtt_suspended_for_connect && s_mqtt_resume_due_ms != 0 &&
+        if (s_external_connect_reserve_loaned && s_mqtt_resume_due_ms != 0 &&
             now_ms() >= s_mqtt_resume_due_ms) {
-            resume_mqtt_after_external_connect();
+            restore_external_connect_memory();
         }
 
-        /* 50 ms 轮询间隔同时用于驱动 AI 延迟发送和各阶段超时。 */
+        /* 队列到达即唤醒；50 ms 上限用于检查各阶段超时。 */
         runtime_event_t event;
         if (xQueueReceive(s_queue, &event, pdMS_TO_TICKS(50)) == pdTRUE) {
             bool platform_event = event.type == EVENT_AI_TOKEN || event.type == EVENT_PLATFORM_SIGNAL ||
                 event.type == EVENT_PLATFORM_ONLINE || event.type == EVENT_CONTACTS_RESULT ||
                 event.type == EVENT_CONTACT_QUERY_RESULT || event.type == EVENT_VOIP_PROFILE ||
-                event.type == EVENT_CALL_HTTP;
+                event.type == EVENT_CALL_HTTP || event.type == EVENT_ROOM_HTTP || event.type == EVENT_ROOM_INTENT;
             if (platform_event && event.platform_epoch != platform_client_epoch()) {
                 release_event(&event);
                 continue;
@@ -2811,7 +2953,9 @@ static void runtime_task(void *argument)
                 handle_connection(&event);
                 break;
             case EVENT_COMMAND:
-                if (event.mode == STARTER_TIRTC_AI) {
+                if (event.mode == STARTER_TIRTC_ROOM) {
+                    room_command(&event);
+                } else if (event.mode == STARTER_TIRTC_AI) {
                     handle_ai_command(&event);
                 } else {
                     handle_call_command(&event);
@@ -2831,6 +2975,7 @@ static void runtime_task(void *argument)
                 break;
             case EVENT_PLATFORM_ONLINE:
                 if (!platform_client_ready()) break;
+                room_invalidate_assignment();
                 if (atomic_load(&s_public_state) == STARTER_RUNTIME_WAITING)
                     starter_tirtc_accept_h5(true);
                 /* MQTT token/会话换代后，服务端 profile 必须重新建立。 */
@@ -2866,8 +3011,8 @@ static void runtime_task(void *argument)
                 reject_or_hangup_call(false);
                 break;
             case EVENT_CALL_MIC_MUTE:
-                if (atomic_load_explicit(&s_public_state, memory_order_acquire) >=
-                        STARTER_RUNTIME_CALL_INCOMING) {
+                if (atomic_load_explicit(&s_public_state, memory_order_acquire) >= STARTER_RUNTIME_CALL_INCOMING &&
+                    atomic_load_explicit(&s_public_state, memory_order_acquire) <= STARTER_RUNTIME_CALL_ACTIVE) {
                     starter_media_set_microphone_muted(event.flag);
                     product_set_call(
                         atomic_load_explicit(&s_public_state, memory_order_acquire) ==
@@ -2880,6 +3025,8 @@ static void runtime_task(void *argument)
             case EVENT_CALL_HTTP:
                 handle_call_http(&event);
                 break;
+            case EVENT_ROOM_INTENT: room_intent(&event); break;
+            case EVENT_ROOM_HTTP: room_http(&event); break;
 #if CONFIG_IDF_TARGET_ESP32P4
             case EVENT_CALL_CAMERA:
                 if (event.generation == s_session_generation && s_call_video &&
@@ -2897,9 +3044,8 @@ static void runtime_task(void *argument)
             release_event(&event);
         }
         int64_t current_ms = now_ms();
-        if (s_ai_start_at_ms != 0 && current_ms >= s_ai_start_at_ms) {
-            send_ai_start();
-        }
+        room_tick(current_ms);
+        poll_ai_audio_drain((uint32_t)current_ms);
         if (!s_voip_profile_ready && !s_voip_profile_inflight &&
             s_voip_profile_retry_at_ms != 0 &&
             current_ms >= s_voip_profile_retry_at_ms) {
@@ -2920,6 +3066,8 @@ static void runtime_task(void *argument)
             } else if (state == STARTER_RUNTIME_CALL_CONNECTING) {
                 reject_or_hangup_call(false);
                 product_set_call_result("无人接听");
+            } else if (room_owns_media()) {
+                room_fail(ESP_ERR_TIMEOUT);
             } else {
                 finish_session(ESP_ERR_TIMEOUT);
             }
@@ -2937,11 +3085,32 @@ esp_err_t starter_runtime_start(const char *device_id)
         return ESP_ERR_INVALID_ARG;
     }
     (void)snprintf(s_device_id, sizeof(s_device_id), "%s", device_id);
-    s_queue = xQueueCreate(RUNTIME_QUEUE_DEPTH, sizeof(runtime_event_t));
-    s_product_mutex = xSemaphoreCreateMutex();
-    if (s_queue == NULL || s_product_mutex == NULL) {
+    QueueHandle_t queue = xQueueCreate(RUNTIME_QUEUE_DEPTH, sizeof(runtime_event_t));
+    if (queue == NULL) {
         return ESP_ERR_NO_MEM;
     }
+    SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
+    if (mutex == NULL) {
+        vQueueDelete(queue);
+        return ESP_ERR_NO_MEM;
+    }
+    /* Keep resources local until task creation succeeds: the already-running
+     * UI must never see a mutex that failure cleanup can subsequently delete. */
+    TaskHandle_t task = NULL;
+    if (xTaskCreateWithCaps(runtime_task,
+                            "starter_session",
+                            RUNTIME_TASK_STACK_BYTES,
+                            NULL,
+                            6,
+                            &task,
+                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+        vQueueDelete(queue);
+        vSemaphoreDelete(mutex);
+        return ESP_ERR_NO_MEM;
+    }
+    s_queue = queue;
+    s_product_mutex = mutex;
+    s_task = task;
     product_snapshot_reset();
     /* 必须先注册回调，再由组合根启动 TiRTC，避免丢失早期启动/连接事件。 */
     const starter_tirtc_handlers_t handlers = {
@@ -2957,17 +3126,7 @@ esp_err_t starter_runtime_start(const char *device_id)
     starter_tirtc_set_handlers(&handlers);
     platform_client_set_signal_handler(on_platform_signal, NULL);
     platform_client_set_online_handler(on_platform_online, NULL);
-    if (xTaskCreateWithCaps(runtime_task,
-                            "starter_session",
-                            RUNTIME_TASK_STACK_BYTES,
-                            NULL,
-                            6,
-                            &s_task,
-                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
-        vQueueDelete(s_queue);
-        s_queue = NULL;
-        return ESP_ERR_NO_MEM;
-    }
+    xTaskNotifyGive(task);
     return ESP_OK;
 }
 
@@ -3100,6 +3259,8 @@ const char *starter_runtime_state_name(starter_runtime_state_t state)
     case STARTER_RUNTIME_CALL_INCOMING: return "call-incoming";
     case STARTER_RUNTIME_CALL_CONNECTING: return "call-connecting";
     case STARTER_RUNTIME_CALL_ACTIVE: return "call-active";
+    case STARTER_RUNTIME_ROOM_CONNECTING: return "room-connecting";
+    case STARTER_RUNTIME_ROOM_ACTIVE: return "room-active";
     default: return "unknown";
     }
 }

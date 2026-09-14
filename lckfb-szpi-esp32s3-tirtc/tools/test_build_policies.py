@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import check_build_policies as policies
 
@@ -22,7 +22,7 @@ class PortablePoliciesTest(unittest.TestCase):
             objdump="C:/IDF tools/bin/xtensa-esp32s3-elf-objdump.exe", product=None)
         self.context = policies.Context(self.args)
 
-    def test_all_legacy_entries_have_one_python_owner(self):
+    def test_every_policy_has_a_direct_python_entry(self):
         names = {
             "i2c_driver_family", "product_touch_i2c", "backlight_polarity", "binding_prompt",
             "wifi_provisioning", "product_ui", "time_sync", "tirtc_startup_order",
@@ -31,12 +31,17 @@ class PortablePoliciesTest(unittest.TestCase):
             "audio_capture", "aec", "downlink_audio", "memory_placement", "ai_stack",
         }
         self.assertEqual(names, set(policies.POLICIES))
-        tools = Path(__file__).resolve().parent
         for name in names:
-            suffix = "" if name == "i2c_driver_family" else "_policy"
-            wrapper = (tools / f"check_{name}{suffix}.sh").read_text(encoding="utf-8")
-            self.assertIn("check_build_policies.py", wrapper)
-            self.assertIn(f"--policy {name}", wrapper)
+            with self.subTest(policy=name):
+                checkers = {key: Mock() for key in names}
+                with patch.dict(policies.POLICIES, checkers, clear=True), \
+                     patch.object(policies.sys, "argv", ["check_build_policies.py", "--policy", name]), \
+                     patch.object(policies, "Context", return_value=self.context), \
+                     patch("builtins.print"):
+                    self.assertEqual(policies.main(), 0)
+                checkers[name].assert_called_once_with(self.context)
+                for other in names - {name}:
+                    checkers[other].assert_not_called()
 
     def test_utf8_bom_crlf_and_non_ascii_paths(self):
         (self.root / "source.c").write_bytes("\ufeff第一行\r\n第二行\r\n".encode("utf-8"))
@@ -107,6 +112,37 @@ class PortablePoliciesTest(unittest.TestCase):
         args = argparse.Namespace(root=Path(__file__).resolve().parents[1],
                                   elf=None, nm="", objdump="", product=None)
         return policies.Context(args)
+
+    def test_lvgl_fixed_pool_must_be_in_psram_with_configured_size(self):
+        (self.root / "sdkconfig").write_text("CONFIG_LV_MEM_SIZE_KILOBYTES=32\n", encoding="utf-8")
+        for symbol in ("work_mem_int", "work_mem_int$0", "work_mem_int.1"):
+            with self.subTest(symbol=symbol), patch.object(self.context, "symbols",
+                    return_value=f"3c020000 00008000 b {symbol}\n"):
+                policies.lvgl_pool_placement(self.context)
+        for symbols in ("3fcaf3b8 00008000 b work_mem_int$0\n",
+                        "3c020000 00004000 b work_mem_int\n", "",
+                        "3c020000 00008000 b work_mem_int\n3c030000 00008000 b work_mem_int.1\n"):
+            with self.subTest(symbols=symbols), patch.object(self.context, "symbols", return_value=symbols):
+                with self.assertRaises(policies.PolicyFailure):
+                    policies.lvgl_pool_placement(self.context)
+
+    def test_memory_policy_rejects_internal_payload_or_per_click_stack(self):
+        context = self.source_context()
+        policies.memory_placement(context)
+        for name, old, new in (
+                ("runtime", "event->text = heap_caps_malloc(length + 1U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)",
+                 "event->text = malloc(length + 1U)"),
+                ("runtime", "static EXT_RAM_BSS_ATTR char s_call_connect_token", "static char s_call_connect_token"),
+                ("runtime", "vSemaphoreDelete(mutex);", "/* missing cleanup */"),
+                ("product", "nvs_worker_submit_latest(preferences_write_job,", "xTaskCreate(task)"),
+                ("product", "err = nvs_commit(nvs);", "(void)nvs_commit(nvs);")):
+            with self.subTest(name=name, old=old):
+                original = context.text(name)
+                self.assertIn(old, original)
+                context.text_cache[context.path(name)] = original.replace(old, new)
+                with self.assertRaises(policies.PolicyFailure):
+                    policies.memory_placement(context)
+                context.text_cache[context.path(name)] = original
 
     def test_time_sync_keeps_reviewed_primary_and_fallback(self):
         context = self.source_context()

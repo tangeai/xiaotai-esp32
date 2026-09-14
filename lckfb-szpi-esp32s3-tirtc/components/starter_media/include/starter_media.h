@@ -16,11 +16,15 @@
 
 #include "driver/i2c_master.h"
 #include "esp_err.h"
+
 #include "starter_tirtc.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Room-only PTT gate. Generation zero/released never changes global mute. */
+bool starter_media_room_ptt(uint32_t generation, bool pressed);
 
 typedef struct {
     bool active;                 /**< 当前会话是否允许媒体任务运行。 */
@@ -129,6 +133,13 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation);
 
 /** 停止并回收板级采集任务；重复调用安全。 */
 void starter_media_stop(void);
+/* Remote AI EOS: preserve already admitted downlink, then acknowledge from the
+ * sink. Explicit stop/mute/call preemption still cancels immediately. No wait
+ * or allocation on the runtime task. Upper bound: 32 x 1500 A-law bytes (6 s),
+ * 500 ms prebuffer, short PCM tail and <=90 ms output horizon, plus margin. */
+#define STARTER_MEDIA_DRAIN_TIMEOUT_MS 7000U
+bool starter_media_begin_audio_drain(uint32_t generation);
+bool starter_media_audio_drained(uint32_t generation);
 
 
 /**
@@ -145,6 +156,8 @@ void starter_media_submit_audio(starter_tirtc_mode_t mode,
 /** 返回由原子变量组成的瞬时状态快照，可从任意任务调用。 */
 starter_media_status_t starter_media_status(void);
 #if CONFIG_IDF_TARGET_ESP32S3
+/* Runtime owner only: rate-limited Room chain counters, no SDK calls. */
+void starter_media_log_room_audio(void);
 /* Lifetime maxima/counters and latest complete frame levels. ADC read timing
  * includes blocking; AFE age includes buffering. Neither proves DMA continuity.
  * Levels before/after TX gain are not simultaneous snapshots or calibrated SPL. */

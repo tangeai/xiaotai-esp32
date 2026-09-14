@@ -14,6 +14,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #if CONFIG_IDF_TARGET_ESP32P4
 #include "freertos/task.h"
@@ -145,6 +146,15 @@ static int sdk_start_failure_code(const char *log, uint32_t length, bool *http_s
     return 0;
 }
 
+static bool sdk_log_contains(const char *log, uint32_t length, const char *marker)
+{
+    size_t count = strlen(marker);
+    if (log == NULL || length > 2048U || count > length) return false;
+    for (size_t i = 0; i <= length - count; ++i)
+        if (memcmp(log + i, marker, count) == 0) return true;
+    return false;
+}
+
 static void sdk_log(const char *log, uint32_t length)
 {
     bool http_status = false;
@@ -152,6 +162,17 @@ static void sdk_log(const char *log, uint32_t length)
     if (code != 0) {
         ESP_LOGE(TAG, "SDK service failure: stage=start %s=%d",
                  http_status ? "http_status" : "service_code", code);
+        return;
+    }
+    /* Fixed allowlist from this SDK archive. Preserve credential filtering and
+     * its log level: init evidence is not a measured media-delivery/loss claim.
+     * No match means unknown, never infer KCP from missing TGTRP text. */
+    if (sdk_log_contains(log, length, "peer_connection_tgtrp_init ok ice=")) {
+        ESP_LOGI(TAG, "SDK NET init=tgtrp mode=%d", (int)atomic_load(&s_mode));
+        return;
+    }
+    if (sdk_log_contains(log, length, "peer_connection_kcp_init ikcp_nodelay(")) {
+        ESP_LOGI(TAG, "SDK NET init=kcp mode=%d", (int)atomic_load(&s_mode));
         return;
     }
     /* Other SDK text can contain credentials and remains hidden. */
@@ -255,6 +276,8 @@ static void on_external_connect(int error, tirtc_conn_t connection, void *user_d
 {
     /* request id 已失效说明请求被取消或被新会话取代，成功的迟到连接也要关闭。 */
     uint32_t request = (uint32_t)(uintptr_t)user_data;
+    ESP_LOGI(TAG, "CONN sdk_callback: req=%lu rc=%d handle=%d",
+             (unsigned long)request, error, connection != NULL);
     if (request == 0U ||
         request != atomic_load_explicit(&s_pending_request, memory_order_acquire)) {
         if (error == 0 && connection != NULL) {
@@ -311,7 +334,8 @@ static void on_audio(tirtc_conn_t connection,
      * 对端下行流号。设备呼叫和 VoIP 均可能从服务端收到不同的流号。
      * 连接句柄已经完成会话隔离；这里仅验证本产品的可播放编码格式。
      */
-    bool expected = frame->media == TIRTC_AUDIO_ALAW &&
+    bool expected = (mode != STARTER_TIRTC_ROOM || frame->stream_id == 1U) &&
+                    frame->media == TIRTC_AUDIO_ALAW &&
                     frame->flags == TIRTC_AUDIOSAMPLE_8K16B1C;
     if (!expected) {
         uint32_t rejected = (uint32_t)atomic_fetch_add_explicit(
@@ -415,7 +439,7 @@ static int on_subscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
     starter_tirtc_mode_t mode = (starter_tirtc_mode_t)atomic_load_explicit(
         &s_mode, memory_order_acquire);
     bool accepted = (mode == STARTER_TIRTC_H5 && stream_id == H5_AUDIO_STREAM) ||
-                    (mode == STARTER_TIRTC_AI && stream_id == AI_AUDIO_STREAM) ||
+                    ((mode == STARTER_TIRTC_AI || mode == STARTER_TIRTC_ROOM) && stream_id == AI_AUDIO_STREAM) ||
                     ((mode == STARTER_TIRTC_VOIP || mode == STARTER_TIRTC_CALL) &&
                      stream_id == CALL_AUDIO_STREAM);
     if (accepted) {
@@ -677,11 +701,17 @@ static int external_connect(starter_tirtc_mode_t mode,
     }
     atomic_store_explicit(&s_pending_tag, request_tag, memory_order_release);
     atomic_store_explicit(&s_pending_mode, mode, memory_order_release);
+    ESP_LOGI(TAG, "CONN sdk_begin: mode=%d req=%lu tag=%lu",
+             (int)mode, (unsigned long)request, (unsigned long)request_tag);
+    uint32_t started_ms = (uint32_t)(esp_timer_get_time() / 1000);
     int rc = mode == STARTER_TIRTC_CALL
                  ? TiRtcConnect(peer_id, token, on_external_connect,
                                 (void *)(uintptr_t)request)
                  : TiRtcWhipConnect(peer_id, token, on_external_connect,
                                     (void *)(uintptr_t)request);
+    uint32_t elapsed_ms = (uint32_t)(esp_timer_get_time() / 1000) - started_ms;
+    ESP_LOGI(TAG, "CONN sdk_return: req=%lu call_ms=%lu rc=%d",
+             (unsigned long)request, (unsigned long)elapsed_ms, rc);
     if (rc != 0) {
         atomic_store_explicit(&s_pending_request, 0, memory_order_release);
     }
@@ -754,6 +784,17 @@ bool starter_tirtc_is_ai_command(uint32_t command)
            (low & ~RESPONSE_BIT) == 0x2100U;
 }
 
+bool starter_tirtc_is_room_command(uint32_t command)
+{
+    return GET_CMD(command) == 0x2200U ||
+           ((command & 0xffffU) & ~RESPONSE_BIT) == 0x2200U;
+}
+
+int starter_tirtc_room_connect(const char *peer_id, const char *token, uint32_t request_tag)
+{
+    return external_connect(STARTER_TIRTC_ROOM, peer_id, token, request_tag);
+}
+
 int starter_tirtc_send_command(uint32_t command,
                                const void *data,
                                uint32_t length)
@@ -792,12 +833,12 @@ int starter_tirtc_send_alaw(uint32_t timestamp_ms,
     starter_tirtc_mode_t mode = starter_tirtc_mode();
     if (connection == NULL || data == NULL || length == 0U ||
         (mode != STARTER_TIRTC_H5 && mode != STARTER_TIRTC_AI &&
-         mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL)) {
+         mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL && mode != STARTER_TIRTC_ROOM)) {
         return TIRTC_E_INVALID_PARAMETER;
     }
     /* 调用者只提交编码数据；协议 stream/media/flags 在此集中固定。 */
     TIRTCFRAMEINFO frame = {
-        .stream_id = mode == STARTER_TIRTC_AI ? AI_AUDIO_STREAM : CALL_AUDIO_STREAM,
+        .stream_id = (mode == STARTER_TIRTC_AI || mode == STARTER_TIRTC_ROOM) ? AI_AUDIO_STREAM : CALL_AUDIO_STREAM,
         .media = TIRTC_AUDIO_ALAW,
         .flags = TIRTC_AUDIOSAMPLE_8K16B1C,
         .ts = timestamp_ms,
@@ -844,7 +885,7 @@ bool starter_tirtc_audio_ready(void)
      * 同样以 call-active 作为设备互呼上行门禁，不能再把本机麦克风卡在
      * 订阅回调上，否则会出现“能听到对方、对方听不到我”。
      */
-    return mode == STARTER_TIRTC_AI || mode == STARTER_TIRTC_VOIP ||
+    return mode == STARTER_TIRTC_AI || mode == STARTER_TIRTC_ROOM || mode == STARTER_TIRTC_VOIP ||
            mode == STARTER_TIRTC_CALL ||
            atomic_load_explicit(&s_audio_subscribed, memory_order_acquire);
 }

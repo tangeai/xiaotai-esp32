@@ -217,6 +217,10 @@ static atomic_uchar s_audio_activity_level;
 static atomic_bool s_voice_active;
 static atomic_uchar s_speaker_volume = 7;
 static atomic_bool s_speaker_muted;
+static atomic_bool s_speaker_controls_pending;
+static atomic_uchar s_speaker_volume_applied = 7;
+static atomic_bool s_speaker_muted_applied;
+static atomic_int s_speaker_control_error;
 static atomic_bool s_microphone_muted;
 /* 单调序号避免“清除取消标志”与新铃声启动之间的竞态。 */
 static atomic_uint_fast32_t s_pcm8k_cancel_sequence;
@@ -263,12 +267,17 @@ EXT_RAM_BSS_ATTR static struct {
     uint32_t window_ms, log_ms, arrival_gap_max_ms, previous_arrival_ms;
     uint32_t write_max_us, lock_busy, rx_dropped_at_log, write_failed_at_log;
     uint32_t residence_max_ms;
+    uint32_t received_samples, consumed_samples, written_samples;
+    uint32_t source_ms, source_span_ms, source_repeat, source_back;
+    uint32_t late_blocks, late_max_ms;
+    bool have_source;
 } s_playout;
 
 static audio_playout_profile_t playout_profile(starter_tirtc_mode_t mode)
 {
     if (mode == STARTER_TIRTC_AI) return AUDIO_PLAYOUT_PROFILE_JITTER_SAFE;
-    if (mode == STARTER_TIRTC_CALL) return AUDIO_PLAYOUT_PROFILE_ADAPTIVE_CALL;
+    if (mode == STARTER_TIRTC_CALL || mode == STARTER_TIRTC_ROOM)
+        return AUDIO_PLAYOUT_PROFILE_ADAPTIVE_CALL;
     return AUDIO_PLAYOUT_PROFILE_LOW_LATENCY;
 }
 
@@ -435,12 +444,36 @@ static esp_err_t audio_output_set_locked(bool enabled)
     return ESP_OK;
 }
 
+/* The current PCM owner applies controls at block boundaries. UI callers only
+ * publish the latest values: a multi-second prompt must never make them wait
+ * for its output lock. Clear pending BEFORE reading, so a concurrent request
+ * remains pending rather than being lost after codec I/O. A hardware failure
+ * is observable and is not retried until another explicit request arrives. */
+static void apply_speaker_controls_locked(bool output_wanted)
+{
+    if (!atomic_exchange(&s_speaker_controls_pending, false)) return;
+    uint8_t volume = atomic_load(&s_speaker_volume);
+    bool muted = atomic_load(&s_speaker_muted);
+    esp_err_t err = ESP_OK;
+    if (esp_codec_dev_set_out_vol(s_speaker_dev, volume * 10U) == ESP_CODEC_DEV_OK)
+        atomic_store(&s_speaker_volume_applied, volume);
+    else err = ESP_FAIL;
+    if (esp_codec_dev_set_out_mute(s_speaker_dev, muted) == ESP_CODEC_DEV_OK)
+        atomic_store(&s_speaker_muted_applied, muted);
+    else err = ESP_FAIL;
+    esp_err_t amp_err = audio_output_set_locked(output_wanted && !muted);
+    if (err == ESP_OK) err = amp_err;
+    atomic_store(&s_speaker_control_error, err);
+    if (err != ESP_OK) ESP_LOGE(TAG, "speaker controls failed: %s", esp_err_to_name(err));
+}
+
 static bool enqueue_uplink_pcm(starter_tirtc_mode_t mode,
                                uint32_t generation,
                                uint32_t timestamp_ms,
                                const int16_t *pcm, unsigned mute_epoch)
 {
-    if (mute_epoch != atomic_load(&s_mute_epoch) || atomic_load(&s_microphone_muted)) return false;
+    if (mute_epoch != atomic_load(&s_mute_epoch) || atomic_load(&s_microphone_muted) ||
+        (mode == STARTER_TIRTC_ROOM && !starter_tirtc_room_transmitting(generation))) return false;
     uint8_t slot = 0;
     if (pcm == NULL || s_audio_tx_free_queue == NULL ||
         xQueueReceive(s_audio_tx_free_queue, &slot, 0) != pdTRUE) {
@@ -475,6 +508,8 @@ static void audio_uplink_task(void *argument)
         }
         audio_tx_item_t *item = &s_audio_tx_pool[slot];
         bool ready = same_session(item->mode, item->generation) &&
+                     (item->mode != STARTER_TIRTC_ROOM ||
+                      starter_tirtc_room_transmitting(item->generation)) &&
                      item->mute_epoch == atomic_load(&s_mute_epoch) &&
                      starter_tirtc_audio_ready() &&
                      !atomic_load_explicit(&s_microphone_muted, memory_order_acquire);
@@ -500,7 +535,9 @@ static void audio_uplink_task(void *argument)
                 .len = sizeof(alaw),
             };
             esp_err_t encoded = esp_g711_enc_process(s_g711_encoder, &input, &output);
-            if (encoded == ESP_AUDIO_ERR_OK && output.encoded_bytes == AUDIO_PACKET_SAMPLES) {
+            if (encoded == ESP_AUDIO_ERR_OK && output.encoded_bytes == AUDIO_PACKET_SAMPLES &&
+                item->mute_epoch == atomic_load(&s_mute_epoch) &&
+                same_session(item->mode, item->generation)) {
                 int ret = starter_tirtc_send_alaw(item->timestamp_ms,
                                                    alaw,
                                                    output.encoded_bytes);
@@ -518,10 +555,10 @@ static void audio_uplink_task(void *argument)
                     ESP_LOGW(TAG, "uplink send failed mode=%d bytes=%u ret=%d",
                              (int)item->mode, (unsigned)output.encoded_bytes, ret);
                 }
-            } else {
+            } else if (encoded != ESP_AUDIO_ERR_OK || output.encoded_bytes != AUDIO_PACKET_SAMPLES) {
                 ESP_LOGW(TAG, "uplink A-law encode failed ret=%s bytes=%u",
                          esp_err_to_name(encoded), (unsigned)output.encoded_bytes);
-            }
+            } /* A changed PTT/session epoch is cancellation, not encoder failure. */
         }
         memset(item, 0, sizeof(*item));
         (void)xQueueSend(s_audio_tx_free_queue, &slot, 0);
@@ -696,6 +733,7 @@ static void audio_capture_task(void *argument)
                                                      memory_order_acquire);
         session_ready = same_session(mode, generation) &&
                         starter_tirtc_audio_ready() &&
+                        (mode != STARTER_TIRTC_ROOM || starter_tirtc_room_transmitting(generation)) &&
                         !atomic_load_explicit(&s_microphone_muted,
                                               memory_order_acquire);
         if (!session_ready) {
@@ -793,6 +831,10 @@ static bool buffer_audio_item(const audio_rx_item_t *item)
         s_playout.window_ms = s_playout.log_ms = item->arrival_ms;
         s_playout.arrival_gap_max_ms = s_playout.write_max_us = s_playout.lock_busy = 0;
         s_playout.residence_max_ms = 0;
+        s_playout.received_samples = s_playout.consumed_samples = s_playout.written_samples = 0;
+        s_playout.source_span_ms = s_playout.source_repeat = s_playout.source_back = 0;
+        s_playout.late_blocks = s_playout.late_max_ms = 0;
+        s_playout.have_source = false;
         s_playout.rx_dropped_at_log = atomic_load(&s_audio_dropped);
         s_playout.write_failed_at_log = atomic_load(&s_audio_write_failed);
         ESP_LOGI(TAG, "AP start gen=%lu mode=%d ring=%ums slots=%u",
@@ -810,6 +852,15 @@ static bool buffer_audio_item(const audio_rx_item_t *item)
     if (residence > s_playout.residence_max_ms) s_playout.residence_max_ms = residence;
     s_playout.previous_arrival_ms = item->arrival_ms;
     if (gap > s_playout.arrival_gap_max_ms) s_playout.arrival_gap_max_ms = gap;
+    s_playout.received_samples += mono_samples;
+    if (s_playout.have_source) {
+        int32_t delta = (int32_t)(item->frame.timestamp_ms - s_playout.source_ms);
+        if (delta > 0) s_playout.source_span_ms += (uint32_t)delta;
+        else if (!delta) s_playout.source_repeat++;
+        else s_playout.source_back++;
+    }
+    s_playout.source_ms = item->frame.timestamp_ms;
+    s_playout.have_source = true;
     if (!p4_audio_playout_push(&s_playout.queue, s_decode_pcm, mono_samples,
                               item->frame.timestamp_ms, item->arrival_ms)) {
         atomic_fetch_add_explicit(&s_audio_dropped, 1, memory_order_relaxed);
@@ -827,6 +878,7 @@ static esp_err_t play_audio_chunk(const int16_t *pcm, size_t mono_samples)
         s_playout.queue.window.local_wait_ms += 2U;
         return ESP_ERR_TIMEOUT;
     }
+    apply_speaker_controls_locked(atomic_load(&s_active));
     if (s_playback_resampler_generation != s_playout.generation) {
         s_playback_resampler_generation = s_playout.generation;
         s_playback_previous = pcm[0];
@@ -880,6 +932,14 @@ static void playout_diagnostics(uint32_t now_ms)
     if (now_ms - s_playout.log_ms < period) return;
     audio_playout_snapshot_t state;
     audio_playout_controller_get_snapshot(&s_playout.queue.controller, &state);
+    /* Sample counts distinguish bursty delivery from a slow local consumer.
+     * This shares the bounded AP log cadence and all counters live in PSRAM. */
+    ESP_LOGI(TAG, "AP flow dt=%lums rx=%luS used=%luS out=%luS src=%lums repeat=%lu back=%lu late=%lu/%lums",
+             (unsigned long)(now_ms - s_playout.log_ms),
+             (unsigned long)s_playout.received_samples, (unsigned long)s_playout.consumed_samples,
+             (unsigned long)s_playout.written_samples, (unsigned long)s_playout.source_span_ms,
+             (unsigned long)s_playout.source_repeat, (unsigned long)s_playout.source_back,
+             (unsigned long)s_playout.late_blocks, (unsigned long)s_playout.late_max_ms);
     ESP_LOGI(TAG, "AP gen=%lu buf=%u/%lums jit=%lums gap=%lums age=%lums empty=%lu "
              "drop=%lu pool=%u full=%luS slow=%lu fast=%lu lock=%lu wrerr=%lu wrmax=%luus state=%s",
              (unsigned long)s_playout.generation,
@@ -899,13 +959,16 @@ static void playout_diagnostics(uint32_t now_ms)
     portENTER_CRITICAL(&s_audio_diag_lock);
     capture = s_capture_post_diag;
     portEXIT_CRITICAL(&s_audio_diag_lock);
+    /* Capture may publish while AP logging is in progress. Timestamp after
+     * copying it so an up-to-date snapshot cannot look 49 days old. */
+    uint32_t capture_age_ms = (uint32_t)(esp_timer_get_time() / 1000) - capture.at_ms;
     if (capture.frames != 0U) {
         /* AEC/HPF/AGC level windows, not calibrated dB SPL or aligned gain
          * ratios (the existing AGC pipeline delays its output by 10 ms). */
         ESP_LOGI(TAG, "CP hpf=%d n=%u age=%lums rms=%lu/%lu/%lu peak=%lu/%lu/%lu "
                  "dc=%ld/%ld/%ld hpclip=%lu hpmax=%luus dspmax=%luus late=%lu ovf=%u",
                  P4_CAPTURE_HIGHPASS_ENABLED, (unsigned)capture.frames,
-                 (unsigned long)(now_ms - capture.at_ms),
+                 (unsigned long)capture_age_ms,
                  (unsigned long)capture.rms[0], (unsigned long)capture.rms[1],
                  (unsigned long)capture.rms[2],
                  (unsigned long)capture.peak[0], (unsigned long)capture.peak[1],
@@ -918,6 +981,9 @@ static void playout_diagnostics(uint32_t now_ms)
                  atomic_load(&s_capture_queue_overflows));
     }
     s_playout.log_ms = now_ms;
+    s_playout.received_samples = s_playout.consumed_samples = s_playout.written_samples = 0;
+    s_playout.source_span_ms = s_playout.source_repeat = s_playout.source_back = 0;
+    s_playout.late_blocks = s_playout.late_max_ms = 0;
     s_playout.rx_dropped_at_log = drops;
     s_playout.write_failed_at_log = write_failures;
     s_playout.residence_max_ms = 0;
@@ -928,6 +994,11 @@ static void audio_sink_task(void *argument)
 {
     (void)argument;
     for (;;) {
+        if (atomic_load(&s_speaker_controls_pending) &&
+            xSemaphoreTake(s_audio_output_mutex, 0) == pdTRUE) {
+            apply_speaker_controls_locked(atomic_load(&s_active));
+            xSemaphoreGive(s_audio_output_mutex);
+        }
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
         if (s_playout.have_stream &&
             (!same_session(s_playout.mode, s_playout.generation) ||
@@ -962,8 +1033,15 @@ static void audio_sink_task(void *argument)
         p4_playout_block_t block;
         if (s_playout.have_stream && same_session(s_playout.mode, s_playout.generation) &&
             p4_audio_playout_prepare(&s_playout.queue, now, s_playout.chunk, &block)) {
+            int32_t late = (int32_t)(now - s_playout.queue.next_due_ms);
+            if (late > 20) {
+                s_playout.late_blocks++;
+                if ((uint32_t)late > s_playout.late_max_ms) s_playout.late_max_ms = (uint32_t)late;
+            }
             esp_err_t result = play_audio_chunk(s_playout.chunk, block.samples);
             if (result != ESP_ERR_TIMEOUT) {
+                s_playout.consumed_samples += block.consumed;
+                if (result == ESP_OK) s_playout.written_samples += block.samples;
                 uint32_t completed = p4_audio_playout_commit(&s_playout.queue, &block,
                     (uint32_t)(esp_timer_get_time() / 1000), result == ESP_OK);
                 atomic_fetch_add_explicit(&s_audio_played, completed, memory_order_relaxed);
@@ -1137,16 +1215,9 @@ esp_err_t starter_media_set_speaker_volume(uint8_t volume)
     if (volume > 10U || s_speaker_dev == NULL || s_audio_output_mutex == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (xSemaphoreTake(s_audio_output_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
-    }
-    esp_err_t err = esp_codec_dev_set_out_vol(s_speaker_dev, volume * 10U) ==
-                            ESP_CODEC_DEV_OK ? ESP_OK : ESP_FAIL;
-    if (err == ESP_OK) {
-        atomic_store_explicit(&s_speaker_volume, volume, memory_order_release);
-    }
-    xSemaphoreGive(s_audio_output_mutex);
-    return err;
+    atomic_store(&s_speaker_volume, volume);
+    atomic_store(&s_speaker_controls_pending, true);
+    return ESP_OK;
 }
 
 esp_err_t starter_media_set_speaker_muted(bool muted)
@@ -1154,18 +1225,9 @@ esp_err_t starter_media_set_speaker_muted(bool muted)
     if (s_speaker_dev == NULL || s_audio_output_mutex == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (xSemaphoreTake(s_audio_output_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
-    }
-    esp_err_t err = esp_codec_dev_set_out_mute(s_speaker_dev, muted) ==
-                            ESP_CODEC_DEV_OK ? ESP_OK : ESP_FAIL;
-    if (err == ESP_OK) {
-        atomic_store_explicit(&s_speaker_muted, muted, memory_order_release);
-        err = audio_output_set_locked(!muted &&
-            atomic_load_explicit(&s_active, memory_order_acquire));
-    }
-    xSemaphoreGive(s_audio_output_mutex);
-    return err;
+    atomic_store(&s_speaker_muted, muted);
+    atomic_store(&s_speaker_controls_pending, true);
+    return ESP_OK;
 }
 
 void starter_media_set_microphone_muted(bool muted)
@@ -1271,13 +1333,20 @@ esp_err_t starter_media_play_pcm8k_at_epoch(const int16_t *pcm, size_t sample_co
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t err = audio_output_set_locked(true);
+    apply_speaker_controls_locked(true);
+    esp_err_t err = audio_output_set_locked(!atomic_load(&s_speaker_muted));
     int16_t previous = pcm[0];
     size_t offset = 0;
     while (err == ESP_OK && offset < sample_count) {
+        apply_speaker_controls_locked(true);
+        if (atomic_load(&s_speaker_muted)) {
+            err = ESP_ERR_INVALID_STATE;
+            break;
+        }
         size_t chunk_samples = sample_count - offset;
-        if (chunk_samples > AUDIO_RX_BYTES) {
-            chunk_samples = AUDIO_RX_BYTES;
+        /* 20 ms controls/cancel latency without releasing PCM ownership. */
+        if (chunk_samples > AUDIO_PACKET_SAMPLES) {
+            chunk_samples = AUDIO_PACKET_SAMPLES;
         }
         for (size_t i = 0; i < chunk_samples; ++i) {
             int16_t current = pcm[offset + i];
@@ -1329,7 +1398,8 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation)
     if (!atomic_load_explicit(&s_ready, memory_order_acquire) ||
         generation == 0U ||
         (mode != STARTER_TIRTC_H5 && mode != STARTER_TIRTC_AI &&
-         mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL)) {
+         mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL &&
+         mode != STARTER_TIRTC_ROOM)) {
         return ESP_ERR_INVALID_STATE;
     }
     xSemaphoreTake(s_preroll_mutex, portMAX_DELAY);
@@ -1368,6 +1438,7 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation)
     atomic_store_explicit(&s_jpeg_max_encode_us, 0, memory_order_release);
     atomic_store_explicit(&s_jpeg_deadline_misses, 0, memory_order_release);
     atomic_store_explicit(&s_mode, mode, memory_order_release);
+    if (mode == STARTER_TIRTC_ROOM) starter_media_room_ptt(generation, false);
     atomic_store_explicit(&s_generation, generation, memory_order_release);
     atomic_store_explicit(&s_video_refresh_requested, mode == STARTER_TIRTC_H5,
                           memory_order_release);
@@ -1402,8 +1473,21 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation)
     return ESP_OK;
 }
 
+void starter_media_room_ptt(uint32_t generation, bool enabled)
+{
+    /* Drop queued/partially assembled speech across either PTT edge. A packet
+     * already handed to the SDK cannot be recalled; never replay it on re-press. */
+    if (!enabled) starter_tirtc_room_set_transmitting(generation, false);
+    if (!generation || starter_tirtc_mode() != STARTER_TIRTC_ROOM ||
+        starter_tirtc_generation() != generation) return;
+    atomic_fetch_add(&s_mute_epoch, 1);
+    if (enabled) starter_tirtc_room_set_transmitting(generation, true);
+}
+
 static esp_err_t stop_media(uint32_t preserve_token)
 {
+    if (atomic_load(&s_mode) == STARTER_TIRTC_ROOM)
+        starter_media_room_ptt(atomic_load(&s_generation), false);
     p4_video_set_session(STARTER_TIRTC_H5, 0, false);
     if (preserve_token == 0) atomic_fetch_add(&s_capture_epoch, 1);
     starter_media_cancel_pcm8k_playback();
@@ -1526,7 +1610,10 @@ starter_media_status_t starter_media_status(void)
         .speaker_volume = atomic_load_explicit(&s_speaker_volume,
                                                 memory_order_acquire),
         .speaker_muted = atomic_load_explicit(&s_speaker_muted,
-                                               memory_order_acquire),
+                                              memory_order_acquire),
+        .speaker_volume_applied = atomic_load(&s_speaker_volume_applied),
+        .speaker_muted_applied = atomic_load(&s_speaker_muted_applied),
+        .speaker_control_error = atomic_load(&s_speaker_control_error),
         .microphone_muted = atomic_load_explicit(&s_microphone_muted,
                                                   memory_order_acquire),
     };

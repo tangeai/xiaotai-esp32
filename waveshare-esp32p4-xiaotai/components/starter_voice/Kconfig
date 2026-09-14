@@ -1,1 +1,1 @@
-rsource "../../../lckfb-szpi-esp32s3-tirtc/main/Kconfig.projbuild"
+rsource "../../main/Kconfig.xiaotai"

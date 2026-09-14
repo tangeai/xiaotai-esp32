@@ -1,18 +1,14 @@
-"""Compile real media/AEC headers for each platform, without board drivers."""
+"""Compile this project\'s real media/AEC headers without board drivers."""
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-shared = root / "components/starter_media"
-p4 = root.parent / "waveshare-esp32p4-xiaotai/components/starter_media"
-cmake = (p4 / "CMakeLists.txt").read_text()
-assert '"src/starter_aec.c"' in cmake
-assert '${shared}/src/starter_aec.c' not in cmake
-p4_source = (p4 / "src/starter_media.c").read_text()
-assert 'starter_aec_process_capture(' in p4_source
-assert 'starter_aec_submit_capture(' not in p4_source
+media = root / "components/starter_media"
+cmake = (media / "CMakeLists.txt").read_text()
+source = (media / "src/starter_media.c").read_text()
+assert 'starter_aec_submit_capture(' in source
 
 with tempfile.TemporaryDirectory(prefix="media-platform-contract-") as tmp:
     path = Path(tmp)
@@ -21,8 +17,8 @@ with tempfile.TemporaryDirectory(prefix="media-platform-contract-") as tmp:
     (path / "esp_err.h").write_text("typedef int esp_err_t;\n")
     (path / "starter_tirtc.h").write_text(
         "typedef int starter_tirtc_mode_t; typedef int starter_tirtc_frame_t;\n")
-    for is_p4 in (0, 1):
-        aec = p4 if is_p4 else shared
+    for is_p4 in (0,):
+        aec = media
         code = '#include "starter_media.h"\n#include "starter_aec.h"\n'
         if is_p4:
             code += '''
@@ -45,8 +41,8 @@ int main(void) { starter_media_status_t status = {0}; return status.audio_sent; 
         (path / "test.c").write_text(code)
         subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra",
                         "-Werror", f"-DCONFIG_IDF_TARGET_ESP32P4={is_p4}",
-                        "-I" + str(path), "-I" + str(shared / "include"),
+                        "-I" + str(path), "-I" + str(media / "include"),
                         "-I" + str(aec / "src"), str(path / "test.c"),
                         "-o", str(path / "test")], check=True)
         subprocess.run([str(path / "test")], check=True)
-print("PASS: S3 asynchronous MMR and P4 synchronous MR header/ownership contracts")
+print("PASS: S3 local asynchronous MMR header/ownership contract")

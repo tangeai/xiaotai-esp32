@@ -6,7 +6,7 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 video = (root / "components/p4_hardware/p4_video.c").read_text()
-sdk = (root.parent / "lckfb-szpi-esp32s3-tirtc/components/starter_tirtc/src/starter_tirtc.c").read_text()
+sdk = (root / "components/starter_tirtc/src/starter_tirtc.c").read_text()
 def function(text, signature):
     start = text.index(signature)
     end = text.index("\n}", start) + 2
