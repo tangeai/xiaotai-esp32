@@ -1,4 +1,9 @@
 dependencies:
+  # New SCCB driver reuses I2C0; raw GC2145 uses the software JPEG encoder.
+  espressif/esp32-camera:
+    version: "==2.1.7"
+  espressif/esp_new_jpeg:
+    version: "==1.0.2"
   # Own the shared ES8311/ES7210 I2S bus through the same duplex adapter used
   # by the verified device-monitor reference.  Do not let independent codec
   # drivers reconfigure TX and RX clocks separately.
@@ -8,5 +13,8 @@ dependencies:
     version: "==2.4.0"
   espressif/esp-sr:
     version: "==2.4.7"
+  # Preserve the validated AFE dependency when resolving camera components.
+  espressif/dl_fft:
+    version: "==0.6.0"
   idf:
     version: ">=5.5,<5.6"

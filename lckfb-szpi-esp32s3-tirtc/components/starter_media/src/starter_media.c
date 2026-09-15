@@ -10,6 +10,7 @@
  * 板上的 ES8311 差分输出经电阻网络接入 ES7210 MIC3，作为同步 AEC 参考。
  */
 #include "starter_media.h"
+#include "starter_camera.h"
 #include "starter_aec.h"
 #include "starter_agc.h"
 #include "starter_voice.h"
@@ -383,12 +384,12 @@ static esp_err_t pca9557_write_register(uint8_t reg, uint8_t value)
 
 static esp_err_t pca9557_set_output(uint8_t mask, bool high)
 {
-    if (high) {
-        s_pca9557_output |= mask;
-    } else {
-        s_pca9557_output &= (uint8_t)~mask;
-    }
-    return pca9557_write_register(PCA9557_OUTPUT_REG, s_pca9557_output);
+    /* All runtime callers hold the output mutex. Commit the shadow only
+     * after I2C succeeds; a camera PWDN write must preserve LCD/PA bits. */
+    uint8_t value = high ? s_pca9557_output | mask : s_pca9557_output & (uint8_t)~mask;
+    esp_err_t err = pca9557_write_register(PCA9557_OUTPUT_REG, value);
+    if (err == ESP_OK) s_pca9557_output = value;
+    return err;
 }
 
 static esp_err_t board_i2c_init(void)
@@ -1537,6 +1538,21 @@ esp_err_t starter_media_select_lcd(bool selected)
     return err;
 }
 
+esp_err_t starter_media_camera_power(bool enabled)
+{
+    if (!atomic_load(&s_ready)) return ESP_ERR_INVALID_STATE;
+    /* Do not hold this mutex while probing SCCB, waiting for DMA or encoding. */
+    if (!take_audio_output_lock(8, pdMS_TO_TICKS(100))) return ESP_ERR_TIMEOUT;
+    esp_err_t err = pca9557_set_output(PCA9557_DVP_PWDN_MASK, !enabled);
+    give_audio_output_lock();
+    return err;
+}
+
+bool starter_media_h5_current(uint32_t generation)
+{
+    return generation != 0 && same_session(STARTER_TIRTC_H5, generation);
+}
+
 esp_err_t starter_media_set_speaker_volume(uint8_t volume)
 {
     if (volume > 10U || s_speaker_dev == NULL || s_audio_output_mutex == NULL) {
@@ -1739,6 +1755,12 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation)
          mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL && mode != STARTER_TIRTC_ROOM)) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (mode == STARTER_TIRTC_H5) {
+        esp_err_t camera_err = starter_camera_prepare(generation);
+        /* Video failure is visible in camera status; preserve H5 audio. */
+        if (camera_err != ESP_OK)
+            ESP_LOGE(TAG, "H5 camera worker unavailable: %s", esp_err_to_name(camera_err));
+    }
     xSemaphoreTake(s_preroll_mutex, portMAX_DELAY);
     bool preroll_ok = true;
     if (mode == STARTER_TIRTC_AI && s_expected_wake_token != 0) {
@@ -1799,11 +1821,15 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation)
              "audio start mode=%d gen=%lu",
              (int)mode,
              (unsigned long)generation);
+    starter_camera_set_session(mode == STARTER_TIRTC_H5 ? generation : 0);
     return ESP_OK;
 }
 
 static esp_err_t stop_media(uint32_t preserve_token)
 {
+    /* Revoke video before releasing RTC ownership; its sole worker performs
+     * driver teardown after its borrowed raw frame/encode operation ends. */
+    starter_camera_set_session(0);
     if (preserve_token == 0) atomic_fetch_add(&s_capture_epoch, 1);
     starter_media_cancel_pcm8k_playback();
     atomic_store_explicit(&s_active, false, memory_order_release);

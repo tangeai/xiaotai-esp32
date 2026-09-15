@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #if CONFIG_IDF_TARGET_ESP32P4
 #include "freertos/task.h"
 #endif
@@ -29,9 +30,8 @@ _Static_assert(sizeof(StaticSemaphore_t) == TIRTC_SDK_STATIC_SEMAPHORE_SIZE,
                "FreeRTOS StaticSemaphore_t does not match the TiRTC SDK build contract");
 
 #define H5_AUDIO_STREAM 10U
-#if CONFIG_IDF_TARGET_ESP32P4
 #define H5_VIDEO_STREAM 11U
-#endif
+#define H5_VIDEO_BACKLOG_BYTES (32U * 1024U)
 #define AI_AUDIO_STREAM 1U
 #define CALL_AUDIO_STREAM 10U
 /* SDK permits 1–50 ms. 20 ms avoids idle-core starvation without perceptible
@@ -59,8 +59,8 @@ static atomic_uint_fast32_t s_request_counter;
 static atomic_uint_fast32_t s_pending_request;
 static atomic_uint_fast32_t s_pending_tag;
 static atomic_bool s_audio_subscribed;
-#if CONFIG_IDF_TARGET_ESP32P4
 static atomic_bool s_video_subscribed;
+#if CONFIG_IDF_TARGET_ESP32P4
 static portMUX_TYPE s_bitrate_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_bitrate_generation;
 static uint32_t s_bitrate_target;
@@ -70,6 +70,12 @@ static atomic_uint_fast32_t s_downlink_audio_rejected;
 static atomic_int s_pending_mode;
 static atomic_uint_fast32_t s_expected_call_tag;
 static bool s_initialized;
+#if CONFIG_IDF_TARGET_ESP32S3
+/* Internal control object only, no frame storage. Serializes a video enqueue
+ * with local disconnect; SDK callbacks never take it. */
+static StaticSemaphore_t s_video_send_mutex_storage;
+static SemaphoreHandle_t s_video_send_mutex;
+#endif
 
 /* SDK 回调携带 opaque handle，只允许当前原子槽位中的 handle 改变状态。 */
 static bool connection_matches(tirtc_conn_t connection)
@@ -88,8 +94,8 @@ static uint32_t next_generation(void)
 static void clear_subscriptions(void)
 {
     atomic_store_explicit(&s_audio_subscribed, false, memory_order_release);
-#if CONFIG_IDF_TARGET_ESP32P4
     atomic_store_explicit(&s_video_subscribed, false, memory_order_release);
+#if CONFIG_IDF_TARGET_ESP32P4
     taskENTER_CRITICAL(&s_bitrate_lock);
     s_bitrate_generation = 0;
     s_bitrate_target = 0;
@@ -455,7 +461,6 @@ static int on_subscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
 
 static int on_subscribe_video(tirtc_conn_t connection, uint8_t stream_id)
 {
-#if CONFIG_IDF_TARGET_ESP32P4
     bool accepted = connection_matches(connection) &&
                     (atomic_load_explicit(&s_mode, memory_order_acquire) == STARTER_TIRTC_H5
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -466,16 +471,12 @@ static int on_subscribe_video(tirtc_conn_t connection, uint8_t stream_id)
                     stream_id == H5_VIDEO_STREAM;
     if (accepted) {
         atomic_store_explicit(&s_video_subscribed, true, memory_order_release);
+#if CONFIG_IDF_TARGET_ESP32P4
         on_request_key_frame(connection, stream_id);
-    }
-    return accepted ? 0 : -1;
-#else
-    /* S3 is audio-only; explicitly reject video instead of advertising a
-     * stream with no producer. Audio subscription and H5 control stay intact. */
-    (void)connection;
-    (void)stream_id;
-    return -1;
 #endif
+    }
+    ESP_LOGI(TAG, "video subscribe stream=%u accepted=%d", (unsigned)stream_id, accepted);
+    return accepted ? 0 : -1;
 }
 
 static void on_unsubscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
@@ -486,15 +487,14 @@ static void on_unsubscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
     }
 }
 
-#if CONFIG_IDF_TARGET_ESP32P4
 static void on_unsubscribe_video(tirtc_conn_t connection, uint8_t stream_id)
 {
-    (void)stream_id;
-    if (connection_matches(connection)) {
+    if (connection_matches(connection) && stream_id == H5_VIDEO_STREAM) {
         atomic_store_explicit(&s_video_subscribed, false, memory_order_release);
     }
 }
 
+#if CONFIG_IDF_TARGET_ESP32P4
 static void on_update_bitrate(tirtc_conn_t connection, uint8_t stream_id,
                               uint32_t target_bps)
 {
@@ -518,10 +518,10 @@ static const TIRTCCALLBACKS s_callbacks = {
     .on_audio = on_audio,
     .on_command = on_command,
     .on_subscribe_video = on_subscribe_video,
+    .on_unsubscribe_video = on_unsubscribe_video,
 #if CONFIG_IDF_TARGET_ESP32P4
     .on_video = on_video,
     .on_request_key_frame = on_request_key_frame,
-    .on_unsubscribe_video = on_unsubscribe_video,
     .on_update_bitrate = on_update_bitrate,
 #endif
     .on_subscribe_audio = on_subscribe_audio,
@@ -603,6 +603,9 @@ static int rollback_start(const char *stage, int rc)
 
 int starter_tirtc_start(const starter_tirtc_config_t *config)
 {
+#if CONFIG_IDF_TARGET_ESP32S3
+    if (!s_video_send_mutex) s_video_send_mutex = xSemaphoreCreateMutexStatic(&s_video_send_mutex_storage);
+#endif
     if (config == NULL || config->device_id == NULL || config->device_id[0] == '\0' ||
         config->device_secret == NULL || config->device_secret[0] == '\0' ||
         s_initialized) {
@@ -754,7 +757,17 @@ int starter_tirtc_disconnect(void)
     atomic_store_explicit(&s_mode, STARTER_TIRTC_NONE, memory_order_release);
     atomic_store_explicit(&s_active_generation, 0, memory_order_release);
     clear_subscriptions();
-    return connection == NULL ? TIRTC_E_INVALID_HANDLE : TiRtcDisconnect(connection);
+    if (!connection) return TIRTC_E_INVALID_HANDLE;
+#if CONFIG_IDF_TARGET_ESP32S3
+    /* The slot is already revoked. Drain only an in-flight video enqueue,
+     * never wait for capture/encoding or hold the lock in an SDK callback. */
+    xSemaphoreTake(s_video_send_mutex, portMAX_DELAY);
+#endif
+    int ret = TiRtcDisconnect(connection);
+#if CONFIG_IDF_TARGET_ESP32S3
+    xSemaphoreGive(s_video_send_mutex);
+#endif
+    return ret;
 }
 
 bool starter_tirtc_connected(void)
@@ -890,7 +903,6 @@ bool starter_tirtc_audio_ready(void)
            atomic_load_explicit(&s_audio_subscribed, memory_order_acquire);
 }
 
-#if CONFIG_IDF_TARGET_ESP32P4
 bool starter_tirtc_video_ready(void)
 {
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -901,6 +913,45 @@ bool starter_tirtc_video_ready(void)
            atomic_load_explicit(&s_video_subscribed, memory_order_acquire);
 }
 
+#if CONFIG_IDF_TARGET_ESP32S3
+bool starter_tirtc_h5_video_congested(uint32_t generation)
+{
+    if (!s_video_send_mutex || xSemaphoreTake(s_video_send_mutex, 0) != pdTRUE) return true;
+    tirtc_conn_t connection = (tirtc_conn_t)atomic_load_explicit(&s_connection, memory_order_acquire);
+    bool congested = !generation || generation != starter_tirtc_generation() ||
+                     !connection || !starter_tirtc_video_ready();
+    if (!congested) congested = TiRtcGetSendBufferUsed(connection) >= H5_VIDEO_BACKLOG_BYTES;
+    xSemaphoreGive(s_video_send_mutex);
+    return congested;
+}
+
+int starter_tirtc_send_h5_jpeg(uint32_t generation, uint32_t timestamp_ms,
+                              const void *data, uint32_t length)
+{
+    /* Bind the frame to its original handle, never to a new foreground call.
+     * TiRTC's thread-safe send API owns concurrent remote disconnect handling. */
+    if (!s_video_send_mutex || xSemaphoreTake(s_video_send_mutex, 0) != pdTRUE) return TIRTC_E_BUSY;
+    tirtc_conn_t connection = (tirtc_conn_t)atomic_load_explicit(&s_connection, memory_order_acquire);
+    if (!generation || generation != starter_tirtc_generation() || !connection ||
+        !starter_tirtc_video_ready() || !data || !length) {
+        xSemaphoreGive(s_video_send_mutex);
+        return TIRTC_E_INVALID_PARAMETER;
+    }
+    if (TiRtcGetSendBufferUsed(connection) >= H5_VIDEO_BACKLOG_BYTES) {
+        xSemaphoreGive(s_video_send_mutex);
+        return TIRTC_E_BUSY;
+    }
+    TIRTCFRAMEINFO frame = {
+        .stream_id = H5_VIDEO_STREAM, .media = TIRTC_VIDEO_JPEG,
+        .flags = TIRTC_FRAME_FLAG_KEY_FRAME, .ts = timestamp_ms, .length = length,
+    };
+    int ret = TiRtcSendVideoStream(connection, &frame, data);
+    xSemaphoreGive(s_video_send_mutex);
+    return ret;
+}
+#endif
+
+#if CONFIG_IDF_TARGET_ESP32P4
 int starter_tirtc_send_h264(uint32_t timestamp_ms, const void *data, uint32_t length, bool key)
 {
     tirtc_conn_t conn = (tirtc_conn_t)atomic_load(&s_connection);

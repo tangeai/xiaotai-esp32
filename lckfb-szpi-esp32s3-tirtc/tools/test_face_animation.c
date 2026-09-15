@@ -12,9 +12,6 @@
 #define EXT_RAM_BSS_ATTR
 #define FACE_CANVAS_W 220
 #define FACE_CANVAS_H 108
-#ifndef CONFIG_IDF_TARGET_ESP32P4
-#define CONFIG_IDF_TARGET_ESP32P4 0
-#endif
 #define ESP_LOGW(...) ((void)0)
 #define ESP_LOGE(...) ((void)0)
 typedef struct { bool paused, ready; } lv_timer_t;
@@ -37,12 +34,9 @@ static lv_area_t invalidated[3];
 static int64_t monotonic_ms(void) { return host_ms; }
 static int64_t esp_timer_get_time(void) { return host_ms * 1000; }
 static lv_color_t product_face_background_color(void)
-{ return lv_color_hex(CONFIG_IDF_TARGET_ESP32P4 ? 0x1C1F22 : 0x141719); }
+{ return lv_color_hex(0x141719); }
 static void lv_obj_get_coords(lv_obj_t *o, lv_area_t *a)
 { (void)o; memset(a, 0, sizeof(*a)); }
-#if CONFIG_IDF_TARGET_ESP32P4
-static int lv_img_get_zoom(lv_obj_t *o) { (void)o; return 341; }
-#endif
 static void lv_obj_invalidate_area(lv_obj_t *o, const lv_area_t *a)
 {
     (void)o;
@@ -81,11 +75,10 @@ static void frame(void)
         assert(b->x0 <= b->x1 && b->y0 <= b->y1);
         assert(b->x1 < FACE_CANVAS_W && b->y1 < FACE_CANVAS_H);
     }
-    int zoom = CONFIG_IDF_TARGET_ESP32P4 ? 341 : 256;
     for (int y = 0; y < FACE_CANVAS_H; ++y) {
         for (int x = 0; x < FACE_CANVAS_W; ++x) {
             if (previous[y * FACE_CANVAS_W + x].full == canvas[y * FACE_CANVAS_W + x].full) continue;
-            int sx = x * zoom / 256, sy = y * zoom / 256;
+            int sx = x, sy = y;
             bool covered = false;
             for (unsigned i = 0; i < invalidated_count; ++i)
                 if (sx >= invalidated[i].x1 && sx <= invalidated[i].x2 &&

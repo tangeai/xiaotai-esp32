@@ -63,6 +63,7 @@ static const audio_playout_tuning_t s_tunings[] = {
 #define AUDIO_PLAYOUT_ACCELERATE_PERMILLE      12
 #define AUDIO_PLAYOUT_FAST_ACCELERATE_PERMILLE 25
 #define AUDIO_PLAYOUT_EXPAND_PERMILLE          (-12)
+#define AUDIO_PLAYOUT_OUTPUT_FLOOR_MS          120U
 
 static bool audio_playout_profile_valid(audio_playout_profile_t profile)
 {
@@ -410,10 +411,16 @@ void audio_playout_controller_decide(const audio_playout_controller_t *controlle
         return;
     }
 
-    uint32_t low_limit_ms = controller->target_delay_ms > chunk_ms ?
-                            controller->target_delay_ms - chunk_ms :
+    /* buffered_ms includes pending DMA audio. A low-latency startup target
+     * below the 90 ms physical capacity must not demand perpetual speed-up.
+     * Retain one software block and a small margin above the DMA horizon. */
+    uint32_t rate_target_ms = controller->target_delay_ms;
+    if (rate_target_ms < AUDIO_PLAYOUT_OUTPUT_FLOOR_MS)
+        rate_target_ms = AUDIO_PLAYOUT_OUTPUT_FLOOR_MS;
+    uint32_t low_limit_ms = rate_target_ms > chunk_ms ?
+                            rate_target_ms - chunk_ms :
                             chunk_ms;
-    uint32_t high_limit_ms = controller->target_delay_ms + chunk_ms;
+    uint32_t high_limit_ms = rate_target_ms + chunk_ms;
 
     /*
      * Positive adjustment consumes slightly more source PCM per output chunk;

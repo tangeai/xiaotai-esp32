@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import sys
+from playback_resampler_fixture import compile_test
 
 root = Path(__file__).resolve().parents[1]
 relative = 'components/starter_media/src/starter_media.c'
@@ -28,17 +29,21 @@ else:
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdatomic.h>
-typedef int esp_err_t;
-#define ESP_OK 0
+#include "p4_playback_resampler.h"
+#include "p4_playback_meter.h"
+#define ESP_LOGE(...) ((void)0)
 #define ESP_FAIL -1
 #define ESP_ERR_TIMEOUT 1
 #define ESP_CODEC_DEV_OK 0
 #define pdTRUE 1
 #define AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT 4
-static int16_t s_play_stereo[64],s_playback_previous;
+static int16_t s_play_stereo[128];
+static p4_playback_resampler_t s_playback_resampler;
 static uint32_t s_playback_resampler_generation;
 static struct {
     int mode; uint32_t generation,lock_busy,write_max_us;
+    uint32_t resample_max_us,resample_clipped,filter_tail_samples;
+    p4_playback_meter_t levels[3]; uint32_t meter_max_us;
     struct {struct {unsigned local_wait_ms;} window;} queue;
 } s_playout={.mode=1,.generation=7};
 static atomic_bool s_speaker_muted;
@@ -47,13 +52,13 @@ static atomic_uint s_audio_write_failed,s_audio_playback_blocked;
 static bool s_amp_enabled=true,busy=true,locked;
 static void *s_speaker_dev=(void*)1;
 static int s_audio_output_mutex=1;
-static unsigned writes;
+static unsigned writes,expected_bytes=32;
 static int64_t esp_timer_get_time(void) {return 1000;}
 static bool same_session(int mode,uint32_t gen) {return mode==1 && gen==7;}
 static int xSemaphoreTake(int mutex,int timeout) {
     assert(mutex==1 && timeout==0);
     if(busy) {
-        for(unsigned i=0;i<64;i++) assert(s_play_stereo[i]==123);
+        for(unsigned i=0;i<128;i++) assert(s_play_stereo[i]==123);
         return 0;
     }
     locked=true; return 1;
@@ -63,28 +68,38 @@ static void xSemaphoreGive(int mutex) {assert(mutex==1 && locked);locked=false;}
  * that applying it never escapes the existing PCM owner's lock. */
 static void apply_speaker_controls_locked(bool active) {assert(locked && active);}
 static int esp_codec_dev_write(void *dev,const void *data,size_t bytes) {
-    assert(dev==(void*)1 && locked && data==s_play_stereo && bytes==32); ++writes; return 0;
+    assert(dev==(void*)1 && locked && data==s_play_stereo && bytes==expected_bytes); ++writes; return 0;
 }
 '''+function+r'''
 int main(void) {
     const int16_t pcm[4]={1000,1000,1000,1000};
-    for(unsigned i=0;i<64;i++) s_play_stereo[i]=123;
-    assert(play_audio_chunk(pcm,4)==ESP_ERR_TIMEOUT && writes==0);
+    for(unsigned i=0;i<128;i++) s_play_stereo[i]=123;
+    assert(play_audio_chunk(pcm,4,true)==ESP_ERR_TIMEOUT && writes==0);
     assert(s_playout.lock_busy==1 && s_playout.queue.window.local_wait_ms==2);
-    busy=false; assert(play_audio_chunk(pcm,4)==ESP_OK && writes==1 && !locked);
+    busy=false; assert(play_audio_chunk(pcm,4,true)==ESP_OK && writes==1 && !locked);
+    assert(p4_playback_resampler_reset(&s_playback_resampler,-30000)==ESP_OK);
+    assert(play_audio_chunk(pcm,4,true)==ESP_OK && writes==2 && !locked);
+    assert(s_play_stereo[0]==1000); /* no stale FIR history across restart */
+    expected_bytes=248;
+    for(unsigned i=0;i<128;i++) s_play_stereo[i]=123;
+    busy=true;
+    assert(play_audio_chunk(NULL,0,false)==ESP_ERR_TIMEOUT && writes==2);
+    assert(s_playback_resampler.pending_tail);
+    busy=false;
+    assert(play_audio_chunk(NULL,0,false)==ESP_OK && writes==3);
+    assert(s_playout.filter_tail_samples==62 && !s_playback_resampler.pending_tail);
+    assert(play_audio_chunk(NULL,0,false)==ESP_OK && writes==3);
+    expected_bytes=32;
     s_speaker_muted=true;
-    assert(play_audio_chunk(pcm,4)==ESP_FAIL && writes==1 && !locked);
+    assert(play_audio_chunk(pcm,4,false)==ESP_FAIL && writes==3 && !locked);
     s_speaker_muted=false; s_playout.generation=6;
-    assert(play_audio_chunk(pcm,4)==ESP_FAIL && writes==1 && !locked);
+    assert(play_audio_chunk(pcm,4,false)==ESP_FAIL && writes==3 && !locked);
     return 0;
 }
 '''
     with tempfile.TemporaryDirectory(prefix='p4-output-owner-') as tmp:
         p=Path(tmp)
-        (p/'test.c').write_text(code,encoding='utf-8')
-        subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
-                        str(p/'test.c'),'-o',str(p/'test')],check=True)
-        subprocess.run([str(p/'test')],check=True)
+        subprocess.run([str(compile_test(p,code))],check=True)
     print('PASS: P4 output scratch ownership, nonblocking contention, mute and stale session')
     sys.exit(0)
 start = source.index('static bool play_audio_item(')

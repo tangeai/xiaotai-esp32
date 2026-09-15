@@ -14,11 +14,11 @@ config XIAOTAI_DEVELOPMENT_CONSOLE
         but do not create this command task.
 config XIAOTAI_PORTAL_URL
     string "Device binding portal URL (display only)"
-    default "https://demo-open.tange-ai.com"
+    default "https://xiaotai.chat/"
 config XIAOTAI_WAKE_THRESHOLD_MILLI
     int "Voicute wake threshold (thousandths)"
     range 50 990
-    default 700
+    default 800
     help
         Model-specific; requires acoustic validation. Console overrides are volatile.
 config XIAOTAI_CAPTURE_AGC

@@ -348,7 +348,7 @@ esp_err_t starter_runtime_ai_stop(void) { ++stop_count; return stop_error; }
 ''' + function(product_path, "page_ends_ai") + function(product_path, "enter_page") + r'''
 int main(void) {
     const product_page_t keep[] = {PAGE_HOME_FACE, PAGE_HOME_CLOCK, PAGE_MENU,
-        PAGE_AI_CHAT, PAGE_DIAGNOSTICS, PAGE_CALL, PAGE_CALL_RESULT};
+        PAGE_DIAGNOSTICS, PAGE_CALL, PAGE_CALL_RESULT};
     const product_page_t stop[] = {PAGE_CONTACTS, PAGE_CONTACT_DETAIL, PAGE_EMOJIS,
         PAGE_EMOJI_PREVIEW, PAGE_SETTINGS, PAGE_NETWORK};
     for (unsigned i=0; i<sizeof(keep)/sizeof(keep[0]); ++i) {

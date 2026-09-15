@@ -3,7 +3,7 @@ idf_component_register(
       "${CMAKE_CURRENT_LIST_DIR}/src/platform_http_trace.c"
  INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include"
  REQUIRES esp_http_client esp_netif mqtt mbedtls json
- PRIV_REQUIRES esp-tls esp_timer tcp_transport lwip
+ PRIV_REQUIRES esp-tls esp_timer tcp_transport lwip http_parser
 )
 
 if(CMAKE_BUILD_EARLY_EXPANSION)
@@ -13,6 +13,8 @@ endif()
 # calls outside that task/scope retain their original arguments and results.
 target_link_libraries(${COMPONENT_LIB} INTERFACE
     "-Wl,--wrap=lwip_getaddrinfo"
+    "-Wl,--wrap=lwip_connect"
+    "-Wl,--wrap=lwip_select"
     "-Wl,--wrap=esp_transport_connect"
     "-Wl,--wrap=esp_transport_write"
     "-Wl,--wrap=esp_transport_read"

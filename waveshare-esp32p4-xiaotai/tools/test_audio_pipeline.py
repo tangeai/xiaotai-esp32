@@ -1,5 +1,6 @@
 """Exercise P4 sample chronology and allocation contracts, not acoustic quality."""
 from pathlib import Path
+import math
 import re
 import subprocess
 import tempfile
@@ -35,12 +36,16 @@ assert 'TX gain failed: %s' in uplink and 'ready = false;' in uplink
 # Reuse the dependency stub, but execute the P4 conditional branch of real AGC code.
 from audio_agc_fixture import prefix
 source = (root / 'components/starter_media/src/starter_agc.c').read_text(encoding='utf-8')
+gain = int(re.search(r'#define UPLINK_BOOST_GAIN_DB (\d+)', source)[1])
+trim = int(re.search(r'#define UPLINK_BOOST_INPUT_Q15 (\d+)', source)[1])
+assert abs(math.pow(10, (gain - 6) / 20) * trim / 32768 - 1.5) < 0.00002
+assert 0 < trim <= 32768
 source = re.sub(r'^#include[^\n]*\n', '', source, flags=re.M)
 test = r'''
 int main(void) {
     assert(starter_agc_init()==ESP_OK && opened==2);
     assert(state[0].gain==9 && state[0].target==6 && state[0].limiter==1);
-    assert(state[1].gain==6 && state[1].target==3 && state[1].limiter==1);
+    assert(state[1].gain==10 && state[1].target==3 && state[1].limiter==1);
     assert(starter_agc_init()==ESP_OK && opened==2);
     int16_t in[512], out[512];
     for (unsigned f=0;f<200;f++) {
@@ -52,11 +57,27 @@ int main(void) {
         }
     }
     int16_t pcm[160], expected[160];
-    for (int i=0;i<160;i++) pcm[i]=expected[i]=(int16_t)(i*300-22000);
     for (int i=0;i<100;i++) {
-        /* Stub verifies chronology only; real gain/limiter needs listening. */
+        for (int k=0;k<160;k++) {
+            pcm[k]=(int16_t)(k*300-22000);
+            int32_t v=(int32_t)pcm[k]*31013;
+            expected[k]=(int16_t)((v+(v>=0?16384:-16384))/32768);
+        }
+        /* Stub verifies trim/order/config only, not vendor AGC acoustics. */
         assert(starter_agc_boost_uplink(pcm,160)==ESP_OK);
         assert(memcmp(pcm,expected,sizeof(pcm))==0);
+    }
+    /* Cover the full signed PCM domain: pre-trim cannot clip or wrap. */
+    for (int base=-32768;base<=32767;base+=160) {
+        for (int k=0;k<160;k++) pcm[k]=(int16_t)(base+k>32767?32767:base+k);
+        memcpy(expected,pcm,sizeof(pcm));
+        assert(starter_agc_boost_uplink(pcm,160)==ESP_OK);
+        for (int k=0;k<160;k++) {
+            int32_t v=(int32_t)expected[k]*31013;
+            assert(pcm[k]==(v+(v>=0?16384:-16384))/32768);
+            assert(expected[k]>=0 ? pcm[k]>=0 && pcm[k]<=expected[k] :
+                                   pcm[k]<=0 && pcm[k]>=expected[k]);
+        }
     }
     assert(starter_agc_boost_uplink(pcm,79)==ESP_ERR_INVALID_ARG);
     assert(starter_agc_boost_uplink(NULL,160)==ESP_ERR_INVALID_ARG);
@@ -88,32 +109,8 @@ with tempfile.TemporaryDirectory(prefix='p4-audio-') as tmp:
                     '-I'+str(root/'components/starter_media/src'),str(p/'agc.c'),'-o',str(p/'agc')],check=True)
     subprocess.run([str(p/'agc')],check=True)
 
-    loops = re.findall(r'    for \(size_t i = 0; i < (?:mono_samples|chunk_samples); \+\+i\) \{.*?\n    \}', media, re.S)
-    # Local prompts have one extra indentation level.
-    local = re.search(r'        for \(size_t i = 0; i < chunk_samples; \+\+i\) \{.*?\n        \}', media, re.S)
-    assert loops and local
-    pre = '#include <assert.h>\n#include <stdint.h>\n#include <stddef.h>\n#define AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT 4\n'
-    code = pre + 'static int16_t s_decode_pcm[17],s_play_stereo[68],s_playback_previous;\n'
-    code += 'static void remote(size_t mono_samples){\nconst int16_t *pcm=s_decode_pcm;\n'+loops[0]+'\n}\n'
-    code += 'static void prompt(const int16_t *pcm,size_t offset,size_t chunk_samples,int16_t *state){\nint16_t previous=*state;\n'+local[0]+'\n*state=previous;\n}\n'
-    code += r'''
-int main(void) {
-    int16_t previous=0;
-    for(int block=0;block<32;block++) {
-        for(int i=0;i<17;i++)s_decode_pcm[i]=(int16_t)((block*17+i+1)*40);
-        remote(17);
-        for(int i=0;i<17;i++) {
-            int curr=s_decode_pcm[i];
-            assert(s_play_stereo[i*4]==curr-20 && s_play_stereo[i*4+2]==curr);
-            assert(s_play_stereo[i*4]==s_play_stereo[i*4+1]);
-            assert(s_play_stereo[i*4+2]==s_play_stereo[i*4+3]);
-        }
-        prompt(s_decode_pcm,0,17,&previous);
-        for(int i=0;i<17;i++)assert(s_play_stereo[i*4]==s_decode_pcm[i]-20 && s_play_stereo[i*4+2]==s_decode_pcm[i]);
-    }
-}
-'''
-    (p/'order.c').write_text(code, encoding='utf-8')
-    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(p/'order.c'),'-o',str(p/'order')],check=True)
-    subprocess.run([str(p/'order')],check=True)
-print('PASS: P4 MR routing, ADC startup order, PSRAM AGC cleanup, 102400 samples, both playback interpolation paths')
+# The former midpoint loops are replaced by a shared, separately executable
+# FIR suite, including chronological impulse and packet-split equivalence.
+import sys
+subprocess.run([sys.executable, str(root/'tools/test_playback_resampler.py')], check=True)
+print('PASS: P4 MR routing, ADC startup order, PSRAM AGC cleanup, 102400 samples, playback FIR')

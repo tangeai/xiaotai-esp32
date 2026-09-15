@@ -20,7 +20,7 @@
 [![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
 [![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#微信呼叫)
 
-[下载固件](#下载固件) · [在线烧录](https://espressif.github.io/esptool-js/) · [体验平台](https://demo-open.tange-ai.com) · [服务端与小程序](https://github.com/tangeai/tirtc-server-example)
+[下载固件](#下载固件) · [在线烧录](https://espressif.github.io/esptool-js/) · [体验平台](https://xiaotai.chat/) · [服务端与小程序](https://github.com/tangeai/tirtc-server-example)
 
 </div>
 
@@ -36,12 +36,12 @@
 
 | 开发板 | 完整 BIN 下载（16 MB） | 功能 |
 | --- | --- | --- |
-| 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.1.2](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.1.2/xiaotai-esp32-s3-app-v1.1.2-full-16MB.bin) | 语音通话、AI 对讲；无摄像头画面 |
-| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.1.2](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.1.2/xiaotai-esp32-p4-app-v1.1.2-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
+| 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.2.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.2.0/xiaotai-esp32-s3-app-v1.2.0-full-16MB.bin) | 语音通话、AI 对讲、H5 摄像头查看 |
+| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.2.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.2.0/xiaotai-esp32-p4-app-v1.2.0-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
 
 烧录前请核对芯片修订版本：**S3 rev 0.0–0.99，P4 rev 1.0–1.99**。P4 rev 2.x/3.x 不适用；芯片修订版本与 PCB 版本不同。S3/P4 固件不可互刷。
 
-当前固件为体验版（Pre-release）。烧录说明、校验文件及验证范围见 [S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.1.2)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.1.2)。
+当前固件为体验版（Pre-release）。烧录说明、校验文件及验证范围见 [S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.2.0)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.2.0)。
 
 <a id="用浏览器烧录"></a>
 
@@ -66,8 +66,8 @@
 
 ## 步骤 4：在网站绑定设备
 
-1. 打开[小钛体验平台](https://demo-open.tange-ai.com)，注册并登录账号。
-2. 进入[我的设备](https://demo-open.tange-ai.com/devices)，点击 **添加设备 → 验证码绑定**。
+1. 打开[小钛体验平台](https://xiaotai.chat/)，注册并登录账号。
+2. 进入[我的设备](https://xiaotai.chat/devices)，点击 **添加设备 → 验证码绑定**。
 3. 输入设备屏幕上的 **6 位绑定码**，点击 **绑定设备**。
 4. 返回设备列表，确认设备显示“在线”。绑定码过期时，按设备提示重新获取。
 
@@ -78,7 +78,7 @@
 ### 实时查看
 
 1. 在网站设备列表中，点击目标设备的 **实时**。
-2. 点击声音按钮，收听设备端声音。P4 接入摄像头后还可查看实时画面；S3 仅支持音频。
+2. 点击声音按钮，收听设备端声音。接入对应摄像头后，S3/P4 都可查看实时画面；S3 使用 GC2145，默认 240×176、目标 12fps。
 3. 允许浏览器使用麦克风，点击并按住 **按住说话**，向设备端发送语音。
 
 ### 微信呼叫

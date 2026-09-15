@@ -76,6 +76,7 @@ typedef enum {
     EVENT_COMMAND,         /* TiRTC 控制命令，当前用于 AI JSON-RPC。 */
     EVENT_AI_START,        /* 产品控制意图。 */
     EVENT_AI_STOP,         /* 产品控制意图。 */
+    EVENT_H5_STOP,         /* Generation-bound local viewing stop. */
     EVENT_AI_TOKEN,        /* /v1/ai/token 的异步响应。 */
     EVENT_PLATFORM_SIGNAL, /* MQTT 设备信令，例如 unbind。 */
     EVENT_PLATFORM_ONLINE, /* MQTT 已订阅且 HTTP worker 就绪。 */
@@ -943,7 +944,8 @@ static void request_voip_profile(void)
         !platform_client_mqtt_connected()) {
         return;
     }
-    /* P4 reports video capability; S3 retains its voice-only profile. */
+    /* Keep the existing online/retry/epoch owner. S3 reports one complete
+     * snapshot per scene; this is capability metadata, not media admission. */
 #if CONFIG_IDF_TARGET_ESP32P4
     /* WeChat UI, not encoder controls: on-device testing requires an additional
      * CCW90 presentation correction. Actual encoded size remains 960x1280. */
@@ -955,22 +957,46 @@ static void request_voip_profile(void)
         "\"up_video_mt\":\"h264\",\"down_video_mt\":\"mjpeg\","
         "\"down_audio_mt\":\"alaw\",\"no_video\":false,\"calling_timeout_sec\":30}";
 #else
+    /* Cover every documented field for each scene. Presentation defaults do
+     * not enable video when no_video=true. Report the wire format (8k mono),
+     * not the 16k dual-microphone AFE input; unsupported codecs stay absent.
+     * This const snapshot is not camera health or runtime telemetry. */
     static const char profile[] =
-        "{\"screen_width\":1,\"screen_height\":1,"
-        "\"audio_rate\":8000,\"audio_channels\":1,"
+        "{\"profiles\":{"
+        "\"stream\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"up_video_mt\":[\"mjpeg\"],\"down_video_mt\":[],"
+        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false,"
+        "\"camera_rotation\":0,\"hor_mirror\":false,\"vert_mirror\":false,"
+        "\"aspect_ratio\":\"4:3\",\"object_fit\":\"contain\"},"
+        "\"call\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"up_video_mt\":[],\"down_video_mt\":[],"
+        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":true,"
+        "\"camera_rotation\":0,\"hor_mirror\":false,\"vert_mirror\":false,"
+        "\"aspect_ratio\":\"4:3\",\"object_fit\":\"contain\"},"
+        "\"voip\":{\"screen_width\":320,\"screen_height\":240,"
+        "\"audio_rate\":8000,\"audio_channels\":1,\"down_audio_mt\":\"alaw\","
         "\"up_video_mt\":\"none\",\"down_video_mt\":\"none\","
-        "\"down_audio_mt\":\"alaw\",\"no_video\":true,"
-        "\"calling_timeout_sec\":30}";
+        "\"camera_rotation\":0,\"down_video_rotation\":0,"
+        "\"hor_mirror\":false,\"vert_mirror\":false,"
+        "\"aspect_ratio\":\"4:3\",\"object_fit\":\"contain\",\"video_res_mode\":\"auto\","
+        "\"no_video\":true,\"calling_timeout_sec\":30}}}";
 #endif
     /* Profile registration also has no realtime-connect callback. */
     esp_err_t err = platform_client_request_metadata(
+#if CONFIG_IDF_TARGET_ESP32P4
         PLATFORM_SERVICE_VOIP, "/v1/voip/device/profile", profile,
+#else
+        PLATFORM_SERVICE_DEVICE, "/v1/device/profile", profile,
+#endif
         10000U, voip_profile_response, NULL);
     if (err == ESP_OK) {
         s_voip_profile_inflight = true;
-        ESP_LOGI(TAG, "VoIP profile submission queued");
 #if CONFIG_IDF_TARGET_ESP32P4
+        ESP_LOGI(TAG, "VoIP profile submission queued");
         ESP_LOGI(TAG, "VoIP profile: video enabled, up=h264 down=mjpeg screen=480x320 camera_rotation=270 aspect_ratio=0.75 mirror=none object_fit=contain");
+#else
+        ESP_LOGI(TAG, "device profile queued api=/v1/device/profile fields=12/12/16 bytes=%u stream=mjpeg/alaw call=alaw voip=alaw",
+                 (unsigned)(sizeof(profile) - 1));
 #endif
     } else {
         s_voip_profile_retry_at_ms = now_ms() + VOIP_PROFILE_RETRY_MS;
@@ -986,7 +1012,11 @@ static void handle_voip_profile(const runtime_event_t *event)
     if (response_ok(root)) {
         s_voip_profile_ready = true;
         s_voip_profile_retry_at_ms = 0;
+#if CONFIG_IDF_TARGET_ESP32P4
         ESP_LOGI(TAG, "VoIP profile reported; WeChat calling is ready");
+#else
+        ESP_LOGI(TAG, "device profile accepted api=/v1/device/profile scenes=stream,call,voip; WeChat calling is ready");
+#endif
         cJSON_Delete(root);
         refresh_contacts();
         return;
@@ -2967,6 +2997,12 @@ static void runtime_task(void *argument)
             case EVENT_AI_STOP:
                 end_ai_session();
                 break;
+            case EVENT_H5_STOP:
+                /* A delayed button must not stop the next call/AI/view. */
+                if (atomic_load(&s_public_state) == STARTER_RUNTIME_H5_ACTIVE &&
+                    event.generation != 0 && event.generation == s_connection_generation)
+                    finish_session(0);
+                break;
             case EVENT_AI_TOKEN:
                 handle_ai_token(&event);
                 break;
@@ -3156,6 +3192,13 @@ esp_err_t starter_runtime_ai_start_from_wake(uint32_t wake_token)
 esp_err_t starter_runtime_ai_stop(void)
 {
     return enqueue_simple(EVENT_AI_STOP);
+}
+
+esp_err_t starter_runtime_h5_stop(uint32_t generation)
+{
+    if (!generation) return ESP_ERR_INVALID_ARG;
+    const runtime_event_t event = {.type = EVENT_H5_STOP, .generation = generation};
+    return queue_event(&event) ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
 esp_err_t starter_runtime_contacts_refresh(void)

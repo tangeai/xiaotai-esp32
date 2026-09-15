@@ -121,6 +121,8 @@ void platform_client_complete_rebind(void);
 uint32_t platform_client_epoch(void);
 /* Only read from a platform HTTP response callback. */
 uint32_t platform_client_response_epoch(void);
+/* Only read in the HTTP callback: final status, or 0 if no response arrived. */
+int platform_client_response_status(void);
 void platform_client_retry_binding(void);
 bool platform_client_take_binding_retry(void);
 

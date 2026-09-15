@@ -28,6 +28,16 @@ with tempfile.TemporaryDirectory(prefix='platform-http-trace-') as temporary:
         'freertos/FreeRTOS.h': 'typedef void *TaskHandle_t;\n',
         'freertos/task.h': 'TaskHandle_t xTaskGetCurrentTaskHandle(void);\n',
         'lwip/netdb.h': 'struct addrinfo { int unused; };\n',
+        'lwip/sockets.h': '''
+#include <stdint.h>
+typedef unsigned socklen_t;
+struct sockaddr { int unused; };
+typedef struct { uint32_t bits; } fd_set;
+struct timeval { long tv_sec, tv_usec; };
+#define FD_ZERO(s) ((s)->bits = 0)
+#define FD_SET(n,s) ((s)->bits |= 1U << (n))
+#define FD_ISSET(n,s) ((s)->bits & (1U << (n)))
+''',
     }
     for name, text in headers.items():
         path = temp / name
@@ -44,6 +54,17 @@ static TaskHandle_t task = (void *)1;
 static int dns_result, read_result = 12, write_result = -2;
 static unsigned native_dns_calls, native_writes;
 static struct addrinfo result_storage;
+static int connect_result = -1, connect_errno = EINPROGRESS, select_result = 1;
+int __real_lwip_connect(int fd, const struct sockaddr *address, socklen_t length) {
+    assert(fd == 5 && address && length == sizeof(*address));
+    clock_ms += 2; errno = connect_errno; return connect_result;
+}
+int __real_lwip_select(int count, fd_set *readfds, fd_set *writefds,
+        fd_set *exceptfds, struct timeval *timeout) {
+    (void)readfds; (void)exceptfds;
+    assert(count == 6 && writefds && timeout && timeout->tv_sec == 15);
+    clock_ms += 13313; errno = ERANGE; return select_result;
+}
 int64_t esp_timer_get_time(void) { return (int64_t)clock_ms * 1000; }
 TaskHandle_t xTaskGetCurrentTaskHandle(void) { return task; }
 int __real_lwip_getaddrinfo(const char *node, const char *service,
@@ -126,6 +147,35 @@ int main(void) {
     assert(trace.dns_ms == 1054); /* Monotonic 32-bit wrap. */
     platform_http_trace_end(&trace);
     assert(native_dns_calls == 6 && native_writes == 4);
+    struct sockaddr address = {0};
+    fd_set writes;
+    struct timeval timeout = {.tv_sec=15};
+    FD_ZERO(&writes); FD_SET(5, &writes);
+    platform_http_trace_begin(&trace);
+    assert(__wrap_lwip_connect(5, &address, sizeof(address)) == -1);
+    assert(errno == EINPROGRESS && trace.socket_ms == 2 && trace.pending_socket == 5);
+    task = (void *)2; /* Concurrent SDK call must not consume our pending socket. */
+    assert(__wrap_lwip_select(6, NULL, &writes, NULL, &timeout) == 1);
+    assert(trace.tcp_wait_ms == 0 && trace.pending_socket == 5 && errno == ERANGE);
+    task = (void *)1;
+    assert(__wrap_lwip_select(6, NULL, &writes, NULL, &timeout) == 1);
+    assert(trace.tcp_wait_ms == 13313 && trace.tcp_wait_rc == 1 && trace.pending_socket == -1);
+    assert(__wrap_lwip_select(6, NULL, &writes, NULL, &timeout) == 1);
+    assert(trace.tcp_wait_ms == 13313); /* Later HTTP/TLS waits excluded. */
+    platform_http_trace_end(&trace);
+    platform_http_trace_begin(&trace);
+    select_result = 0;
+    assert(__wrap_lwip_connect(5, &address, sizeof(address)) == -1);
+    assert(__wrap_lwip_select(6, NULL, &writes, NULL, &timeout) == 0);
+    assert(trace.tcp_wait_rc == 0 && trace.tcp_wait_ms == 13313);
+    platform_http_trace_end(&trace);
+    platform_http_trace_begin(&trace);
+    connect_errno = ECONNREFUSED;
+    assert(__wrap_lwip_connect(5, &address, sizeof(address)) == -1);
+    assert(errno == ECONNREFUSED && trace.pending_socket == -1);
+    assert(__wrap_lwip_select(6, NULL, &writes, NULL, &timeout) == 0);
+    assert(trace.tcp_wait_ms == 0 && trace.tcp_wait_rc == -2);
+    platform_http_trace_end(&trace);
     assert(strcmp(http_api_name("http://user:secret@host/v1/ai/token?token=secret"), "/v1/ai/token") == 0);
     assert(strcmp(http_api_name("/v1/call/room?room_id=secret#x"), "/v1/call/room") == 0);
     assert(strcmp(http_api_name("/v1/call/room/secret"), "other") == 0);
@@ -149,7 +199,8 @@ trace_text = source.read_text(encoding='utf-8')
 for forbidden in ('malloc(', 'xTaskCreate', 'xSemaphore', 'ESP_LOG'):
     assert forbidden not in trace_text
 cmake = (source.parent.parent / 'CMakeLists.txt').read_text(encoding='utf-8')
-for symbol in ('lwip_getaddrinfo', 'esp_transport_connect', 'esp_transport_write', 'esp_transport_read'):
+for symbol in ('lwip_getaddrinfo', 'lwip_connect', 'lwip_select',
+               'esp_transport_connect', 'esp_transport_write', 'esp_transport_read'):
     assert '--wrap=' + symbol in cmake
 perform = function(platform, 'static esp_err_t http_request_timed(')
 assert perform.index('platform_http_trace_begin') < perform.index('esp_http_client_perform')

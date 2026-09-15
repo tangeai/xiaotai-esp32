@@ -394,7 +394,7 @@ static const char *http_api_name(const char *url_or_path)
     if (path == NULL) return "unknown";
     size_t length = strcspn(path, "?#");
     static const char *const names[] = {
-        "/services", "/v1/device/token", "/v1/device/report", "/v1/device/tts",
+        "/services", "/v1/device/token", "/v1/device/report", "/v1/device/tts", "/v1/device/profile",
         "/v1/ai/token", "/v1/call/device/contacts", "/v1/call/device/info",
         "/v1/call/request", "/v1/call/room", "/v1/call/cancel",
         "/v1/call/hangup", "/v1/call/reject", "/v1/voip/device/profile",

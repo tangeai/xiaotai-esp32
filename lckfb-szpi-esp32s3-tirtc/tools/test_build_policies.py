@@ -27,7 +27,7 @@ class PortablePoliciesTest(unittest.TestCase):
             "i2c_driver_family", "product_touch_i2c", "backlight_polarity", "binding_prompt",
             "wifi_provisioning", "product_ui", "time_sync", "tirtc_startup_order",
             "realtime_connect_memory", "tirtc_thread_stack", "voice_intent", "wake_image",
-            "session_priority", "audio_only", "media_cpu_fairness", "i2s_resource",
+            "session_priority", "viewing_scope", "media_cpu_fairness", "i2s_resource",
             "audio_capture", "aec", "downlink_audio", "memory_placement", "ai_stack",
         }
         self.assertEqual(names, set(policies.POLICIES))
@@ -82,10 +82,10 @@ class PortablePoliciesTest(unittest.TestCase):
             with self.assertRaisesRegex(policies.PolicyFailure, "legacy I2C object"):
                 policies.i2c_driver_family(self.context)
 
-    def test_elf_camera_and_removed_wake_symbols_still_fail(self):
-        with patch.object(self.context, "symbols", return_value="1 T esp_camera_init\n"):
-            with self.assertRaisesRegex(policies.PolicyFailure, "camera/video"):
-                policies.audio_only(self.context)
+    def test_elf_call_video_and_removed_wake_symbols_still_fail(self):
+        with patch.object(self.context, "symbols", return_value="1 T starter_tirtc_send_h264\n"):
+            with self.assertRaisesRegex(policies.PolicyFailure, "non-H5 video"):
+                policies.viewing_scope(self.context)
         with patch.object(self.context, "symbols", return_value="1 T esp_mn_init\n"):
             with self.assertRaisesRegex(policies.PolicyFailure, "MultiNet"):
                 policies.wake_image(self.context)
@@ -142,6 +142,24 @@ class PortablePoliciesTest(unittest.TestCase):
                 context.text_cache[context.path(name)] = original.replace(old, new)
                 with self.assertRaises(policies.PolicyFailure):
                     policies.memory_placement(context)
+                context.text_cache[context.path(name)] = original
+
+    def test_ui_policy_checks_current_pages_and_rejects_legacy_return(self):
+        context = self.source_context()
+        policies.product_ui(context)
+        for name, old, new in (
+                ("s3_ui", "s3_render_call(screen)", "REMOVED(screen)"),
+                ("s3_ui", "starter_runtime_caption_read(&s3_ui.caption)", "false"),
+                ("s3_ui", "s3_set_enabled(s_call_hangup_button, !pending)", "REMOVED()"),
+                ("product", "s3_face_set_target(emotion, phase, activity_level)", "REMOVED()"),
+                ("product", "static bool s_started;", "static char s_ai_history[2048];"),
+                ("product", "static bool s_started;", "static void render_ai_chat(void);")):
+            with self.subTest(name=name, old=old):
+                original = context.text(name)
+                self.assertIn(old, original)
+                context.text_cache[context.path(name)] = original.replace(old, new)
+                with self.assertRaises(policies.PolicyFailure):
+                    policies.product_ui(context)
                 context.text_cache[context.path(name)] = original
 
     def test_time_sync_keeps_reviewed_primary_and_fallback(self):

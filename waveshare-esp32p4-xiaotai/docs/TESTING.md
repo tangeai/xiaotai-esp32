@@ -51,6 +51,33 @@
 
 前一快照就为空时，检查 DHCP ACK 中的 DNS 选项及解析；前一快照非空、后面被清空时，检查网卡生命周期和 DNS 写入路径。必要时抓 DHCP/DNS/NTP 包。验证须覆盖服务器地址解析、`network clock synchronized` 及平台实际上线，不能仅凭备用地址写入成功判为通过。
 
+### 启动等待计时
+
+画面能动但功能未就绪时，依次对齐获得 IP、`network clock synchronized`、`SDK started`、`device token obtained`、主页状态、MQTT 连接及资料上报。主页出现后实际发起 AI，确认 `ai-active` 与首个上下行音频包，不能只把页面切换视为全功能就绪。
+
+慢 HTTP 日志中，`dns` 为解析，`link` 为扣除解析的连接耗时，`sock` 为 socket connect 调用耗时，`tcp_wait` 为非阻塞 TCP 建连的首次等待；`wait` 为最后一次写入到首次收到响应的间隔，`q` 为业务排队。`conn=0` 表示复用了连接。`HTTP t` 与日志前缀可能使用不同时间基准，只在同一基准内相减。
+
+校时等候与 HTTP 建连分别定位。没有收到 NTP 应答，不能直接认定服务器、热点或设备丢包；需要请求/响应及路径对照证据。复用连接的回归应覆盖签名登录、Bearer 请求、POST 后 GET、空闲释放、跨站、服务器主动关闭、解绑及失败后手动重试。
+
+## 设备能力上报
+
+正常日志顺序为 MQTT 上线、`device profile queued`、`api=/v1/device/profile`、`device profile reported`。检查服务器保存的 `profiles.stream/call/voip` 与[能力表](P4_MEDIA_ARCHITECTURE.md#设备能力上报)一致，再验证微信语音/视频、设备呼叫和 H5。平台显示能力并不等于媒体实测通过。
+
+逐项核对三个场景的 12 / 12 / 16 个字段，以及服务器补充的摄像头、屏幕和微信通话类型。重点确认实时查看比例为 0.75、设备通话为 1.5，画面无新增旋转或镜像；微信新增 `down_video_rotation=0`、`video_res_mode=auto` 后，双向视频尺寸、方向和本地 MJPEG 播放应与原来一致。请求中不得出现示例里有、但本业务未实现的编码或只读字段。
+
+错误日志保留 HTTP 状态、业务码和重试间隔，不输出 token。回归覆盖首次绑定、已绑定冷启动、MQTT 重连、HTTP 超时/500、参数 400、鉴权 401、解绑 410/6006、响应队列满及解绑后迟到响应。失败不能打印上报成功；同一上线周期最多 3 次，成功后不周期性重复提交。确认新请求没有在 UI、MQTT 或音频回调中执行网络 I/O。
+
+## 采集音量与播放音质
+
+固定同一台对端、扬声器档位、说话距离和测试语句，对比安静近讲、安静远讲及扬声器播放时双讲。上行新增的 1.5 倍是限幅前的标称幅度，不是声压、响度或信噪比提高 1.5 倍；不要只听一段已经触顶的录音来判断增益是否生效。
+
+- `CP rms/peak` 的三个值依次为 AEC 输出、高通后和 16 kHz 自动增益后；先检查声音是否在前端被压低。
+- `TX level rms/peak` 的两个值为 8 kHz 上行增益前后，结合 `age`、`n` 和 `clip` 判断新鲜度与限幅。若最终发送电平足够而对端仍很轻，继续查对端解码和播放，不继续堆采集增益。
+- 播放短渐入覆盖首次播放、断流恢复、同会话多次发声和写入失败恢复。连续数字和短句不得逐包衰减、重复或吞尾；输出锁竞争时，同一块重试的波形与进度应一致。
+- 同时观察 `CP dspmax/late/ovf`、`TX gainmax` 和 `AP drop/wrerr/wrmax`。缓冲空事件不等于网络丢包，主机波形检查不证明实际扬声器或 AEC 听感。
+
+本轮声学回归应覆盖 AI、设备语音/视频、微信、H5、多人 PTT，并对照受控抖动/丢包后的恢复。不通过改变视频、I2S 时钟或关闭错误日志来制造音质改善。
+
 ## 多人对讲排障
 
 | 现象 | 检查顺序 |
@@ -78,32 +105,43 @@
 | --- | --- | --- |
 | 启动校时 | `tools/test_startup_clock.py` | 已绑定/首次绑定、冷启动/保留日期复位；阻断 SNTP 后恢复，确认同步日志先于 SDK 初始化及平台请求 |
 | Wi-Fi DNS 策略 | `tools/test_wifi_dns.py` | DHCP 有/无 DNS、备用地址不可达、断网重连与 AP 退出前后快照；校时和后续业务实际上线 |
-| AI 握手和 HTTP | `tools/test_ai_start_contract.py`、`tools/test_platform_http_requests.py`、`tools/test_platform_http_trace.py` | 重复建连、完整应答后开放音频、DNS/连接/响应等待时序 |
+| AI 握手和 HTTP | `tools/test_ai_start_contract.py`、`tools/test_platform_http_requests.py`、`tools/test_platform_http_trace.py`、`tools/test_platform_http_reuse.py` | 重复建连、完整应答后开放音频、DNS/连接/响应等待时序、复用和空闲释放 |
 | NVS 与建连资源 | `tools/test_nvs_store.py`、`tools/test_runtime_resources.py` | 快速改设置后复位、配网/绑定保存、连续呼叫时 MQTT 在线及内存水位 |
 | 多人房间与 UI 快照 | `tools/test_room_release.py`、`tools/test_room_navigation.py` | 创建/加入/退出、返回断连再进入、PTT 松手停止、AI 切换、断网释放后重连、断电后的租约恢复 |
 | 任务内存与热点生命周期 | `tools/test_memory_placement.py` | 热点反复启停、DNS/页面访问、配网保存重启、提示音及铃声；记录内部/PSRAM 最大连续块和栈余量 |
 | 音量控制 | `tools/test_speaker_controls.py`、`tools/test_playback_ownership.py` | 验证码/铃声播放期间连续调音量、静音与恢复；检查请求值、硬件已应用值、NVS 读回及 UI 耗时 |
 | 采集与高通 | `tools/test_audio_pipeline.py`、`tools/test_capture_highpass.py` | 录音、连续性、处理耗时 |
 | 播放缓冲与变速 | `tools/test_audio_playout.py`、`tools/test_playback_ownership.py` | 欠载、积压、尾音和听感 |
+| I2S 供音节拍 | `tools/test_i2s_playback_cadence.py` | 持续播放、三种策略的起播和收尾、`AP level/srcclip/dma_est/late`；驱动仿真通过不代表真机爆音消失 |
+| 播放诊断隔离 | `tools/test_audio_diagnostics.py` | 连续播放的 `late/pubmax/stack`、日志拥塞时的错误计数 |
 | 唤醒 FFT | `tools/test_wake_fft.py` | 不同语速、距离及播放中唤醒 |
 | 卷积适配 | `tools/test_conv_channels.py` | P4 向量计算输出和推理耗时 |
 | 界面 | `tools/test_product_layout.py` | 快速点击、字幕、表情与视频并发 |
-| 表情与切换 | `tools/test_face_animation.py` | 23 种表情的两套姿态、快速切换、眨眼、聆听/思考、隐藏后恢复；观察轮廓、装饰、残影、触摸和绘制耗时 |
+| 源码整理 | `tools/test_source_layout.py` | 首页、菜单、配网、绑定及通话页面；主机检查只证明当前入口与所需源码保留 |
+| 表情与切换 | `tools/test_face_animation.py` | 23 种表情、44 套有效姿态，快速切换、眨眼、聆听/思考、隐藏后恢复；观察轮廓、装饰、残影、触摸和绘制耗时 |
 | 联系人与微信 | `tools/test_contact_query.py`、`tools/test_voip_incoming_media.py`、`tools/test_voip_profile.py` | 查询回包、双向语音/视频呼叫 |
+| 设备能力上报状态 | `tools/test_device_profile.py` | 首次上线、重连、解绑、平台能力展示及失败重试边界 |
 | 视频 | `tools/test_p4_video.py`、`tools/test_full_frame_uplink.py`、`tools/test_video_ingress.py`、`tools/test_p4_profile_switch.py` | 首帧、方向、摄像头开关与连续显示 |
 | 码率 | `tools/test_video_bitrate.py`、`tools/test_bitrate_governor.py` | SDK 反馈及真实发送码率 |
 | Hosted | `tools/test_hosted_rpc_routing.py`、`tools/test_hosted_init_lifecycle.py` | 并发请求、掉线和资源回收 |
 | 手机热点配网 | `tools/test_wifi_portal.py`、`tools/test_nvs_store.py` | 中文名称、开放/隐藏网络、已保存密码复用和修改、超过 4 个网络的替换、失败密码不入历史；零条/多条扫描、反复刷新、扫描中重连及退出；手机 320/390/480 像素宽度 |
 | 依赖 | `tools/test_dependency_lock.py` | 固件构建 |
+| I2C 驱动链接 | `tools/test_i2c_driver_family.py` | `tools/check_i2c_driver_family.py` 检查实际 ELF/MAP，随后验证启动、触摸和音频 |
 
 运行前阅读脚本的编译器要求。需要 gcc/g++ 或 sanitizer 的检查使用 Linux/WSL 主机环境；IDF 交叉编译器不能直接替代主机编译器。卷积适配检查需要 CMake 和 Ninja。
 
-表情检查读取本工程 `managed_components` 中的 LVGL 源码，不自动下载依赖；覆盖 46 套姿态与局部重绘一致性，不能替代屏幕目视检查与运行时耗时验证。启动校时检查使用 SNTP stub，不能证明真实服务器可达或 SDK 防重放错误已消失。
+HTTP 复用检查还需设置当前环境的 `IDF_PATH`，用于编译 IDF 的实际 URL 解析器；不进行网络请求。
+
+表情检查读取本工程 `managed_components` 中的 LVGL 源码，不自动下载依赖；覆盖 44 套有效姿态与局部重绘一致性，其中“思考”“放松”仅使用第一套。主机结果不能替代屏幕目视检查与运行时耗时验证。启动校时检查使用 SNTP stub，不能证明真实服务器可达或 SDK 防重放错误已消失。
 
 例如：
 
 ```sh
 python tools/test_audio_playout.py
+python tools/test_i2s_playback_cadence.py
+python tools/test_audio_diagnostics.py
+python tools/test_playback_resampler.py
+python tools/test_prompt_resampler.py
 python -B -X utf8 tools/test_conv_channels.py
 python -B -X utf8 tools/test_dependency_lock.py
 ```

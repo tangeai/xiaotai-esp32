@@ -60,6 +60,7 @@
 #define CALL_CONNECT_TIMEOUT_MS 30000
 #define VOIP_CONNECTED_WAIT_TIMEOUT_MS 35000
 #define VOIP_PROFILE_RETRY_MS 15000
+#define DEVICE_PROFILE_MAX_ATTEMPTS 3U
 #define CALL_COMMAND_CONNECT 0x2000U
 #define CALL_COMMAND_HANGUP 0x2001U
 
@@ -73,7 +74,7 @@ typedef enum {
     EVENT_AI_TOKEN,        /* /v1/ai/token 的异步响应。 */
     EVENT_PLATFORM_SIGNAL, /* MQTT 设备信令，例如 unbind。 */
     EVENT_PLATFORM_ONLINE, /* MQTT 已订阅且 HTTP worker 就绪。 */
-    EVENT_VOIP_PROFILE,
+    EVENT_DEVICE_PROFILE,
     EVENT_VOIP_CONNECT,
     EVENT_VOIP_CONNECT_RESULT,
     EVENT_CONTACTS_REFRESH,
@@ -180,10 +181,14 @@ static bool s_voip_connect_inflight;
  */
 static bool s_call_peer_answered;
 static bool s_call_p2p_connected;
-static bool s_voip_profile_ready;
-static bool s_voip_profile_inflight;
-static int64_t s_voip_profile_retry_at_ms;
-static atomic_bool s_voip_profile_delivery_failed;
+/* The unified device report also establishes the server's WeChat profile.
+ * Keep its readiness gate separate from AI/H5 and the usable home screen. */
+static EXT_RAM_BSS_ATTR bool s_voip_profile_ready;
+static EXT_RAM_BSS_ATTR bool s_voip_profile_inflight;
+static EXT_RAM_BSS_ATTR int64_t s_voip_profile_retry_at_ms;
+static EXT_RAM_BSS_ATTR unsigned s_device_profile_attempts;
+/* epoch + 1; zero means no lost result. Only the HTTP worker writes failures. */
+static EXT_RAM_BSS_ATTR atomic_uint s_voip_profile_delivery_failed;
 
 /* 供其他任务读取的公开快照，只能由 publish_state() 更新。 */
 static atomic_int s_public_state;
@@ -231,6 +236,7 @@ static void room_before_finish(int error);
 static bool room_owns_media(void);
 static void room_reset(void);
 static void room_transport_lost(uint32_t generation, uint32_t request_tag);
+static void reconcile_platform_binding(bool known_unbound);
 
 static void product_snapshot_reset(void)
 {
@@ -668,11 +674,14 @@ static void contacts_response(const char *body, void *user_data)
     queue_http_result(EVENT_CONTACTS_RESULT, 0, 0, body);
 }
 
-static void voip_profile_response(const char *body, void *user_data)
+static void device_profile_response(const char *body, void *user_data)
 {
     (void)user_data;
-    if (!queue_http_result(EVENT_VOIP_PROFILE, 0, 0, body)) {
-        atomic_store_explicit(&s_voip_profile_delivery_failed, true,
+    if (platform_client_response_epoch() != platform_client_epoch()) return;
+    if (!queue_http_result(EVENT_DEVICE_PROFILE, 0,
+                           (uint32_t)platform_client_response_status(), body)) {
+        atomic_store_explicit(&s_voip_profile_delivery_failed,
+                              platform_client_response_epoch() + 1U,
                               memory_order_release);
     }
 }
@@ -695,13 +704,15 @@ static bool call_signal_matches_room(bool got_room, const char *room,
 
 static bool recover_voip_profile_delivery_failure(int64_t current_ms)
 {
-    if (!atomic_exchange_explicit(&s_voip_profile_delivery_failed, false,
-                                  memory_order_acq_rel)) {
+    unsigned failed_epoch = atomic_exchange_explicit(&s_voip_profile_delivery_failed, 0,
+                                                     memory_order_acq_rel);
+    if (failed_epoch == 0 || failed_epoch != platform_client_epoch() + 1U) {
         return false;
     }
     s_voip_profile_inflight = false;
     s_voip_profile_ready = false;
-    s_voip_profile_retry_at_ms = current_ms;
+    s_voip_profile_retry_at_ms = s_device_profile_attempts < DEVICE_PROFILE_MAX_ATTEMPTS
+                                    ? current_ms + VOIP_PROFILE_RETRY_MS : 0;
     return true;
 }
 
@@ -883,64 +894,105 @@ static void refresh_contacts(void)
     }
 }
 
-static void request_voip_profile(void)
+static void request_device_profile(void)
 {
-    if (s_voip_profile_inflight || !platform_client_ready() ||
-        !platform_client_mqtt_connected()) {
+    if (s_voip_profile_ready || s_voip_profile_inflight || !platform_client_ready() ||
+        !platform_client_mqtt_connected() ||
+        s_device_profile_attempts >= DEVICE_PROFILE_MAX_ATTEMPTS ||
+        (s_voip_profile_retry_at_ms != 0 && now_ms() < s_voip_profile_retry_at_ms)) {
         return;
     }
-    /* P4 reports video capability; S3 retains its voice-only profile. */
+    /* One immutable, complete snapshot per scenario. These are product paths,
+     * not the SDK's codec list: all audio is A-law/8k/mono; P4 H5 receives no
+     * video, CALL accepts H264 and VOIP accepts MJPEG (p4_video_submit).
+     * Constants stay in rodata; the existing PSRAM HTTP pool copies the body. */
 #if CONFIG_IDF_TARGET_ESP32P4
-    /* WeChat UI, not encoder controls: on-device testing requires an additional
-     * CCW90 presentation correction. Actual encoded size remains 960x1280. */
+    /* H5 already encodes portrait 960x1280; CALL encodes landscape 384x256.
+     * Report those ratios without adding a receiver-side rotation or mirror.
+     * WeChat alone retains its validated additional CCW90 UI correction.
+     * down_video_rotation=0 and video_res_mode=auto explicitly preserve the
+     * upstream defaults; local MJPEG rotation/scaling remains unchanged. */
     static const char profile[] =
-        "{\"screen_width\":480,\"screen_height\":320,"
+        "{\"profiles\":{"
+        "\"stream\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"up_video_mt\":[\"h264\"],\"down_video_mt\":[],"
+        "\"camera_rotation\":0,\"aspect_ratio\":0.75,"
+        "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
+        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false},"
+        "\"call\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"up_video_mt\":[\"h264\"],\"down_video_mt\":[\"h264\"],"
+        "\"camera_rotation\":0,\"aspect_ratio\":1.5,"
+        "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
+        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false},"
+        "\"voip\":{\"screen_width\":480,\"screen_height\":320,"
         "\"camera_rotation\":270,\"aspect_ratio\":0.75,"
+        "\"down_video_rotation\":0,\"video_res_mode\":\"auto\","
         "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
         "\"audio_rate\":8000,\"audio_channels\":1,"
         "\"up_video_mt\":\"h264\",\"down_video_mt\":\"mjpeg\","
-        "\"down_audio_mt\":\"alaw\",\"no_video\":false,\"calling_timeout_sec\":30}";
+        "\"down_audio_mt\":\"alaw\",\"no_video\":false,\"calling_timeout_sec\":30}}}";
 #else
     static const char profile[] =
-        "{\"screen_width\":1,\"screen_height\":1,"
+        "{\"profiles\":{"
+        "\"stream\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"up_video_mt\":[],\"down_video_mt\":[],"
+        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":true},"
+        "\"call\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"up_video_mt\":[],\"down_video_mt\":[],"
+        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":true},"
+        "\"voip\":{\"screen_width\":1,\"screen_height\":1,"
         "\"audio_rate\":8000,\"audio_channels\":1,"
         "\"up_video_mt\":\"none\",\"down_video_mt\":\"none\","
         "\"down_audio_mt\":\"alaw\",\"no_video\":true,"
-        "\"calling_timeout_sec\":30}";
+        "\"calling_timeout_sec\":30}}}";
 #endif
+    /* Keep below the existing 2048-byte request slot, including its NUL. */
+    _Static_assert(sizeof(profile) <= 2048U, "device profile exceeds HTTP request slot");
+    ++s_device_profile_attempts;
     esp_err_t err = platform_client_request_timeout(
-        PLATFORM_SERVICE_VOIP, "/v1/voip/device/profile", profile,
-        10000U, voip_profile_response, NULL);
+        PLATFORM_SERVICE_DEVICE, "/v1/device/profile", profile,
+        10000U, device_profile_response, NULL);
     if (err == ESP_OK) {
         s_voip_profile_inflight = true;
-        ESP_LOGI(TAG, "VoIP profile submission queued");
-#if CONFIG_IDF_TARGET_ESP32P4
-        ESP_LOGI(TAG, "VoIP profile: video enabled, up=h264 down=mjpeg screen=480x320 camera_rotation=270 aspect_ratio=0.75 mirror=none object_fit=contain");
-#endif
+        s_voip_profile_retry_at_ms = 0;
+        ESP_LOGI(TAG, "device profile queued: scenes=stream,call,voip bytes=%u attempt=%u",
+                 (unsigned)(sizeof(profile) - 1U), s_device_profile_attempts);
     } else {
-        s_voip_profile_retry_at_ms = now_ms() + VOIP_PROFILE_RETRY_MS;
-        ESP_LOGW(TAG, "VoIP profile submission deferred: %s", esp_err_to_name(err));
+        s_voip_profile_retry_at_ms = s_device_profile_attempts < DEVICE_PROFILE_MAX_ATTEMPTS
+                                        ? now_ms() + VOIP_PROFILE_RETRY_MS : 0;
+        ESP_LOGW(TAG, "device profile enqueue failed: attempt=%u error=%s",
+                 s_device_profile_attempts, esp_err_to_name(err));
     }
 }
 
-static void handle_voip_profile(const runtime_event_t *event)
+static void handle_device_profile(const runtime_event_t *event)
 {
     s_voip_profile_inflight = false;
     cJSON *root = event->text == NULL ? NULL :
         cJSON_ParseWithLength(event->text, event->length);
-    if (response_ok(root)) {
+    const cJSON *item = root == NULL ? NULL : cJSON_GetObjectItem(root, "code");
+    int code = cJSON_IsNumber(item) ? item->valueint : -1;
+    if (event->command == 200U && code == 200) {
         s_voip_profile_ready = true;
         s_voip_profile_retry_at_ms = 0;
-        ESP_LOGI(TAG, "VoIP profile reported; WeChat calling is ready");
+        ESP_LOGI(TAG, "device profile reported: stream,call,voip; WeChat calling is ready");
         cJSON_Delete(root);
-        refresh_contacts();
         return;
     }
     cJSON_Delete(root);
     s_voip_profile_ready = false;
-    s_voip_profile_retry_at_ms = now_ms() + VOIP_PROFILE_RETRY_MS;
-    ESP_LOGW(TAG, "VoIP profile rejected; retry in %u ms",
-             (unsigned)VOIP_PROFILE_RETRY_MS);
+    /* Invalid fields/auth are not a transient network failure. Never fall back
+     * to the deprecated route or accept its code=0 as a successful report. */
+    bool retryable = event->command == 0U || event->command == 429U ||
+                     event->command >= 500U ||
+                     (event->command == 200U && (code == -1 || code == 50000));
+    if (!retryable) s_device_profile_attempts = DEVICE_PROFILE_MAX_ATTEMPTS;
+    s_voip_profile_retry_at_ms = retryable && s_device_profile_attempts < DEVICE_PROFILE_MAX_ATTEMPTS
+                                    ? now_ms() + VOIP_PROFILE_RETRY_MS : 0;
+    ESP_LOGW(TAG, "device profile failed: http=%lu code=%d retry_ms=%u",
+             (unsigned long)event->command, code,
+             s_voip_profile_retry_at_ms == 0 ? 0U : (unsigned)VOIP_PROFILE_RETRY_MS);
+    if (event->command == 410U && code == 6006) reconcile_platform_binding(true);
 }
 
 static bool contact_query_current(uint32_t ticket);
@@ -2463,6 +2515,8 @@ static void reconcile_platform_binding(bool known_unbound)
     s_voip_profile_ready = false;
     s_voip_profile_inflight = false;
     s_voip_profile_retry_at_ms = 0;
+    s_device_profile_attempts = 0;
+    atomic_store(&s_voip_profile_delivery_failed, 0);
     if (s_product_mutex != NULL && xSemaphoreTake(s_product_mutex, portMAX_DELAY) == pdTRUE) {
         memset(s_product_snapshot.contacts, 0, sizeof(s_product_snapshot.contacts));
         s_product_snapshot.contact_count = 0;
@@ -2518,7 +2572,7 @@ static void handle_platform_signal(const runtime_event_t *event)
     if (wechat && strcmp(signal, "call_incoming") == 0 && !s_voip_profile_ready) {
         ESP_LOGW(TAG, "ignoring WeChat call before VoIP profile readiness");
         cJSON_Delete(root);
-        request_voip_profile();
+        request_device_profile();
         return;
     }
     if (strcmp(signal, "room_cancel") == 0 ||
@@ -2800,7 +2854,8 @@ static void runtime_task(void *argument)
             finish_session(ESP_ERR_TIMEOUT);
         }
         if (recover_voip_profile_delivery_failure(now_ms())) {
-            ESP_LOGW(TAG, "VoIP profile response was not delivered; retrying");
+            ESP_LOGW(TAG, "device profile response lost: retry_ms=%u",
+                     s_voip_profile_retry_at_ms == 0 ? 0U : (unsigned)VOIP_PROFILE_RETRY_MS);
         }
         contact_query_tick();
         room_tick();
@@ -2815,7 +2870,7 @@ static void runtime_task(void *argument)
             room_apply_navigation();
             bool platform_event = event.type == EVENT_AI_TOKEN || event.type == EVENT_PLATFORM_SIGNAL ||
                 event.type == EVENT_PLATFORM_ONLINE || event.type == EVENT_CONTACTS_RESULT ||
-                event.type == EVENT_CONTACT_QUERY_RESULT || event.type == EVENT_VOIP_PROFILE ||
+                event.type == EVENT_CONTACT_QUERY_RESULT || event.type == EVENT_DEVICE_PROFILE ||
                 event.type == EVENT_CALL_HTTP || event.type == EVENT_ROOM_HTTP ||
                 event.type == EVENT_ROOM_INTENT;
             if (platform_event && event.platform_epoch != platform_client_epoch()) {
@@ -2860,10 +2915,17 @@ static void runtime_task(void *argument)
                     starter_tirtc_accept_h5(true);
                 /* MQTT token/会话换代后，服务端 profile 必须重新建立。 */
                 s_voip_profile_ready = false;
-                request_voip_profile();
+                if (!s_voip_profile_inflight) {
+                    s_device_profile_attempts = 0;
+                    s_voip_profile_retry_at_ms = 0;
+                }
+                request_device_profile();
+                /* Contacts/AI/H5 do not depend on the capability endpoint.
+                 * Keep WeChat gated, but never hide contacts on report failure. */
+                refresh_contacts();
                 break;
-            case EVENT_VOIP_PROFILE:
-                handle_voip_profile(&event);
+            case EVENT_DEVICE_PROFILE:
+                handle_device_profile(&event);
                 break;
             case EVENT_VOIP_CONNECT:
                 connect_voip();
@@ -2932,7 +2994,7 @@ static void runtime_task(void *argument)
         if (!s_voip_profile_ready && !s_voip_profile_inflight &&
             s_voip_profile_retry_at_ms != 0 &&
             current_ms >= s_voip_profile_retry_at_ms) {
-            request_voip_profile();
+            request_device_profile();
         }
         if (starter_media_ai_preroll_failed()) {
             ESP_LOGW(TAG, "AI wake audio discontinuity/overflow/timeout; retry required");

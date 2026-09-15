@@ -905,23 +905,8 @@ static void s3_face_frame(lv_timer_t *timer)
     for (unsigned i = 0; i < 3; ++i) {
         if (!(s3_face.damage_mask & (1U << i))) continue;
         const s3_face_bounds_t *d = &s3_face.damage[i];
-#if CONFIG_IDF_TARGET_ESP32P4
-        /* Image zoom is separate from LVGL's object/style transform. Convert
-         * the union of old/new pixels to screen damage before invalidating.
-         * Pivot is (0,0), angle is zero (create_face). Round outwards and keep
-         * the image sampler's edge pixels; raw bounds left hollow/trailing
-         * eyes, while full-canvas invalidation stalled touch on every frame. */
-        const int32_t zoom = lv_img_get_zoom(s_face);
-        lv_area_t area = {
-            coords.x1 + d->x0 * zoom / 256 - 2,
-            coords.y1 + d->y0 * zoom / 256 - 2,
-            coords.x1 + ((d->x1 + 1) * zoom + 255) / 256 + 2,
-            coords.y1 + ((d->y1 + 1) * zoom + 255) / 256 + 2,
-        };
-#else
         lv_area_t area = {coords.x1 + d->x0, coords.y1 + d->y0,
                           coords.x1 + d->x1, coords.y1 + d->y1};
-#endif
         lv_obj_invalidate_area(s_face, &area);
     }
     ++s3_face.frames;

@@ -23,7 +23,6 @@ code = r'''
 #include "lvgl.h"
 #include "starter_runtime.h"
 #define EXT_RAM_BSS_ATTR
-#define PRODUCT_MODERN_UI 1
 #define PRODUCT_TEXT_FONT ui_font_cn_18
 extern const lv_font_t ui_font_cn_18;
 typedef unsigned product_action_t;
@@ -34,13 +33,13 @@ static struct {lv_style_t button_style, pressed_style, disabled_style; bool styl
 static starter_room_view_t model;
 static starter_runtime_product_snapshot_t product;
 static unsigned pressed, released, submitted, refreshed;
-static unsigned opened, closed;
+static unsigned opened, closed, view_stops;
 static void note_interaction(void) {}
 static void s3_feedback(const char *s) {assert(s);}
 static bool enter_page(unsigned p) {s_page=p;return true;}
 static void render_page(void);
 static bool s3_room_action(product_action_t);
-static void on_action(lv_event_t *e) {(void)s3_room_action((uintptr_t)lv_event_get_user_data(e));}
+static void on_action(lv_event_t *e);
 void starter_runtime_room_set_open(bool open) {if(open)opened++;else closed++;}
 esp_err_t starter_runtime_room_create(const char *p) {assert(p);submitted++;return 0;}
 esp_err_t starter_runtime_room_join(const char *c,const char *p) {
@@ -61,11 +60,17 @@ for name in ("set_bg", "make_label", "label_set_text_if_changed"):
 code += function(ui, "s3_style_button")
 code += function(product, "make_button")
 code += function(ui, "s3_icon")
+code += function(ui, "s3_view_stop_button")
 code += function(ui, "s3_set_enabled")
 code += function(product, "render_header_status")
 code += function(ui, "s3_header")
 code += (ROOT / "components/starter_product/src/starter_product_s3_room.inc").read_text()
 code += r'''
+static void on_action(lv_event_t *e) {
+    unsigned action=(uintptr_t)lv_event_get_user_data(e);
+    if(action==S3_ACTION_VIEW_STOP)view_stops++;
+    else (void)s3_room_action(action);
+}
 static unsigned char pixels[240][320][3];
 static lv_color_t buffer[320*20];
 static void flush(lv_disp_drv_t*d,const lv_area_t*a,lv_color_t*c) {
@@ -146,6 +151,24 @@ int main(int argc,char **argv) {
     lv_init();lv_disp_draw_buf_t db;lv_disp_draw_buf_init(&db,buffer,NULL,320*20);
     lv_disp_drv_t d;lv_disp_drv_init(&d);d.hor_res=320;d.ver_res=240;d.draw_buf=&db;d.flush_cb=flush;
     assert(lv_disp_drv_register(&d));const char *out=argc>1?argv[1]:NULL;
+    lv_obj_t *stop=s3_view_stop_button(lv_scr_act());
+    lv_obj_t *text=lv_obj_get_child(stop,0), *icon=lv_obj_get_child(stop,1);
+    lv_obj_update_layout(lv_scr_act());
+    assert(!strcmp(lv_label_get_text(text),"结束查看"));
+    assert(!strcmp(lv_label_get_text(icon),LV_SYMBOL_STOP));
+    lv_font_glyph_dsc_t glyph;
+    assert(lv_font_get_glyph_dsc(lv_obj_get_style_text_font(icon,0),&glyph,0xf04d,0));
+    assert(!glyph.is_placeholder&&glyph.box_w>0&&glyph.box_h>0);
+    static const uint32_t chinese[]={0x7ed3,0x675f,0x67e5,0x770b};
+    for(unsigned i=0;i<4;i++) {
+        assert(lv_font_get_glyph_dsc(lv_obj_get_style_text_font(text,0),&glyph,chinese[i],0));
+        assert(!glyph.is_placeholder&&glyph.box_w>0&&glyph.box_h>0);
+    }
+    screenshot(out,"00-view-stop");
+    lv_area_t ta,ia;lv_obj_get_coords(text,&ta);lv_obj_get_coords(icon,&ia);
+    assert(ia.x2<ta.x1&&ta.x2<230&&ia.y1>=194&&ia.y2<236);
+    assert(lv_obj_get_width(stop)==140&&lv_obj_get_height(stop)==42);
+    lv_event_send(stop,LV_EVENT_CLICKED,NULL);assert(view_stops==1);
     for(unsigned cycle=0;cycle<30;cycle++) {
         s_page=PAGE_ROOM;memset(&model,0,sizeof(model));s3_room.form=false;
         model.assignment_known=true;model.app_open=true;

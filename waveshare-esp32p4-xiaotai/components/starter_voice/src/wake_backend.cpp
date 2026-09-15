@@ -69,7 +69,7 @@ esp_err_t wake_backend_init(void)
         wake_backend_deinit(); return ESP_ERR_NOT_SUPPORTED;
     }
     mel_extractor_init();
-    ESP_LOGI("starter_voice", "TFLite INT8 98x32 -> 256; arena=PSRAM %u used=%u",
+    ESP_LOGI("starter_voice", "KWS nhwc-20260915 INT8 98x32 -> 256; arena=PSRAM %u used=%u",
              unsigned(ARENA_BYTES), unsigned(interpreter->arena_used_bytes()));
     return ESP_OK;
 }
@@ -79,6 +79,7 @@ esp_err_t wake_backend_run(const int16_t *pcm, float *probability)
     if (!interpreter || !pcm || !probability) return ESP_ERR_INVALID_STATE;
     if (mel_extract(pcm, mel) != 0) return ESP_FAIL;
     auto *in = interpreter->input(0);
+    // The model reshapes [1,98,32] to NHWC [1,98,1,32] internally. Do not transpose.
     manbo_kws_quantize_mel(&mel[0][0], in->data.int8, MEL_TIME * MEL_N_MELS,
                           in->params.scale, in->params.zero_point);
     if (interpreter->Invoke() != kTfLiteOk) return ESP_FAIL;

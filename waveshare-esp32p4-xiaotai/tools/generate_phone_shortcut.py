@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-from generate_home_assets import encode_rgb565a8, emit_byte_array
+from lvgl_image import encode_rgb565a8, emit_byte_array
 
 
 ROOT = Path(__file__).resolve().parents[1]

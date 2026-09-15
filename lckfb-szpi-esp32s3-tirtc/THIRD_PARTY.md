@@ -11,6 +11,8 @@
 | 提示音、铃声及 UI 资源 | 工程内嵌资源与原有来源记录 | 保留现有许可和来源，不改变原作者署名 |
 | 手机配网页图标 | [Lucide](https://github.com/lucide-icons/lucide)，内嵌于 [setup.html](components/wifi_manager/web/setup.html) | 保留页面中的 ISC 和 Feather 衍生图标 MIT 许可；无运行时 CDN 请求 |
 | IDF 组件及本地供应商补丁 | 各工程 dependencies.lock、组件 LICENSE/NOTICE 和 LOCAL_CHANGES | 保留依赖身份及补丁说明，项目 MIT 不替代供应商许可 |
+| GC2145 驱动 | [esp32-camera 2.1.7](https://github.com/espressif/esp32-camera/tree/v2.1.7)，组件管理器下载，保持供应商源码 | 保留 Apache-2.0 及组件内附带的第三方许可 |
+| S3 软件 JPEG 编码器 | [esp_new_jpeg 1.0.2](https://components.espressif.com/components/espressif/esp_new_jpeg/versions/1.0.2)，组件管理器下载 | 保留 ESPRESSIF MIT License；其使用许可限定乐鑫产品，不扩大为普通 MIT |
 
 Voicute 参考源码提交为 `61e76c5a12ac33da0def7bceba2e07228ad03e63`，上游为 [onnx-wakeword](https://github.com/voicute/onnx-wakeword)。项目所有者的声明不改变上游仓库自身许可。
 

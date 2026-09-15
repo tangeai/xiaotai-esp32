@@ -69,8 +69,8 @@ esp_err_t wake_backend_init(void)
         wake_backend_deinit(); return ESP_ERR_NOT_SUPPORTED;
     }
     mel_extractor_init();
-    ESP_LOGI("starter_voice", "TFLite INT8 98x32 -> 256; arena=PSRAM %u used=%u",
-             unsigned(ARENA_BYTES), unsigned(interpreter->arena_used_bytes()));
+    ESP_LOGI("starter_voice", "TFLite v9.3-20260915-nhwc INT8 98x32 -> 256; model=%u arena=PSRAM %u used=%u",
+             unsigned(model_size), unsigned(ARENA_BYTES), unsigned(interpreter->arena_used_bytes()));
     return ESP_OK;
 }
 

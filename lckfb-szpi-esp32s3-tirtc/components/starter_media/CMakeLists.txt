@@ -5,6 +5,7 @@ idf_component_register(
         "src/starter_audio_resampler.c"
         "src/starter_preroll.c"
         "src/starter_playout.c"
+        "src/starter_camera.c"
         "src/starter_media.c"
     INCLUDE_DIRS "include"
     REQUIRES starter_tirtc starter_voice esp_driver_i2c
@@ -17,6 +18,8 @@ idf_component_register(
         esp_codec_dev
         esp_audio_codec
         esp-sr
+        esp32-camera
+        esp_new_jpeg
 )
 
 # These sample-by-sample loops share the 32 ms dual-AEC deadline. Keep debug

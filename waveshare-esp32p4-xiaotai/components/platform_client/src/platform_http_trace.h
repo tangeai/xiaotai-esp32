@@ -16,6 +16,10 @@ typedef struct {
     uint32_t write_calls;
     uint32_t tx_bytes;
     uint32_t rx_bytes;
+    uint32_t socket_ms;
+    uint32_t tcp_wait_ms;
+    int pending_socket;
+    int tcp_wait_rc;
     int dns_rc;
     bool enabled;
 } platform_http_trace_t;

@@ -128,6 +128,8 @@ esp_err_t starter_runtime_ai_start_from_wake(uint32_t wake_token);
 
 /** 非阻塞请求结束 AI 对讲；返回值只表示事件是否成功入队。 */
 esp_err_t starter_runtime_ai_stop(void);
+/* Stop only this H5 connection, never a newer foreground owner. */
+esp_err_t starter_runtime_h5_stop(uint32_t generation);
 
 /** 联系人同步与纯语音呼叫控制，均只把意图投递给统一状态任务。 */
 esp_err_t starter_runtime_contacts_refresh(void);

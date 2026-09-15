@@ -18,6 +18,7 @@ FILES = {
     "s3_face": "components/starter_product/src/starter_product_s3_face.inc",
     "platform": "components/platform_client/src/platform_client.c",
     "media": "components/starter_media/src/starter_media.c",
+    "camera": "components/starter_media/src/starter_camera.c",
     "aec": "components/starter_media/src/starter_aec.c",
     "aec_header": "components/starter_media/src/starter_aec.h",
     "voice": "components/starter_voice/src/starter_voice.c",
@@ -150,7 +151,8 @@ def backlight_polarity(c):
 
 def binding_prompt(c):
     c.need("platform", "/v1/device/tts?code=%s", "report->temp_token", "MQTT_EVENT_SUBSCRIBED")
-    c.need("product", "platform_client_verification_code()", "PAGE_BINDING", "BINDING_CODE_TOP_LEVEL")
+    c.need("product", "platform_client_verification_code()", "PAGE_BINDING")
+    c.need("s3_ui", "BINDING_CODE_TOP_LEVEL", "s3_ui.binding_code = code;")
     c.need("media", "starter_media_play_pcm8k")
     c.need("main", "VERIFICATION_PROMPT_REPEAT_COUNT 3U")
     c.forbid("platform", "verification code: %s")
@@ -175,10 +177,11 @@ def wifi_provisioning(c):
         c.need("s3_ui", "wifi_manager_disconnect()", "if (!wifi_manager_connected()) return true;",
                "target = PAGE_NETWORK;", "s3_ui.setup_active = true;",
                "target = PAGE_BINDING;", '"断开当前连接", 8, 188, 304, 48')
-    c.need("product", "无需密码，系统通常会提示打开配网页",
+    c.need("s3_ui", "（无需密码）", "s3_network_text()")
+    c.need("product",
            'PRODUCT_WIFI_CONNECTED_TEXT "Wi-Fi 连接成功"',
            'PRODUCT_WIFI_FAILED_TEXT "Wi-Fi 连接失败，请重新配网"',
-           "s_pending_wifi_notice", "s_wifi_notice != WIFI_NOTICE_NONE", "!wifi_notice_visible")
+           "s_pending_wifi_notice", "set_wifi_feedback(WIFI_NOTICE_CONNECTED, now)")
 
 
 def s3_product_ui(c):
@@ -234,38 +237,41 @@ def s3_product_ui(c):
 
 
 def product_ui(c):
-    # The shared file still contains legacy/P4 layout. It cannot stand in for
-    # the include that actually renders S3. --product explicitly checks legacy.
-    if not c.product:
-        s3_product_ui(c)
+    # Check the only compiled page implementation, not an obsolete fallback.
+    s3_product_ui(c)
     tap = line_range(c.text("product"), "static void on_home_tap", r"^}")
-    require("PAGE_AI_CHAT" not in tap, "home tap must keep the conversation on the expressive home page")
-    require("s_page = PAGE_HOME_FACE;" in tap, "home conversation must render on the expressive home face")
-    c.need("product", 'render_header(screen, "小钛")', "PAGE_EMOJI_PREVIEW", "ACTION_EMOJI_APPLY",
+    require("s3_handle_action(ACTION_AI)" in tap,
+            "home tap must use the same pending intent as acoustic wake")
+    c.need("product", "PAGE_EMOJI_PREVIEW", "ACTION_EMOJI_APPLY",
            "static const char *const s_emoji_keys[]",
            '"neutral", "happy", "laughing", "funny", "sad", "angry", "crying"',
            '"loving", "embarrassed", "surprised", "shocked", "thinking"',
            '"winking", "cool", "relaxed", "delicious", "kissy", "confident"',
            '"sleepy", "silly", "confused"')
-    for name in ("neutral", "happy", "sad", "angry", "surprised", "thinking",
-                 "listening", "ambient", "speech", "sleepy"):
-        c.need("product", f'strcmp(effective, "{name}")')
+    c.need("product", "s3_face_set_target(emotion, phase, activity_level)")
     c.need("product", '"正在聆听"', '"AI 正在思考"', '"AI 回复中"',
-           "HOME_SUBTITLE_TRANSPARENT", "HOME_MENU_FLOATING_DOTS", "HOME_BRAND_ROBOT_MARK",
+           "HOME_BRAND_ROBOT_MARK",
            "HOME_WIFI_REAL_RSSI", "HOME_WIFI_SIGNAL_BARS", "HOME_WIFI_ICON_ONLY_RIGHT",
-           "lv_obj_set_pos(s_wifi_signal, 292, 5)", "HEADER_BACK_NATIVE_CHEVRON",
-           "lv_label_set_text(chevron, LV_SYMBOL_LEFT)", "wifi_manager_signal_dbm(&rssi)",
-           '"说“你好小钛”或点击 AI 聊天"', '"小钛在这儿"', '"发会儿呆…"', '"...zzZ"',
+           "lv_obj_set_pos(s_wifi_signal, 292, 5)", "wifi_manager_signal_dbm(&rssi)",
            "PRODUCT_IDLE_DAYDREAM_MS 45000", "PRODUCT_IDLE_SLEEPY_MS 180000",
            "PRODUCT_UI_TASK_PRIORITY 6", "PRODUCT_UI_TASK_CORE 0",
            ".task_priority = PRODUCT_UI_TASK_PRIORITY", ".task_affinity = PRODUCT_UI_TASK_CORE",
-           "PRODUCT_UI_REFRESH_SLOW_US", "label_set_text_if_changed", "clear_expression_part",
+           "PRODUCT_UI_REFRESH_SLOW_US", "label_set_text_if_changed",
            "refresh_settings_controls", "static void enter_settings_page(void)",
            "static bool page_ends_ai(product_page_t page)", "(void)enter_page(PAGE_SETTINGS);",
            "PAGE_DIAGNOSTICS", "s_diagnostics_due_ms = now + 1000;", "enter_settings_page();",
-           "s_settings_volume", "CALL_PERSISTENT_CONTROLS", "refresh_call_controls(runtime, &product)",
-           "s_call_accept_button", "set_object_visible(s_call_hangup_button, !incoming)",
+           "s_settings_volume", "refresh_call_controls(runtime, &product)",
+           "s_call_accept_button",
            "call ringtone %s", "runtime.state == STARTER_RUNTIME_CALL_CONNECTING")
+    c.need("s3_ui", "set_object_visible(s_call_hangup_button, !incoming)",
+           "s3_set_enabled(s_call_accept_button, !pending)",
+           "s3_set_enabled(s_call_hangup_button, !pending)",
+           "LV_SYMBOL_LEFT", "s3_refresh_home_status(runtime, product, ai_pending)")
+    c.forbid("product", r"PRODUCT_MODERN_UI|CONFIG_IDF_TARGET_ESP32P4|CONFIG_TIRTC_NETWORK_4G|"
+             r"\bPAGE_AI_CHAT\b|\bappend_ai_history\b|\bs_ai_history\b|"
+             r"\brender_(home|ai_chat|menu|contacts|contact_detail|call|call_result|emojis|"
+             r"emoji_preview|settings|diagnostics|network|binding)\s*\(")
+    c.forbid("s3_ui", r"CONFIG_IDF_TARGET_ESP32P4|\bPAGE_AI_CHAT\b|\bs_ai_history\b")
     c.forbid("product", "s_wifi_signal_value|你好小钛，和我聊天")
 
 
@@ -367,18 +373,33 @@ def session_priority(c):
            "starter_tirtc_accept_h5(false);", "AI session closed by remote/server idle timeout",
            "AI session ended by remote end_session/idle policy", "#define RUNTIME_TASK_STACK_BYTES 24576U")
     c.need("product", "wake ignored while foreground state=%s", "CALL_RING_AI_ACK", "在呢。",
-           "ai_ack_female_8k_wav_start", "ai_ack_male_8k_wav_start", "ack_voice", "回应声  %s")
+           "ai_ack_female_8k_wav_start", "ai_ack_male_8k_wav_start", "ack_voice")
+    c.need("s3_ui", '"回应声"', '"女声\\n男声", ACTION_ACK_VOICE')
     c.need("voice", "wake_result_check", "s_cooldown_ms = now + 2500")
 
 
-def audio_only(c):
+def viewing_scope(c):
     require(not has_line(c.symbols("--defined-only"),
-            r" (esp_camera_[A-Za-z0-9_]*|cam_task|ll_cam_[A-Za-z0-9_]*|frame2jpg(_cb)?|fmt2jpg(_cb)?|camera_task|starter_jpeg_collect|starter_tirtc_send_(mjpeg|h264)|starter_tirtc_video_ready|on_request_key_frame)$"),
-            "S3 image still contains camera/video producers")
-    for name in ("media_cmake", "media_manifest", "lock"):
-        c.forbid(name, "esp32-camera")
-    # test_audio_only.py compiles/runs host C with ASan, not Xtensa firmware.
-    # It remains mandatory in the separate, existing run_host_tests.sh suite.
+            r" (starter_tirtc_send_h264|starter_tirtc_subscribe_call_video|starter_media_submit_video)$"),
+            "S3 image contains non-H5 video paths")
+    require(has_line(c.symbols("--defined-only"), r" starter_tirtc_send_h5_jpeg$"),
+            "H5 JPEG producer is missing")
+    c.need("camera", ".fb_count = 2", ".fb_location = CAMERA_FB_IN_PSRAM", "CAMERA_GRAB_LATEST",
+           ".pin_sccb_sda = -1", ".sccb_i2c_port = 0", "jpeg_cfg.task_enable = false",
+           "starter_media_h5_current(generation)", "starter_tirtc_generation() == generation",
+           "esp_camera_available_frames()", "esp_camera_fb_return(fb)",
+           "esp_camera_deinit()", "MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT")
+    c.forbid("camera", r"esp_camera_(save_to_nvs|load_from_nvs)|i2c_new_master_bus|starter_aec_|i2s_")
+    c.need("media", "starter_camera_set_session(0)")
+    c.need("resolved", "# CONFIG_CAMERA_PSRAM_DMA is not set", "CONFIG_SCCB_HARDWARE_I2C_DRIVER_NEW=y",
+           "CONFIG_GC2145_SUPPORT=y", "# CONFIG_GC0308_SUPPORT is not set")
+    c.need("camera", "sensor->id.PID != GC2145_PID")
+    c.need("resolved", "CONFIG_CAMERA_DMA_BUFFER_SIZE_MAX=16384")
+    c.need("camera", "((uintptr_t)fb->buf % 16 == 0)")
+    c.forbid("camera", r"cam_set_psram_mode|esp_camera_set_psram_mode")
+    require(has_line(c.symbols("--defined-only"), r" esp32_camera_gc2145_detect$"),
+            "Measured GC2145 sensor driver is missing")
+    # Subscription/stale-generation matrix runs separately on the host.
 
 
 def media_cpu_fairness(c):
@@ -535,8 +556,11 @@ def memory_placement(c):
            "voip_connect_request_t*request=heap_caps_calloc(1,sizeof(*request),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",
            "ai_credentials_t*credentials=heap_caps_calloc(1,sizeof(*credentials),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",
            compact=True)
-    c.need("product", "static EXT_RAM_BSS_ATTR char s_ai_history",
-           "static EXT_RAM_BSS_ATTR starter_product_contact_t")
+    c.need("product", "static EXT_RAM_BSS_ATTR starter_product_contact_t",
+           "static EXT_RAM_BSS_ATTR char s_diagnostics_text")
+    require(bool(re.search(r"static EXT_RAM_BSS_ATTR struct\s*\{[^}]+\}\s*s3_ui;",
+                           c.text("s3_ui"))), "UI state must stay in PSRAM")
+    c.forbid("product", r"\bs_ai_history\b|\bs_last_history_subtitle\b")
     save = line_range(c.text("product"), r"^static void preferences_save\(void\)", r"^}")
     require("nvs_worker_submit_latest(preferences_write_job," in save and "&s_preferences" in save and
             "xTaskCreate" not in save, "settings must reuse the latest-snapshot writer")
@@ -641,7 +665,7 @@ POLICIES = {
     "voice_intent": voice_intent,
     "wake_image": wake_image,
     "session_priority": session_priority,
-    "audio_only": audio_only,
+    "viewing_scope": viewing_scope,
     "media_cpu_fairness": media_cpu_fairness,
     "i2s_resource": i2s_resource,
     "audio_capture": audio_capture,

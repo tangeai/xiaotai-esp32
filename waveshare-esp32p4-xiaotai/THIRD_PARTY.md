@@ -9,7 +9,7 @@
 | jsmn 房间快照解析器 | [来源记录](components/starter_runtime/src/vendor/README.md) | MIT；保留头文件中的版权与许可 |
 | 配网页 Lucide 图标 | [图标许可](components/wifi_manager/web/ICONS_LICENSE.txt) | ISC / 部分源自 Feather 的 MIT；页面内嵌，无 CDN 依赖 |
 | 唤醒模型与 head 参数 | 本工程 `components/starter_voice/model/` | 保留当前模型、来源和固定 SHA-256 校验 |
-| 16 px、18 px 字库及补充字形 | 工程生成源码中的 SimHei 来源注释 | 所有者授权针对现有字形产物，不扩大为对原字体文件的授权 |
+| 18 px 字库及补充字形 | 工程生成源码中的 SimHei 来源注释 | 所有者授权针对现有字形产物，不扩大为对原字体文件的授权 |
 | 提示音、铃声及 UI 资源 | 工程内嵌资源与原有来源记录 | 保留现有许可和来源，不改变原作者署名 |
 | IDF 组件及本地供应商补丁 | 各工程 dependencies.lock、组件 LICENSE/NOTICE 和 LOCAL_CHANGES | 保留依赖身份及补丁说明，项目 MIT 不替代供应商许可 |
 

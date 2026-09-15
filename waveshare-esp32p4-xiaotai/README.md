@@ -4,7 +4,7 @@
 
 [![MIT License](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](../LICENSE)
 [![ESP32-P4](https://img.shields.io/badge/ESP32-P4-E7352C?style=flat-square&logo=espressif&logoColor=white)](../README.md)
-[![Source 1.1.2](https://img.shields.io/badge/Source-1.1.2-0969DA?style=flat-square)](https://github.com/tangeai/xiaotai-esp32/tree/esp32-p4-app-v1.1.2)
+[![Source 1.2.0](https://img.shields.io/badge/Source-1.2.0-0969DA?style=flat-square)](https://github.com/tangeai/xiaotai-esp32/tree/esp32-p4-app-v1.2.0)
 [![ESP-IDF 5.5.4](https://img.shields.io/badge/ESP--IDF-5.5.4-0969DA?style=flat-square)](https://github.com/espressif/esp-idf/releases/tag/v5.5.4)
 
 [返回项目首页](../README.md)
@@ -15,11 +15,11 @@
 
 用**微雪 ESP32-P4-WIFI6-Touch-LCD-3.5**，体验 TiRTC 的 WebRTC 音视频通信。另一端可以是设备、微信或 H5：既听到声音，也看到画面。
 
-相比 [S3 APP](../lckfb-szpi-esp32s3-tirtc/README.md)，P4 增加视频。P4 处理音视频，板载 C6 负责 Wi-Fi，两颗芯片各做擅长的事。
+相比 [S3 APP](../lckfb-szpi-esp32s3-tirtc/README.md) 的语音通话和 H5 摄像头查看，P4 还支持双向视频通话。P4 处理音视频，板载 C6 负责 Wi-Fi，两颗芯片各做擅长的事。
 
 ## 先烧录，再体验
 
-**[下载 1.1.2 的 16 MB 完整 BIN](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.1.2/xiaotai-esp32-p4-app-v1.1.2-full-16MB.bin)** · [烧录指南与校验文件](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.1.2)
+**[下载 1.2.0 的 16 MB 完整 BIN](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.2.0/xiaotai-esp32-p4-app-v1.2.0-full-16MB.bin)** · [烧录指南与校验文件](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.2.0)
 
 按[浏览器烧录步骤](../README.md#用浏览器烧录)从 `0x0` 写入，不用自己编译。当前为体验版（Pre-release），验证情况见发布说明。
 
@@ -32,7 +32,7 @@
 准备好平台账号和已授权联系人，接下来按顺序操作：
 
 1. **连接网络**：连接屏幕显示的 `XiaoTai-XXXX` 热点，打开 `http://192.168.6.1`，选择 Wi-Fi 并输入密码；已保存的网络可复用密码。
-2. **绑定设备**：在[小钛体验平台](https://demo-open.tange-ai.com)输入屏幕上的六位绑定码。
+2. **绑定设备**：在[小钛体验平台](https://xiaotai.chat/)输入屏幕上的六位绑定码。
 3. **发起通话**：用通讯录呼叫已添加的设备联系人；微信电话入口呼叫第一个微信联系人，没有联系人时显示小程序二维码。
 4. **说话、挥手**：双方轮流讲话，再同时讲话；视频通话时向镜头挥挥手，看看对方是否听得清、看得见。挂断后再拨一次。
 
@@ -58,7 +58,7 @@
 | 联网 | C6 / ESP-Hosted，SDIO 4 线 40 MHz SDR |
 | 工具链 | riscv32-esp-elf GCC 14.2.0，`esp-14.2.0_20260121` |
 | TiRTC SDK | 2.3.0 P4 验证补丁库，[版本与校验值](docs/DEPENDENCIES.md) |
-| 应用版本 | 1.1.2，[版本内容](RELEASE_NOTES.md) |
+| 应用版本 | 1.2.0，[版本内容](RELEASE_NOTES.md) |
 
 **本目录可独立构建。** 应用、SDK、音视频驱动、字体、模型和提示音均已包含，无需另外下载 S3 工程或公共资源目录。
 

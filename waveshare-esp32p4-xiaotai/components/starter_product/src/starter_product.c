@@ -1,7 +1,7 @@
 /*
- * 小钛 S3/P4 共用产品界面。
+ * 小钛 P4 产品界面。
  *
- * 320x240 逻辑坐标映射到板级屏幕；S3 仅音频，P4 保留独立视频视图。
+ * 320x240 逻辑坐标映射到板级屏幕，视频通话保留独立视图。
  * LVGL 回调只写本地状态或投递 runtime 意图；网络与 TiRTC 状态仍由各自任务
  * 持有。屏幕休眠使用单调时间，触摸和持续声音活动均可唤醒。
  */
@@ -47,15 +47,9 @@
 #include "bsp/display.h"
 #endif
 
-/* Presentation is shared; hardware, video ownership and DSP remain board-local. */
-#define PRODUCT_MODERN_UI 1
-#if PRODUCT_MODERN_UI
+/* Fonts and presentation assets are local to this P4 project. */
 LV_FONT_DECLARE(ui_font_cn_18);
 #define PRODUCT_TEXT_FONT ui_font_cn_18
-#else
-LV_FONT_DECLARE(ui_font_cn_16);
-#define PRODUCT_TEXT_FONT ui_font_cn_16
-#endif
 
 #define LCD_HOST SPI3_HOST
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -100,11 +94,7 @@ LV_FONT_DECLARE(ui_font_cn_16);
 #define PRODUCT_UI_REFRESH_LOG_INTERVAL_US (5LL * 1000LL * 1000LL)
 #define FACE_CANVAS_W 220
 #define FACE_CANVAS_H 108
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-#define HOME_BACKGROUND_COLOR 0x07151C
-#else
 #define HOME_BACKGROUND_COLOR 0x141719
-#endif
 
 extern const uint8_t kids_watch_outgoing_tiny_wav_start[]
     asm("_binary_kids_watch_outgoing_tiny_wav_start");
@@ -193,9 +183,7 @@ static int64_t s_preferences_enqueue_until_ms;
 static atomic_int s_preferences_error;
 
 static const char *TAG = "starter_product";
-#if PRODUCT_MODERN_UI
 static EXT_RAM_BSS_ATTR atomic_int s_binding_ui_state;
-#endif
 static bool s_started;
 static QueueHandle_t s_voice_queue;
 #if !CONFIG_IDF_TARGET_ESP32P4
@@ -242,9 +230,6 @@ static TaskHandle_t s_call_ring_task;
  * Playback/NVS owners handle DMA and flash writes; this stack stays cache-enabled. */
 static EXT_RAM_BSS_ATTR StackType_t s_call_ring_stack[PRODUCT_RING_STACK_BYTES / sizeof(StackType_t)];
 static DRAM_ATTR StaticTask_t s_call_ring_storage;
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-static int64_t s_call_result_hide_ms;
-#endif
 static uint32_t s_wifi_signal_revision = UINT32_MAX;
 static int s_wifi_signal_style = -1;
 static bool s_previous_wifi_connected;
@@ -263,11 +248,6 @@ static starter_runtime_state_t s_previous_runtime_state = STARTER_RUNTIME_WAITIN
 static starter_ai_ui_phase_t s_previous_ai_phase = STARTER_AI_UI_IDLE;
 static char s_previous_subtitle[193];
 static char s_rendered_expression[16];
-static char s_last_history_subtitle[193];
-static EXT_RAM_BSS_ATTR char s_ai_history[2048];
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-static EXT_RAM_BSS_ATTR char s_ai_display[2304];
-#endif
 static char s_call_result[33];
 static char s_previous_verification_code[17];
 static char s_voice_feedback[65];
@@ -296,8 +276,6 @@ static lv_obj_t *s_face;
  * dropped by this panel's flush path.  A canvas gives the display one atomic
  * face region to commit, matching the image-asset pattern in device-monitor. */
 static lv_color_t *s_face_canvas_buffer;
-static lv_obj_t *s_ai_history_label;
-static lv_obj_t *s_ai_history_panel;
 static lv_obj_t *s_header_title;
 static lv_obj_t *s_call_peer_label;
 static lv_obj_t *s_call_status_label;
@@ -336,11 +314,7 @@ static const char *const s_emoji_keys[] = {
 
 void starter_product_set_binding_state(starter_product_binding_state_t state)
 {
-#if PRODUCT_MODERN_UI
     atomic_store_explicit(&s_binding_ui_state, state, memory_order_release);
-#else
-    (void)state;
-#endif
 }
 
 static int64_t monotonic_ms(void)
@@ -348,9 +322,7 @@ static int64_t monotonic_ms(void)
     return esp_timer_get_time() / 1000;
 }
 
-#if PRODUCT_MODERN_UI
 static void s3_face_visibility_changed(bool awake);
-#endif
 
 static void backlight_set(bool awake)
 {
@@ -362,9 +334,7 @@ static void backlight_set(bool awake)
     (void)gpio_set_level(LCD_PIN_BL, level);
 #endif
     s_display_awake = awake;
-#if PRODUCT_MODERN_UI
     s3_face_visibility_changed(awake);
-#endif
 }
 
 static void note_interaction(void)
@@ -576,7 +546,6 @@ static int64_t s_diagnostics_due_ms;
 static EXT_RAM_BSS_ATTR char s_diagnostics_text[1400];
 static void refresh_diagnostics(int64_t now);
 
-#if PRODUCT_MODERN_UI
 /* Shared presentation, originally introduced on S3. */
 static bool s3_handle_action(product_action_t action);
 static void s3_style_button(lv_obj_t *button);
@@ -588,7 +557,6 @@ static void s3_refresh_ui(int64_t now, starter_runtime_status_t runtime,
                           const starter_runtime_product_snapshot_t *product);
 static bool s3_ai_request_pending(void);
 static void s3_note_ai_request(starter_runtime_state_t from);
-#endif
 
 static void set_voice_feedback_for(const char *text, int64_t now,
                                    int64_t duration_ms)
@@ -629,10 +597,8 @@ static void show_wake_debug(const starter_voice_result_t *result, int64_t now)
 {
     char text[80];
     format_wake_debug(text, sizeof(text), result);
-#if PRODUCT_MODERN_UI
     /* Acoustic scores remain available in diagnostics, not over conversation. */
     if (s_page != PAGE_DIAGNOSTICS) return;
-#endif
     if (s_wake_debug_label == NULL) {
         s_wake_debug_label = make_label(lv_layer_top(), "", 8, 36, 304,
                                        lv_color_hex(0xFFFFFF));
@@ -652,14 +618,12 @@ static void handle_voice_result(const starter_voice_result_t *result,
     if (result == NULL || result->intent == STARTER_VOICE_INTENT_NONE) {
         return;
     }
-#if PRODUCT_MODERN_UI
     if (!wifi_manager_connected()) {
         /* Offline onboarding owns the UI. Release any wake preroll without
          * acknowledging or starting an unreachable cloud conversation. */
         starter_media_cancel_ai_preroll(result->wake_token);
         return;
     }
-#endif
     note_interaction();
     s_hint_visible = false;
     s_hint_due_ms = now + PRODUCT_HINT_PERIOD_MS;
@@ -680,25 +644,19 @@ static void handle_voice_result(const starter_voice_result_t *result,
              * interrupted by a wake detection.
              */
             starter_runtime_status_t status = starter_runtime_status();
-#if PRODUCT_MODERN_UI
             if (s3_ai_request_pending()) {
                 /* The LVGL owner already accepted a tap/wake. Its runtime
                  * transition may still be queued; do not acknowledge twice. */
                 starter_media_cancel_ai_preroll(result->wake_token);
                 break;
             }
-#endif
             if (status.state == STARTER_RUNTIME_WAITING ||
                 status.state == STARTER_RUNTIME_H5_ACTIVE) {
-                s_ai_history[0] = '\0';
-                s_last_history_subtitle[0] = '\0';
                 esp_err_t err = result->wake_token != 0 ?
                     starter_runtime_ai_start_from_wake(result->wake_token) :
                     starter_runtime_ai_start();
                 if (err == ESP_OK) {
-#if PRODUCT_MODERN_UI
                     s3_note_ai_request(status.state);
-#endif
                     ESP_LOGI(TAG, "wake request queued token=%lu", (unsigned long)result->wake_token);
                     s_pending_ai_ack = (ai_ack_t){
                         .expires_ms = now + 1000,
@@ -718,15 +676,10 @@ static void handle_voice_result(const starter_voice_result_t *result,
                     set_voice_feedback("现在暂时不能开始对话", now);
                 }
                 backlight_set(true);
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-                s_page = PAGE_HOME_FACE;
-                render_page();
-#else
                 if (s_page != PAGE_HOME_FACE && s_page != PAGE_HOME_CLOCK) {
                     s_page = PAGE_HOME_FACE;
                     render_page();
                 }
-#endif
             } else {
                 starter_media_cancel_ai_preroll(result->wake_token);
                 ESP_LOGI(TAG, "wake ignored while foreground state=%s",
@@ -737,15 +690,10 @@ static void handle_voice_result(const starter_voice_result_t *result,
                 if (status.state == STARTER_RUNTIME_AI_CONNECTING ||
                     status.state == STARTER_RUNTIME_AI_ACTIVE) {
                     set_voice_feedback("我在听，请直接说。", now);
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-                    s_page = PAGE_HOME_FACE;
-                    render_page();
-#else
                     if (s_page != PAGE_HOME_FACE && s_page != PAGE_HOME_CLOCK) {
                         s_page = PAGE_HOME_FACE;
                         render_page();
                     }
-#endif
                 }
             }
         }
@@ -806,13 +754,7 @@ static void handle_voice_result(const starter_voice_result_t *result,
         render_page();
         break;
     case STARTER_VOICE_INTENT_OPEN_CONTACTS:
-#if PRODUCT_MODERN_UI
         (void)s3_handle_action(ACTION_CONTACTS);
-#else
-        (void)enter_page(PAGE_CONTACTS);
-        (void)starter_runtime_contacts_refresh();
-        render_page();
-#endif
         break;
     case STARTER_VOICE_INTENT_REST:
         /* 休息不关网络、不重启，也不误挂正在进行的人际通话。 */
@@ -833,26 +775,7 @@ static void handle_voice_result(const starter_voice_result_t *result,
     case STARTER_VOICE_INTENT_START_AI_CHAT:
     case STARTER_VOICE_INTENT_CALL_CONTACT_REMOTE:
         {
-#if PRODUCT_MODERN_UI
             (void)s3_handle_action(ACTION_AI);
-#else
-            starter_runtime_status_t status = starter_runtime_status();
-            esp_err_t err = ESP_OK;
-            if (status.state != STARTER_RUNTIME_AI_ACTIVE &&
-                status.state != STARTER_RUNTIME_AI_CONNECTING) {
-                s_ai_history[0] = '\0';
-                s_last_history_subtitle[0] = '\0';
-                err = starter_runtime_ai_start();
-            }
-            set_voice_feedback(
-                err == ESP_OK
-                    ? (result->intent == STARTER_VOICE_INTENT_CALL_CONTACT_REMOTE
-                           ? "正在识别联系人…" : "正在连接 AI…")
-                    : "现在暂时不能开始对话",
-                now);
-            s_page = PAGE_HOME_FACE;
-            render_page();
-#endif
             if (result->intent == STARTER_VOICE_INTENT_CALL_CONTACT_REMOTE) {
                 ESP_LOGI(TAG, "remote contact recognition requested: target=%s",
                          result->call_target);
@@ -871,15 +794,11 @@ static void on_action(lv_event_t *event)
     product_action_t action = (product_action_t)(uintptr_t)lv_event_get_user_data(event);
     product_page_t previous_page = s_page;
     note_interaction();
-#if PRODUCT_MODERN_UI
     if (s3_handle_action(action)) return;
-#endif
     if (action == ACTION_AI) {
         starter_runtime_status_t status = starter_runtime_status();
         if (status.state != STARTER_RUNTIME_AI_ACTIVE &&
             status.state != STARTER_RUNTIME_AI_CONNECTING) {
-            s_ai_history[0] = '\0';
-            s_last_history_subtitle[0] = '\0';
             (void)starter_runtime_ai_start();
         }
         s_page = PAGE_AI_CHAT;
@@ -1000,28 +919,17 @@ static lv_obj_t *make_button(lv_obj_t *parent,
                              product_action_t action)
 {
     lv_obj_t *button = lv_btn_create(parent);
-#if PRODUCT_MODERN_UI
     s3_style_button(button);
-#endif
     lv_obj_set_pos(button, x, y);
     lv_obj_set_size(button, width, height);
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-    lv_obj_set_style_radius(button, 12, 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x17313D), 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x205064), LV_STATE_PRESSED);
-#endif
-#if PRODUCT_MODERN_UI
     lv_obj_clear_flag(button, LV_OBJ_FLAG_SCROLLABLE);
-#endif
     lv_obj_add_event_cb(button, on_action, LV_EVENT_CLICKED, (void *)(uintptr_t)action);
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, &PRODUCT_TEXT_FONT, 0);
-#if PRODUCT_MODERN_UI
     lv_obj_set_width(label, width - 8);
     lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-#endif
     lv_obj_center(label);
     return button;
 }
@@ -1033,11 +941,7 @@ static void set_button_text(lv_obj_t *button, const char *text)
     }
     lv_obj_t *label = lv_obj_get_child(button, 0);
     if (label != NULL) {
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-        lv_label_set_text(label, text);
-#else
         label_set_text_if_changed(label, text);
-#endif
     }
 }
 
@@ -1055,106 +959,15 @@ static void set_object_visible(lv_obj_t *object, bool visible)
 
 static void refresh_settings_controls(void)
 {
-#if PRODUCT_MODERN_UI
     s3_refresh_settings();
-    return;
-#endif
-    if (s_page != PAGE_SETTINGS || s_settings_volume == NULL) {
-        return;
-    }
-    char text[48];
-    (void)snprintf(text, sizeof(text), "音量  %u / 10", s_preferences.volume);
-    lv_label_set_text(s_settings_volume, text);
-    (void)snprintf(text, sizeof(text), "扬声器  %s",
-                   s_preferences.speaker_muted ? "已静音" : "开启");
-    set_button_text(s_settings_speaker, text);
-    (void)snprintf(text, sizeof(text), "麦克风  %s",
-                   s_preferences.microphone_muted ? "已静音" : "开启");
-    set_button_text(s_settings_microphone, text);
-    (void)snprintf(text, sizeof(text), "休眠  %s",
-                   s_sleep_names[s_preferences.sleep_index]);
-    set_button_text(s_settings_sleep, text);
-    (void)snprintf(text, sizeof(text), "回应声  %s",
-                   s_preferences.acknowledgement_male ? "男声" : "女声");
-    set_button_text(s_settings_acknowledgement, text);
 }
 
-static lv_obj_t *make_home_menu_button(lv_obj_t *parent)
-{
-    /* HOME_MENU_FLOATING_DOTS: 40x40 hit target with quiet visual chrome. */
-    lv_obj_t *button = lv_btn_create(parent);
-    lv_obj_set_pos(button, 268, 188);
-    lv_obj_set_size(button, 40, 40);
-    lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_pad_all(button, 0, 0);
-    lv_obj_set_style_border_width(button, 0, 0);
-    lv_obj_set_style_shadow_width(button, 0, 0);
-    lv_obj_set_style_bg_opa(button, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x17313D), LV_STATE_PRESSED);
-    lv_obj_set_style_bg_opa(button, LV_OPA_40, LV_STATE_PRESSED);
-    lv_obj_add_event_cb(button, on_action, LV_EVENT_CLICKED,
-                        (void *)(uintptr_t)ACTION_MENU);
-    for (uint8_t i = 0; i < 3U; ++i) {
-        lv_obj_t *dot = lv_obj_create(button);
-        lv_obj_set_pos(dot, (lv_coord_t)(7 + i * 10), 17);
-        lv_obj_set_size(dot, 5, 5);
-        set_bg(dot, lv_color_hex(0x72DEF8));
-        lv_obj_set_style_bg_opa(dot, LV_OPA_80, 0);
-        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-        lv_obj_clear_flag(dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    }
-    return button;
-}
-
-static lv_obj_t *make_header_back_button(lv_obj_t *parent,
-                                         product_action_t action)
-{
-    /* HEADER_BACK_NATIVE_CHEVRON: built-in LVGL symbol, never a CJK tofu box. */
-    lv_obj_t *button = lv_btn_create(parent);
-    lv_obj_set_pos(button, 4, 2);
-    lv_obj_set_size(button, 40, 34);
-    lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_pad_all(button, 0, 0);
-    lv_obj_set_style_border_width(button, 0, 0);
-    lv_obj_set_style_shadow_width(button, 0, 0);
-    lv_obj_set_style_bg_opa(button, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x17313D), LV_STATE_PRESSED);
-    lv_obj_set_style_bg_opa(button, LV_OPA_40, LV_STATE_PRESSED);
-    lv_obj_add_event_cb(button, on_action, LV_EVENT_CLICKED,
-                        (void *)(uintptr_t)action);
-    lv_obj_t *chevron = lv_label_create(button);
-    lv_label_set_text(chevron, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(chevron, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(chevron, lv_color_hex(0x72DEF8), 0);
-    lv_obj_center(chevron);
-    return button;
-}
 
 static void on_screen_event(lv_event_t *event)
 {
     lv_event_code_t code = lv_event_get_code(event);
     if (code == LV_EVENT_PRESSED) {
         note_interaction();
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-    } else if (code == LV_EVENT_GESTURE &&
-               (s_page == PAGE_HOME_FACE || s_page == PAGE_HOME_CLOCK)) {
-        lv_dir_t direction = lv_indev_get_gesture_dir(lv_indev_get_act());
-        if (direction == LV_DIR_LEFT || direction == LV_DIR_RIGHT) {
-            s_page = s_page == PAGE_HOME_FACE ? PAGE_HOME_CLOCK : PAGE_HOME_FACE;
-            s_last_gesture_ms = monotonic_ms();
-            render_page();
-        }
-#endif
-    }
-}
-
-static void on_page_indicator(lv_event_t *event)
-{
-    (void)event;
-    note_interaction();
-    if (s_page == PAGE_HOME_FACE || s_page == PAGE_HOME_CLOCK) {
-        s_page = s_page == PAGE_HOME_FACE ? PAGE_HOME_CLOCK : PAGE_HOME_FACE;
-        render_page();
     }
 }
 
@@ -1167,20 +980,7 @@ static void on_home_tap(lv_event_t *event)
     note_interaction();
     s_hint_visible = false;
     s_hint_due_ms = monotonic_ms() + PRODUCT_HINT_PERIOD_MS;
-#if PRODUCT_MODERN_UI
     (void)s3_handle_action(ACTION_AI);
-#else
-    starter_runtime_status_t status = starter_runtime_status();
-    if (status.state != STARTER_RUNTIME_AI_ACTIVE &&
-        status.state != STARTER_RUNTIME_AI_CONNECTING) {
-        s_ai_history[0] = '\0';
-        s_last_history_subtitle[0] = '\0';
-        (void)starter_runtime_ai_start();
-    }
-    /* 首页轻触只启动会话；聆听、思考和回复都留在表情主页。 */
-    s_page = PAGE_HOME_FACE;
-    render_page();
-#endif
 }
 
 static void call_ring_task(void *argument)
@@ -1328,21 +1128,19 @@ static void render_header(lv_obj_t *screen, const char *title)
     render_header_status(screen);
 }
 
-#if CONFIG_IDF_TARGET_ESP32P4 && PRODUCT_MODERN_UI
+#if CONFIG_IDF_TARGET_ESP32P4
 #include "starter_product_p4_background.inc"
 #endif
 
 static lv_color_t product_face_background_color(void)
 {
-#if CONFIG_IDF_TARGET_ESP32P4 && PRODUCT_MODERN_UI
+#if CONFIG_IDF_TARGET_ESP32P4
     if (s_p4_home_background.active) return lv_color_hex(P4_HOME_CENTER_COLOR);
 #endif
     return lv_color_hex(HOME_BACKGROUND_COLOR);
 }
 
-#if PRODUCT_MODERN_UI
 #include "starter_product_s3_face.inc"
-#endif
 
 static void create_expression_face(lv_obj_t *parent,
                                    lv_coord_t x,
@@ -1373,224 +1171,7 @@ static void create_expression_face(lv_obj_t *parent,
 #endif
     lv_obj_clear_flag(s_face, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_canvas_fill_bg(s_face, product_face_background_color(), LV_OPA_COVER);
-#if PRODUCT_MODERN_UI
     s3_face_attach();
-#endif
-}
-
-static void render_home(lv_obj_t *screen)
-{
-    render_header(screen, "小钛");
-    if (s_page == PAGE_HOME_CLOCK) {
-        s_face = make_label(screen, "--:--", 24, 70, 272, lv_color_hex(0xFFFFFF));
-        lv_obj_set_style_text_align(s_face, LV_TEXT_ALIGN_CENTER, 0);
-#if LV_FONT_MONTSERRAT_48
-        lv_obj_set_style_text_font(s_face, &lv_font_montserrat_48, 0);
-#endif
-        s_date = make_label(screen, "---- -- --", 85, 121, 150,
-                            lv_color_hex(0x91B0BC));
-        lv_obj_set_style_text_align(s_date, LV_TEXT_ALIGN_CENTER, 0);
-    } else {
-        create_expression_face(screen, 50, 38);
-    }
-
-    s_state = make_label(screen, "小钛在这儿", 45, 150, 230,
-                         lv_color_hex(0xBFE9F3));
-    lv_obj_set_style_text_align(s_state, LV_TEXT_ALIGN_CENTER, 0);
-    s_subtitle = make_label(screen, "", 16, 177, 236, lv_color_hex(0xEDFAFF));
-    lv_obj_set_height(s_subtitle, 45);
-    lv_label_set_long_mode(s_subtitle, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_align(s_subtitle, LV_TEXT_ALIGN_CENTER, 0);
-    /* HOME_SUBTITLE_TRANSPARENT: subtitles belong to the home canvas. */
-    lv_obj_set_style_bg_opa(s_subtitle, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(s_subtitle, 0, 0);
-    lv_obj_add_flag(s_subtitle, LV_OBJ_FLAG_HIDDEN);
-
-    s_hint = make_label(screen, "说“你好小钛”或点击 AI 聊天", 38, 145, 244,
-                        lv_color_hex(0xDFF7FF));
-    lv_obj_set_height(s_hint, 30);
-    lv_obj_set_style_text_align(s_hint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_bg_color(s_hint, lv_color_hex(0x0A1F28), 0);
-    lv_obj_set_style_bg_opa(s_hint, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(s_hint, 1, 0);
-    lv_obj_set_style_border_color(s_hint, lv_color_hex(0x326779), 0);
-    lv_obj_set_style_radius(s_hint, 15, 0);
-    lv_obj_set_style_pad_top(s_hint, 4, 0);
-    if (!s_hint_visible) {
-        lv_obj_add_flag(s_hint, LV_OBJ_FLAG_HIDDEN);
-    }
-    s_activity = make_label(screen, "", 62, 34, 196, lv_color_hex(0x72DEF8));
-    lv_obj_set_style_text_align(s_activity, LV_TEXT_ALIGN_CENTER, 0);
-    (void)make_label(screen, s_page == PAGE_HOME_FACE ? "●  ○" : "○  ●",
-                     135, 219, 55, lv_color_hex(0x8A809F));
-    lv_obj_t *indicator = lv_obj_create(screen);
-    lv_obj_set_pos(indicator, 128, 208);
-    lv_obj_set_size(indicator, 66, 30);
-    lv_obj_set_style_bg_opa(indicator, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(indicator, 0, 0);
-    lv_obj_add_event_cb(indicator, on_page_indicator, LV_EVENT_CLICKED, NULL);
-    (void)make_home_menu_button(screen);
-
-    lv_obj_t *tap = lv_obj_create(screen);
-    lv_obj_set_pos(tap, 12, 32);
-    lv_obj_set_size(tap, 256, 160);
-    lv_obj_set_style_bg_opa(tap, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(tap, 0, 0);
-    lv_obj_add_event_cb(tap, on_home_tap, LV_EVENT_CLICKED, NULL);
-}
-
-static void render_ai_chat(lv_obj_t *screen)
-{
-    starter_runtime_status_t runtime = starter_runtime_status();
-    starter_runtime_product_snapshot_t product =
-        starter_runtime_product_snapshot();
-    (void)make_header_back_button(screen, ACTION_AI_BACK);
-    s_state = make_label(screen,
-                         runtime.state == STARTER_RUNTIME_AI_CONNECTING
-                             ? "正在连接 AI" : phase_text(product.ai_phase),
-                         52, 10, 154, lv_color_hex(0x72DEF8));
-    lv_label_set_long_mode(s_state, LV_LABEL_LONG_DOT);
-    lv_obj_set_height(s_state, 20);
-    render_header_status(screen);
-    s_ai_history_panel = lv_obj_create(screen);
-    lv_obj_set_pos(s_ai_history_panel, 10, 40);
-    lv_obj_set_size(s_ai_history_panel, 300, 188);
-    set_bg(s_ai_history_panel, lv_color_hex(0x102832));
-    lv_obj_set_style_radius(s_ai_history_panel, 10, 0);
-    lv_obj_set_scroll_dir(s_ai_history_panel, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(s_ai_history_panel, LV_SCROLLBAR_MODE_AUTO);
-    s_ai_history_label = make_label(s_ai_history_panel,
-                                    s_ai_history[0] == '\0'
-                                        ? "请说，我在听。" : s_ai_history,
-                                    4, 4, 266, lv_color_hex(0xFFFFFF));
-}
-
-static void render_menu(lv_obj_t *screen)
-{
-    render_header(screen, "功能菜单");
-    (void)make_button(screen, "AI 聊天", 18, 40, 132, 42, ACTION_AI);
-    (void)make_button(screen, "通讯录", 170, 40, 132, 42, ACTION_CONTACTS);
-    (void)make_button(screen, "表情包", 18, 92, 132, 42, ACTION_EMOJIS);
-    (void)make_button(screen, "设备设置", 170, 92, 132, 42, ACTION_SETTINGS);
-    (void)make_button(screen, "网络状态", 18, 144, 132, 42, ACTION_NETWORK);
-    (void)make_button(screen, "运行状态", 170, 144, 132, 42, ACTION_DIAGNOSTICS);
-    (void)make_button(screen, "返回", 110, 194, 100, 36, ACTION_HOME);
-}
-
-static void render_contacts(lv_obj_t *screen)
-{
-    starter_runtime_product_snapshot_t product =
-        starter_runtime_product_snapshot();
-    render_header(screen, "联系人 | 仅语音");
-    lv_obj_t *list = lv_obj_create(screen);
-    lv_obj_set_pos(list, 12, 36);
-    lv_obj_set_size(list, 296, 150);
-    set_bg(list, lv_color_hex(0x102832));
-    lv_obj_set_style_radius(list, 10, 0);
-    lv_obj_set_scroll_dir(list, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
-    if (product.contact_count == 0U) {
-        (void)make_label(list, "暂无联系人\n绑定设备或完成微信授权后下拉同步",
-                         12, 30, 252, lv_color_hex(0xABC0C9));
-    }
-    for (uint8_t i = 0; i < product.contact_count; ++i) {
-        const starter_product_contact_t *contact = &product.contacts[i];
-        lv_obj_t *row = make_button(list, "", 4, (lv_coord_t)(4 + i * 43),
-                                    270, 37,
-                                    (product_action_t)(ACTION_CONTACT_BASE + i));
-        lv_obj_t *source_icon = lv_obj_create(row);
-        lv_obj_set_pos(source_icon, 10, 8);
-        lv_obj_set_size(source_icon, 20, 20);
-        set_bg(source_icon, contact->source == STARTER_CONTACT_WECHAT
-                              ? lv_color_hex(0x55C98A) : lv_color_hex(0x72DEF8));
-        lv_obj_set_style_radius(source_icon,
-                                contact->source == STARTER_CONTACT_WECHAT
-                                    ? 6 : 6, 0);
-        lv_obj_clear_flag(source_icon, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-        if (contact->source == STARTER_CONTACT_WECHAT) {
-            /* Green double speech bubbles: compact WeChat source mark. */
-            for (uint8_t bubble = 0; bubble < 2U; ++bubble) {
-                lv_obj_t *mark = lv_obj_create(source_icon);
-                lv_obj_set_size(mark, bubble == 0U ? 10 : 8, bubble == 0U ? 8 : 7);
-                lv_obj_set_pos(mark, bubble == 0U ? 3 : 9, bubble == 0U ? 4 : 9);
-                set_bg(mark, lv_color_hex(0xFFFFFF));
-                lv_obj_set_style_radius(mark, LV_RADIUS_CIRCLE, 0);
-                lv_obj_clear_flag(mark, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-            }
-        } else {
-            /* Same robot mark used in the home header. */
-            for (uint8_t eye_index = 0; eye_index < 2U; ++eye_index) {
-                lv_obj_t *eye = lv_obj_create(source_icon);
-                lv_obj_set_pos(eye, (lv_coord_t)(4 + eye_index * 9), 7);
-                lv_obj_set_size(eye, 3, 5);
-                set_bg(eye, lv_color_hex(0x07151C));
-                lv_obj_set_style_radius(eye, LV_RADIUS_CIRCLE, 0);
-                lv_obj_clear_flag(eye, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-            }
-        }
-        lv_obj_t *name = lv_label_create(row);
-        lv_label_set_text(name, contact->name);
-        lv_obj_set_style_text_font(name, &PRODUCT_TEXT_FONT, 0);
-        lv_obj_set_style_text_color(name, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_set_pos(name, 42, 7);
-        lv_obj_set_width(name, 130);
-        if (contact->source == STARTER_CONTACT_WECHAT) {
-            lv_obj_t *wx_hint = make_label(row, "微信", 42, 22, 40,
-                                           lv_color_hex(0x9CC0C9));
-            lv_obj_set_style_text_font(wx_hint, &PRODUCT_TEXT_FONT, 0);
-        } else {
-            lv_obj_t *status = lv_obj_create(row);
-            lv_obj_set_pos(status, 188, 14);
-            lv_obj_set_size(status, 8, 8);
-            set_bg(status, contact->online ? lv_color_hex(0x55D88A)
-                                           : lv_color_hex(0x71808A));
-            lv_obj_set_style_radius(status, LV_RADIUS_CIRCLE, 0);
-            lv_obj_clear_flag(status, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-        }
-        lv_obj_t *call = make_button(row, "", 210, 3, 54, 31,
-                                     (product_action_t)(ACTION_CONTACT_CALL_BASE + i));
-        lv_obj_set_style_radius(call, 10, 0);
-        lv_obj_t *call_icon = lv_label_create(call);
-        /* FontAwesome phone handset in the LVGL built-in symbol font. */
-        lv_label_set_text(call_icon, "\xEF\x82\x95");
-        lv_obj_set_style_text_font(call_icon, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(call_icon, lv_color_hex(0x72DEF8), 0);
-        lv_obj_center(call_icon);
-    }
-    (void)make_button(screen, "返回", 110, 194, 100, 36, ACTION_MENU);
-}
-
-static void render_contact_detail(lv_obj_t *screen)
-{
-    starter_runtime_product_snapshot_t product =
-        starter_runtime_product_snapshot();
-    render_header(screen, "联系人详情");
-    if (s_selected_contact >= product.contact_count) {
-        (void)make_label(screen, "联系人已更新，请返回重试", 48, 88, 224,
-                         lv_color_hex(0xABC0C9));
-        (void)make_button(screen, "返回", 110, 194, 100, 36,
-                          ACTION_CONTACTS_BACK);
-        return;
-    }
-    const starter_product_contact_t *contact =
-        &product.contacts[s_selected_contact];
-    lv_obj_t *name = make_label(screen, contact->name, 35, 55, 250,
-                                lv_color_hex(0xFFFFFF));
-    lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
-    const char *source = contact->source == STARTER_CONTACT_WECHAT
-                             ? "来源：微信" : "来源：智能设备";
-    lv_obj_t *source_label = make_label(screen, source, 55, 88, 210,
-                                        lv_color_hex(0x72DEF8));
-    lv_obj_set_style_text_align(source_label, LV_TEXT_ALIGN_CENTER, 0);
-#if CONFIG_IDF_TARGET_ESP32P4
-    (void)make_button(screen, "语音通话", 18, 125, 132, 48, ACTION_VOICE_CALL);
-    (void)make_button(screen, "视频通话", 170, 125, 132, 48, ACTION_VIDEO_CALL);
-#else
-    (void)make_button(screen, "语音通话", 50, 125, 220, 48,
-                      ACTION_VOICE_CALL);
-#endif
-    (void)make_button(screen, "返回", 110, 194, 100, 36,
-                      ACTION_CONTACTS_BACK);
 }
 
 static void render_call(lv_obj_t *screen)
@@ -1723,89 +1304,6 @@ static void refresh_call_controls(starter_runtime_status_t runtime,
     }
 }
 
-static void render_call_result(lv_obj_t *screen)
-{
-    render_header(screen, "通话结果");
-    lv_obj_t *result = make_label(screen,
-                                  s_call_result[0] == '\0'
-                                      ? "通话已结束" : s_call_result,
-                                  40, 88, 240, lv_color_hex(0xFFFFFF));
-    lv_obj_set_style_text_align(result, LV_TEXT_ALIGN_CENTER, 0);
-    (void)make_label(screen, "即将返回首页", 95, 132, 130,
-                     lv_color_hex(0x72DEF8));
-}
-
-static void render_emojis(lv_obj_t *screen)
-{
-    render_header(screen, "表情包 23");
-    lv_obj_t *grid = lv_obj_create(screen);
-    lv_obj_set_pos(grid, 10, 38);
-    lv_obj_set_size(grid, 300, 150);
-    set_bg(grid, lv_color_hex(0x102832));
-    lv_obj_set_style_radius(grid, 10, 0);
-    lv_obj_set_style_pad_all(grid, 4, 0);
-    lv_obj_set_scroll_dir(grid, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(grid, LV_SCROLLBAR_MODE_AUTO);
-    for (uint8_t i = 0;
-         i < sizeof(s_emoji_names) / sizeof(s_emoji_names[0]);
-         ++i) {
-        lv_coord_t column = (lv_coord_t)(i % 3U);
-        lv_coord_t row = (lv_coord_t)(i / 3U);
-        lv_obj_t *button = make_button(
-            grid, s_emoji_names[i], (lv_coord_t)(2 + column * 94),
-            (lv_coord_t)(2 + row * 44), 88, 38,
-            (product_action_t)(ACTION_EMOJI_BASE + i));
-        if (i == s_preferences.emoji_index) {
-            lv_obj_set_style_border_width(button, 2, 0);
-            lv_obj_set_style_border_color(button, lv_color_hex(0x72DEF8), 0);
-        }
-    }
-    (void)make_button(screen, "返回", 110, 196, 100, 34, ACTION_MENU);
-}
-
-static void render_emoji_preview(lv_obj_t *screen)
-{
-    render_header(screen, s_emoji_names[s_preview_emoji]);
-    create_expression_face(screen, 50, 46);
-    apply_expression(s_emoji_keys[s_preview_emoji], STARTER_AI_UI_IDLE, 1U);
-    (void)make_button(screen, "应用到主页", 42, 174, 142, 44,
-                      ACTION_EMOJI_APPLY);
-    (void)make_button(screen, "返回", 198, 174, 80, 44, ACTION_EMOJIS);
-}
-
-static void render_settings(lv_obj_t *screen)
-{
-    char volume[48];
-    char speaker[48];
-    char microphone[48];
-    (void)snprintf(volume, sizeof(volume), "音量  %u / 10", s_preferences.volume);
-    (void)snprintf(speaker, sizeof(speaker), "扬声器  %s",
-                   s_preferences.speaker_muted ? "已静音" : "开启");
-    (void)snprintf(microphone, sizeof(microphone), "麦克风  %s",
-                   s_preferences.microphone_muted ? "已静音" : "开启");
-    render_header(screen, "设置");
-    s_settings_volume = make_label(screen, volume, 72, 47, 176,
-                                   lv_color_hex(0xFFFFFF));
-    (void)make_button(screen, "-", 18, 42, 42, 38, ACTION_VOLUME_DOWN);
-    (void)make_button(screen, "+", 260, 42, 42, 38, ACTION_VOLUME_UP);
-    s_settings_speaker = make_button(screen, speaker, 18, 82, 132, 36,
-                                     ACTION_SPEAKER_MUTE);
-    s_settings_microphone = make_button(screen, microphone, 170, 82, 132, 36,
-                                        ACTION_MIC_MUTE);
-    char sleep_text[48];
-    (void)snprintf(sleep_text, sizeof(sleep_text), "休眠  %s",
-                   s_sleep_names[s_preferences.sleep_index]);
-    s_settings_sleep = make_button(screen, sleep_text, 18, 126, 132, 34,
-                                   ACTION_SLEEP);
-    (void)make_button(screen, "网络信息", 170, 126, 132, 34, ACTION_NETWORK);
-    char acknowledgement[48];
-    (void)snprintf(acknowledgement, sizeof(acknowledgement), "回应声  %s",
-                   s_preferences.acknowledgement_male ? "男声" : "女声");
-    s_settings_acknowledgement = make_button(screen, acknowledgement, 78, 166, 164, 30,
-                                               ACTION_ACK_VOICE);
-    (void)make_button(screen, "返回", 110, 204, 100, 28, ACTION_MENU);
-}
-
 static void refresh_diagnostics(int64_t now)
 {
     if (s_page != PAGE_DIAGNOSTICS || s_diagnostics_label == NULL) return;
@@ -1913,127 +1411,7 @@ static void refresh_diagnostics(int64_t now)
     s_diagnostics_due_ms = now + 1000;
 }
 
-static void render_diagnostics(lv_obj_t *screen)
-{
-    render_header(screen, "运行状态");
-    (void)make_button(screen, "资源", 14, 36, 90, 32, ACTION_DIAG_SYSTEM);
-    (void)make_button(screen, "音频", 115, 36, 90, 32, ACTION_DIAG_AUDIO);
-    (void)make_button(screen, "事件", 216, 36, 90, 32, ACTION_DIAG_EVENTS);
-    lv_obj_t *panel = lv_obj_create(screen);
-    s_diagnostics_panel = panel;
-    lv_obj_set_pos(panel, 8, 74);
-    lv_obj_set_size(panel, 304, 122);
-    lv_obj_set_style_pad_all(panel, 4, 0);
-    lv_obj_set_scroll_dir(panel, LV_DIR_VER);
-    set_bg(panel, lv_color_hex(HOME_BACKGROUND_COLOR));
-    s_diagnostics_label = make_label(panel, "", 0, 0, 280, lv_color_hex(0xFFFFFF));
-    (void)make_button(screen, "返回", 110, 202, 100, 30, ACTION_MENU);
-    refresh_diagnostics(esp_timer_get_time() / 1000);
-}
-
-static void render_network(lv_obj_t *screen)
-{
-    render_header(screen, "网络信息");
-    if (wifi_manager_connected()) {
-        wifi_config_t config = {0};
-        uint8_t mac[6] = {0};
-        esp_netif_ip_info_t ip = {0};
-        (void)esp_wifi_get_config(WIFI_IF_STA, &config);
-        (void)esp_wifi_get_mac(WIFI_IF_STA, mac);
-        esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-        if (netif != NULL) (void)esp_netif_get_ip_info(netif, &ip);
-        int8_t rssi = 0;
-        (void)wifi_manager_signal_dbm(&rssi);
-        char device_id[65] = {0};
-        starter_runtime_copy_device_id(device_id, sizeof(device_id));
-        char details[400];
-        (void)snprintf(details, sizeof(details),
-                       "设备ID  %s\nSSID  %s\nMAC   %02X:%02X:%02X:%02X:%02X:%02X\n"
-                       "IP    " IPSTR "\n信号  %d dBm\n服务  %s / MQTT %s",
-                       device_id,
-                       (char *)config.sta.ssid,
-                       mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
-                       IP2STR(&ip.ip), (int)rssi,
-                       platform_client_ready() ? "已连接" : "未连接",
-                       platform_client_mqtt_connected() ? "已连接" : "未连接");
-        (void)make_label(screen, details, 18, 42, 284, lv_color_hex(0xFFFFFF));
-    } else if (wifi_manager_provisioning()) {
-        char details[384];
-        (void)snprintf(details, sizeof(details),
-                       "需要连接网络\n请连接热点：%s\n无需密码，系统通常会提示打开配网页\n%s\n未弹出时打开：%s",
-                       wifi_manager_provisioning_ssid(),
-                       wifi_manager_provisioning_status(),
-                       wifi_manager_provisioning_url());
-        (void)make_label(screen, details, 22, 42, 276, lv_color_hex(0xFFFFFF));
-    } else {
-        (void)make_label(screen, "正在连接网络…", 70, 88, 180,
-                         lv_color_hex(0xABC0C9));
-    }
-    (void)make_button(screen, "返回", 110, 198, 100, 34,
-                      ACTION_NETWORK_BACK);
-}
-
-static void render_binding(lv_obj_t *screen)
-{
-    render_header(screen, "绑定设备");
-    lv_obj_t *status = make_label(screen,
-                                  "网络已连接 · 请输入验证码",
-                                  48,
-                                  38,
-                                  224,
-                                  lv_color_hex(0x72DEF8));
-    lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, 0);
-
-    lv_obj_t *code_panel = lv_obj_create(screen);
-    lv_obj_set_pos(code_panel, 20, 62);
-    lv_obj_set_size(code_panel, 280, 82);
-    set_bg(code_panel, lv_color_hex(0x173B49));
-    lv_obj_set_style_radius(code_panel, 18, 0);
-    lv_obj_clear_flag(code_panel, LV_OBJ_FLAG_SCROLLABLE);
-    char spaced_code[18] = "- - - - - -";
-    if (strlen(s_previous_verification_code) == 6U) {
-        (void)snprintf(spaced_code,
-                       sizeof(spaced_code),
-                       "%c %c %c %c %c %c",
-                       s_previous_verification_code[0],
-                       s_previous_verification_code[1],
-                       s_previous_verification_code[2],
-                       s_previous_verification_code[3],
-                       s_previous_verification_code[4],
-                       s_previous_verification_code[5]);
-    }
-    /* BINDING_CODE_TOP_LEVEL: avoid clipping by the panel's themed content area. */
-    lv_obj_t *code = make_label(screen,
-                                spaced_code,
-                                20,
-                                75,
-                                280,
-                                lv_color_hex(0xFFFFFF));
-    lv_obj_set_height(code, 58);
-    lv_obj_set_style_text_align(code, LV_TEXT_ALIGN_CENTER, 0);
-#if LV_FONT_MONTSERRAT_48
-    lv_obj_set_style_text_font(code, &lv_font_montserrat_48, 0);
-#endif
-
-    lv_obj_t *instruction = make_label(screen,
-                                       "请在体验平台输入此验证码",
-                                       48,
-                                       157,
-                                       224,
-                                       lv_color_hex(0xBFE9F3));
-    lv_obj_set_style_text_align(instruction, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_t *waiting = make_label(screen,
-                                   "正在等待绑定，验证码将播报 3 次…",
-                                   30,
-                                   190,
-                                   260,
-                                   lv_color_hex(0x8DA5B1));
-    lv_obj_set_style_text_align(waiting, LV_TEXT_ALIGN_CENTER, 0);
-}
-
-#if PRODUCT_MODERN_UI
 #include "starter_product_s3_ui.inc"
-#endif
 
 static void render_page(void)
 {
@@ -2041,14 +1419,12 @@ static void render_page(void)
     p4_video_ui_reset();
 #endif
     lv_obj_t *screen = lv_scr_act();
-#if PRODUCT_MODERN_UI
     /* Deleting a scroller may finish its animation and invoke a callback. */
     s3_reset_page();
     s3_face_detach();
-#endif
     lv_obj_clean(screen);
     set_bg(screen, lv_color_hex(HOME_BACKGROUND_COLOR));
-#if CONFIG_IDF_TARGET_ESP32P4 && PRODUCT_MODERN_UI
+#if CONFIG_IDF_TARGET_ESP32P4
     p4_home_background_reset(screen);
 #endif
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
@@ -2064,8 +1440,6 @@ static void render_page(void)
     s_activity = NULL;
     s_face = NULL;
     s_rendered_expression[0] = '\0';
-    s_ai_history_label = NULL;
-    s_ai_history_panel = NULL;
     s_header_title = NULL;
     s_call_peer_label = NULL;
     s_call_status_label = NULL;
@@ -2085,31 +1459,9 @@ static void render_page(void)
     s_diagnostics_panel = NULL;
     s_diagnostics_due_ms = 0;
     s_diagnostics_text[0] = '\0';
-#if PRODUCT_MODERN_UI
-    if (s3_render_page(screen)) return;
-#endif
-    if (s_page == PAGE_HOME_FACE || s_page == PAGE_HOME_CLOCK) {
-        s_idle_persona_stage = UINT8_MAX;
-    }
-    switch (s_page) {
-    case PAGE_HOME_FACE:
-    case PAGE_HOME_CLOCK: render_home(screen); break;
-    case PAGE_AI_CHAT: render_ai_chat(screen); break;
-    case PAGE_MENU: render_menu(screen); break;
-    case PAGE_CONTACTS: render_contacts(screen); break;
-    case PAGE_CONTACT_DETAIL: render_contact_detail(screen); break;
-    case PAGE_EMOJIS: render_emojis(screen); break;
-    case PAGE_EMOJI_PREVIEW: render_emoji_preview(screen); break;
-    case PAGE_SETTINGS: render_settings(screen); break;
-    case PAGE_NETWORK: render_network(screen); break;
-    case PAGE_DIAGNOSTICS: render_diagnostics(screen); break;
-    case PAGE_BINDING: render_binding(screen); break;
-    case PAGE_CALL: render_call(screen); break;
-    case PAGE_CALL_RESULT: render_call_result(screen); break;
-    default:
+    if (!s3_render_page(screen)) {
         s_page = PAGE_HOME_FACE;
-        render_home(screen);
-        break;
+        (void)s3_render_page(screen);
     }
 }
 
@@ -2123,362 +1475,12 @@ static const char *phase_text(starter_ai_ui_phase_t phase)
     }
 }
 
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-typedef struct {
-    lv_coord_t left_x;
-    lv_coord_t left_y;
-    lv_coord_t left_w;
-    lv_coord_t left_h;
-    lv_coord_t right_x;
-    lv_coord_t right_y;
-    lv_coord_t right_w;
-    lv_coord_t right_h;
-    lv_coord_t mouth_x;
-    lv_coord_t mouth_y;
-    lv_coord_t mouth_w;
-    lv_coord_t mouth_h;
-    lv_coord_t eye_radius;
-    lv_coord_t mouth_radius;
-    int16_t left_angle;
-    int16_t right_angle;
-    uint32_t color;
-} expression_geometry_t;
-
-static void clear_expression_part(const expression_geometry_t *geometry,
-                                  bool left_eye,
-                                  bool mouth,
-                                  const lv_draw_rect_dsc_t *clear_dsc)
-{
-    lv_coord_t x = mouth ? geometry->mouth_x
-                         : (left_eye ? geometry->left_x : geometry->right_x);
-    lv_coord_t y = mouth ? geometry->mouth_y
-                         : (left_eye ? geometry->left_y : geometry->right_y);
-    lv_coord_t width = mouth ? geometry->mouth_w
-                             : (left_eye ? geometry->left_w : geometry->right_w);
-    lv_coord_t height = mouth ? geometry->mouth_h
-                              : (left_eye ? geometry->left_h : geometry->right_h);
-    /* Cover antialiasing at rounded edges without clearing the whole PSRAM
-     * canvas.  All expression parts are separated, so these padded boxes do
-     * not erase another part. */
-    const lv_coord_t padding = 2;
-    x = x > padding ? x - padding : 0;
-    y = y > padding ? y - padding : 0;
-    width = (lv_coord_t)(width + padding * 2);
-    height = (lv_coord_t)(height + padding * 2);
-    if (x + width > FACE_CANVAS_W) width = FACE_CANVAS_W - x;
-    if (y + height > FACE_CANVAS_H) height = FACE_CANVAS_H - y;
-    lv_canvas_draw_rect(s_face, x, y, width, height, clear_dsc);
-}
-#endif
 
 static void apply_expression(const char *emotion,
                              starter_ai_ui_phase_t phase,
                              uint8_t activity_level)
 {
-#if PRODUCT_MODERN_UI
     s3_face_set_target(emotion, phase, activity_level);
-#else
-    static expression_geometry_t previous_geometry;
-    static bool previous_geometry_valid;
-    if (s_face == NULL || s_face_canvas_buffer == NULL) {
-        return;
-    }
-    const char *effective = emotion == NULL || emotion[0] == '\0'
-                                ? "neutral" : emotion;
-    if (phase == STARTER_AI_UI_LISTENING) {
-        effective = "listening";
-    } else if (phase == STARTER_AI_UI_THINKING) {
-        effective = "thinking";
-    }
-    if (strcmp(effective, "calm") == 0) {
-        effective = "neutral";
-    } else if (strcmp(effective, "excited") == 0) {
-        effective = "laughing";
-    } else if (strcmp(effective, "curious") == 0) {
-        effective = "confused";
-    } else if (strcmp(effective, "proud") == 0) {
-        effective = "confident";
-    } else if (strcmp(effective, "moved") == 0) {
-        effective = "loving";
-    }
-    if (activity_level > 3U) {
-        activity_level = 3U;
-    }
-
-    expression_geometry_t geometry = {
-        .left_x = 18, .left_y = 23, .left_w = 64, .left_h = 42,
-        .right_x = 138, .right_y = 23, .right_w = 64, .right_h = 42,
-        .mouth_x = 84, .mouth_y = 88, .mouth_w = 52, .mouth_h = 7,
-        .eye_radius = LV_RADIUS_CIRCLE, .mouth_radius = 8,
-        .color = 0xF4FCFF,
-    };
-    if (strcmp(effective, "neutral") == 0) {
-        geometry.color = 0xF4FCFF;
-    } else if (strcmp(effective, "happy") == 0) {
-        geometry.left_y = 35; geometry.left_h = 22;
-        geometry.right_y = 35; geometry.right_h = 22;
-        geometry.mouth_x = 72; geometry.mouth_y = 80;
-        geometry.mouth_w = 76; geometry.mouth_h = 13;
-        geometry.color = 0x91F2C8;
-    } else if (strcmp(effective, "laughing") == 0) {
-        geometry.left_x = 12; geometry.left_y = 38;
-        geometry.left_w = 72; geometry.left_h = 12;
-        geometry.right_x = 136; geometry.right_y = 38;
-        geometry.right_w = 72; geometry.right_h = 12;
-        geometry.mouth_x = 66; geometry.mouth_y = 70;
-        geometry.mouth_w = 88; geometry.mouth_h = 25;
-        geometry.mouth_radius = LV_RADIUS_CIRCLE;
-        geometry.color = 0x70F0BE;
-    } else if (strcmp(effective, "funny") == 0) {
-        geometry.left_x = 24; geometry.left_y = 20;
-        geometry.left_w = 50; geometry.left_h = 48;
-        geometry.right_x = 142; geometry.right_y = 39;
-        geometry.right_w = 62; geometry.right_h = 12;
-        geometry.mouth_x = 78; geometry.mouth_y = 84;
-        geometry.mouth_w = 68; geometry.mouth_h = 9;
-        geometry.left_angle = -80; geometry.right_angle = 80;
-        geometry.color = 0xFFD67A;
-    } else if (strcmp(effective, "sad") == 0) {
-        geometry.left_x = 25; geometry.left_y = 37;
-        geometry.left_w = 55; geometry.left_h = 14;
-        geometry.right_x = 140; geometry.right_y = 37;
-        geometry.right_w = 55; geometry.right_h = 14;
-        geometry.mouth_x = 88; geometry.mouth_y = 90;
-        geometry.mouth_w = 44; geometry.mouth_h = 5;
-        geometry.left_angle = -100; geometry.right_angle = 100;
-        geometry.color = 0x9FB2E8;
-    } else if (strcmp(effective, "angry") == 0) {
-        geometry.left_x = 18; geometry.left_y = 32;
-        geometry.left_w = 66; geometry.left_h = 14;
-        geometry.right_x = 136; geometry.right_y = 32;
-        geometry.right_w = 66; geometry.right_h = 14;
-        geometry.mouth_x = 78; geometry.mouth_y = 88;
-        geometry.mouth_w = 64; geometry.mouth_h = 6;
-        geometry.left_angle = 120; geometry.right_angle = -120;
-        geometry.eye_radius = 5; geometry.color = 0xF28A8A;
-    } else if (strcmp(effective, "crying") == 0) {
-        geometry.left_x = 28; geometry.left_y = 32;
-        geometry.left_w = 48; geometry.left_h = 22;
-        geometry.right_x = 144; geometry.right_y = 32;
-        geometry.right_w = 48; geometry.right_h = 22;
-        geometry.mouth_x = 92; geometry.mouth_y = 90;
-        geometry.mouth_w = 36; geometry.mouth_h = 9;
-        geometry.left_angle = -130; geometry.right_angle = 130;
-        geometry.color = 0x6DC9F2;
-    } else if (strcmp(effective, "loving") == 0) {
-        geometry.left_x = 31; geometry.left_y = 19;
-        geometry.left_w = 46; geometry.left_h = 50;
-        geometry.right_x = 143; geometry.right_y = 19;
-        geometry.right_w = 46; geometry.right_h = 50;
-        geometry.mouth_x = 74; geometry.mouth_y = 82;
-        geometry.mouth_w = 72; geometry.mouth_h = 12;
-        geometry.eye_radius = 12; geometry.color = 0xFF8EBB;
-    } else if (strcmp(effective, "embarrassed") == 0) {
-        geometry.left_x = 29; geometry.left_y = 42;
-        geometry.left_w = 50; geometry.left_h = 9;
-        geometry.right_x = 141; geometry.right_y = 42;
-        geometry.right_w = 50; geometry.right_h = 9;
-        geometry.mouth_x = 94; geometry.mouth_y = 84;
-        geometry.mouth_w = 32; geometry.mouth_h = 7;
-        geometry.left_angle = 70; geometry.right_angle = -70;
-        geometry.color = 0xF4A3C2;
-    } else if (strcmp(effective, "surprised") == 0) {
-        geometry.left_x = 26; geometry.left_y = 16;
-        geometry.left_w = 54; geometry.left_h = 56;
-        geometry.right_x = 140; geometry.right_y = 16;
-        geometry.right_w = 54; geometry.right_h = 56;
-        geometry.mouth_x = 96; geometry.mouth_y = 78;
-        geometry.mouth_w = 28; geometry.mouth_h = 28;
-        geometry.mouth_radius = LV_RADIUS_CIRCLE;
-        geometry.color = 0xFFF2A8;
-    } else if (strcmp(effective, "shocked") == 0) {
-        geometry.left_x = 15; geometry.left_y = 11;
-        geometry.left_w = 72; geometry.left_h = 64;
-        geometry.right_x = 133; geometry.right_y = 11;
-        geometry.right_w = 72; geometry.right_h = 64;
-        geometry.mouth_x = 90; geometry.mouth_y = 73;
-        geometry.mouth_w = 40; geometry.mouth_h = 34;
-        geometry.mouth_radius = LV_RADIUS_CIRCLE;
-        geometry.color = 0xFFC779;
-    } else if (strcmp(effective, "thinking") == 0) {
-        geometry.left_x = 22; geometry.left_y = 26;
-        geometry.left_w = 60; geometry.left_h = 24;
-        geometry.right_x = 150; geometry.right_y = 39;
-        geometry.right_w = 42; geometry.right_h = 17;
-        geometry.mouth_x = 110; geometry.mouth_y = 87;
-        geometry.mouth_w = 38; geometry.mouth_h = 6;
-        geometry.left_angle = -70;
-        geometry.color = 0xC4A7F2;
-    } else if (strcmp(effective, "winking") == 0) {
-        geometry.left_x = 20; geometry.left_y = 28;
-        geometry.left_w = 62; geometry.left_h = 38;
-        geometry.right_x = 138; geometry.right_y = 44;
-        geometry.right_w = 64; geometry.right_h = 6;
-        geometry.mouth_x = 72; geometry.mouth_y = 82;
-        geometry.mouth_w = 76; geometry.mouth_h = 12;
-        geometry.color = 0x91F2C8;
-    } else if (strcmp(effective, "cool") == 0) {
-        geometry.left_x = 10; geometry.left_y = 32;
-        geometry.left_w = 78; geometry.left_h = 19;
-        geometry.right_x = 132; geometry.right_y = 32;
-        geometry.right_w = 78; geometry.right_h = 19;
-        geometry.mouth_x = 87; geometry.mouth_y = 88;
-        geometry.mouth_w = 46; geometry.mouth_h = 6;
-        geometry.eye_radius = 3; geometry.color = 0x72DEF8;
-    } else if (strcmp(effective, "relaxed") == 0) {
-        geometry.left_x = 24; geometry.left_y = 42;
-        geometry.left_w = 58; geometry.left_h = 8;
-        geometry.right_x = 138; geometry.right_y = 42;
-        geometry.right_w = 58; geometry.right_h = 8;
-        geometry.mouth_x = 82; geometry.mouth_y = 83;
-        geometry.mouth_w = 56; geometry.mouth_h = 8;
-        geometry.color = 0xB9E9DB;
-    } else if (strcmp(effective, "delicious") == 0) {
-        geometry.left_x = 24; geometry.left_y = 37;
-        geometry.left_w = 56; geometry.left_h = 16;
-        geometry.right_x = 140; geometry.right_y = 37;
-        geometry.right_w = 56; geometry.right_h = 16;
-        geometry.mouth_x = 70; geometry.mouth_y = 78;
-        geometry.mouth_w = 80; geometry.mouth_h = 18;
-        geometry.mouth_radius = LV_RADIUS_CIRCLE;
-        geometry.color = 0xFFB86B;
-    } else if (strcmp(effective, "kissy") == 0) {
-        geometry.left_x = 25; geometry.left_y = 40;
-        geometry.left_w = 55; geometry.left_h = 10;
-        geometry.right_x = 140; geometry.right_y = 40;
-        geometry.right_w = 55; geometry.right_h = 10;
-        geometry.mouth_x = 99; geometry.mouth_y = 78;
-        geometry.mouth_w = 22; geometry.mouth_h = 22;
-        geometry.mouth_radius = LV_RADIUS_CIRCLE;
-        geometry.color = 0xFF91B8;
-    } else if (strcmp(effective, "confident") == 0) {
-        geometry.left_x = 18; geometry.left_y = 34;
-        geometry.left_w = 66; geometry.left_h = 18;
-        geometry.right_x = 136; geometry.right_y = 34;
-        geometry.right_w = 66; geometry.right_h = 18;
-        geometry.mouth_x = 78; geometry.mouth_y = 84;
-        geometry.mouth_w = 64; geometry.mouth_h = 8;
-        geometry.left_angle = -80; geometry.right_angle = 80;
-        geometry.color = 0x7DE7D0;
-    } else if (strcmp(effective, "sleepy") == 0) {
-        geometry.left_x = 20; geometry.left_y = 47;
-        geometry.left_w = 64; geometry.left_h = 6;
-        geometry.right_x = 136; geometry.right_y = 47;
-        geometry.right_w = 64; geometry.right_h = 6;
-        geometry.mouth_x = 95; geometry.mouth_y = 88;
-        geometry.mouth_w = 30; geometry.mouth_h = 4;
-        geometry.color = 0xB7C7D0;
-    } else if (strcmp(effective, "silly") == 0) {
-        geometry.left_x = 21; geometry.left_y = 20;
-        geometry.left_w = 58; geometry.left_h = 48;
-        geometry.right_x = 143; geometry.right_y = 37;
-        geometry.right_w = 55; geometry.right_h = 15;
-        geometry.mouth_x = 80; geometry.mouth_y = 82;
-        geometry.mouth_w = 70; geometry.mouth_h = 10;
-        geometry.left_angle = 90; geometry.right_angle = -120;
-        geometry.color = 0xFFE17C;
-    } else if (strcmp(effective, "confused") == 0) {
-        geometry.left_x = 18; geometry.left_y = 25;
-        geometry.left_w = 65; geometry.left_h = 28;
-        geometry.right_x = 144; geometry.right_y = 39;
-        geometry.right_w = 50; geometry.right_h = 18;
-        geometry.mouth_x = 91; geometry.mouth_y = 88;
-        geometry.mouth_w = 38; geometry.mouth_h = 6;
-        geometry.left_angle = -100; geometry.right_angle = -60;
-        geometry.color = 0xC8B8F6;
-    } else if (strcmp(effective, "listening") == 0) {
-        geometry.left_x = 19; geometry.left_y = 20;
-        geometry.left_w = 64;
-        geometry.left_h = (lv_coord_t)(42 + activity_level * 3U);
-        geometry.right_x = 137; geometry.right_y = 20;
-        geometry.right_w = 64; geometry.right_h = geometry.left_h;
-        geometry.mouth_x = 88; geometry.mouth_y = 86;
-        geometry.mouth_w = 44;
-        geometry.mouth_h = (lv_coord_t)(6 + activity_level * 2U);
-        geometry.color = 0x72DEF8;
-    } else if (strcmp(effective, "ambient") == 0) {
-        geometry.left_x = 26; geometry.left_y = 29;
-        geometry.left_w = 56;
-        geometry.left_h = (lv_coord_t)(28 + activity_level * 2U);
-        geometry.right_x = 138; geometry.right_y = 29;
-        geometry.right_w = 56; geometry.right_h = geometry.left_h;
-        geometry.mouth_x = 98; geometry.mouth_y = 88;
-        geometry.mouth_w = 24;
-        geometry.mouth_h = (lv_coord_t)(4 + activity_level);
-        geometry.color = 0x91B9C9;
-    } else if (strcmp(effective, "speech") == 0) {
-        geometry.left_x = 19; geometry.left_y = 34;
-        geometry.left_w = 64; geometry.left_h = 22;
-        geometry.right_x = 137; geometry.right_y = 34;
-        geometry.right_w = 64; geometry.right_h = 22;
-        geometry.mouth_x = 76; geometry.mouth_y = 78;
-        geometry.mouth_w = 68;
-        geometry.mouth_h = (lv_coord_t)(10 + activity_level * 4U);
-        geometry.mouth_radius = LV_RADIUS_CIRCLE;
-        geometry.color = 0x78F0CF;
-    } else {
-        /* 未知 tag 由 runtime 选择正向回退；这里保持安全的开心表情。 */
-        geometry.left_y = 35; geometry.left_h = 22;
-        geometry.right_y = 35; geometry.right_h = 22;
-        geometry.mouth_x = 72; geometry.mouth_y = 80;
-        geometry.mouth_w = 76; geometry.mouth_h = 13;
-        geometry.color = 0x91F2C8;
-    }
-
-    if (phase == STARTER_AI_UI_SPEAKING &&
-        strcmp(effective, "speech") != 0) {
-        geometry.mouth_h = (lv_coord_t)(geometry.mouth_h + activity_level * 2U);
-    }
-    /* Keep one persistent backing store, but clear only the three previous
-     * shapes.  Filling all 23,760 pixels in PSRAM on every mouth/eye change was
-     * measured at 20-34 ms on hardware and made the 100 ms UI tick noisy. */
-    lv_color_t color = lv_color_hex(geometry.color);
-    lv_draw_rect_dsc_t eye_dsc;
-    lv_draw_rect_dsc_init(&eye_dsc);
-    eye_dsc.bg_color = color;
-    eye_dsc.bg_opa = LV_OPA_COVER;
-    eye_dsc.radius = geometry.eye_radius;
-    lv_draw_rect_dsc_t mouth_dsc;
-    lv_draw_rect_dsc_init(&mouth_dsc);
-    mouth_dsc.bg_color = color;
-    mouth_dsc.bg_opa = LV_OPA_COVER;
-    mouth_dsc.radius = geometry.mouth_radius;
-    if (previous_geometry_valid && s_rendered_expression[0] != '\0') {
-        lv_draw_rect_dsc_t clear_dsc;
-        lv_draw_rect_dsc_init(&clear_dsc);
-        clear_dsc.bg_color = lv_color_hex(HOME_BACKGROUND_COLOR);
-        clear_dsc.bg_opa = LV_OPA_COVER;
-        clear_dsc.radius = 0;
-        clear_expression_part(&previous_geometry, true, false, &clear_dsc);
-        clear_expression_part(&previous_geometry, false, false, &clear_dsc);
-        clear_expression_part(&previous_geometry, false, true, &clear_dsc);
-    }
-    lv_canvas_draw_rect(s_face, geometry.left_x, geometry.left_y,
-                        geometry.left_w, geometry.left_h, &eye_dsc);
-    lv_canvas_draw_rect(s_face, geometry.right_x, geometry.right_y,
-                        geometry.right_w, geometry.right_h, &eye_dsc);
-    lv_canvas_draw_rect(s_face, geometry.mouth_x, geometry.mouth_y,
-                        geometry.mouth_w, geometry.mouth_h, &mouth_dsc);
-    previous_geometry = geometry;
-    previous_geometry_valid = true;
-    lv_obj_invalidate(s_face);
-#endif
-}
-
-static void append_ai_history(const char *subtitle)
-{
-    if (subtitle == NULL || subtitle[0] == '\0' ||
-        strcmp(subtitle, s_last_history_subtitle) == 0) {
-        return;
-    }
-    size_t used = strlen(s_ai_history);
-    size_t available = sizeof(s_ai_history) - used;
-    if (available > 1U) {
-        (void)snprintf(s_ai_history + used, available, "%s%s",
-                       used == 0U ? "" : "\n", subtitle);
-    }
-    (void)snprintf(s_last_history_subtitle,
-                   sizeof(s_last_history_subtitle), "%s", subtitle);
 }
 
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -2561,22 +1563,10 @@ static void product_tick(lv_timer_t *timer)
     }
     if (s_pending_wifi_notice == WIFI_NOTICE_FAILED &&
         wifi_failed && session_idle && !call_now) {
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-        /* 失败后先在首页给出明确结果，再进入可执行的配网页。 */
-        if (!home) {
-            s_page = PAGE_HOME_FACE;
-            render_page();
-            home = true;
-        }
-        set_wifi_feedback(WIFI_NOTICE_FAILED, now);
-#endif
         s_pending_wifi_notice = WIFI_NOTICE_NONE;
         voice_state_changed = true;
         note_interaction();
     }
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-    bool wifi_notice_visible = s_wifi_notice != WIFI_NOTICE_NONE;
-#endif
     if (ai_now && runtime.session_generation != s_previous_ai_generation) {
         /* BOOT, screen and console bypass the acoustic-result queue. */
         if (runtime.session_generation != s_wake_debug_session) show_wake_debug(NULL, now);
@@ -2627,9 +1617,7 @@ static void product_tick(lv_timer_t *timer)
     }
 
     bool show_call = call_now;
-#if PRODUCT_MODERN_UI
     show_call = call_now && wifi_connected;
-#endif
     if (show_call) {
         if (s_ai_ack_queue != NULL) {
             (void)xQueueReset(s_ai_ack_queue);
@@ -2658,66 +1646,22 @@ static void product_tick(lv_timer_t *timer)
             s_call_ring_kind = CALL_RING_NONE;
         }
     } else if (!call_now && call_before && s_page == PAGE_CALL) {
-#if PRODUCT_MODERN_UI
         (void)snprintf(s_call_result, sizeof(s_call_result), "%s",
             product.call_result[0] ? product.call_result :
             runtime.last_error ? "通话未完成" : "通话已结束");
         s_page = PAGE_CALL_RESULT;
-#else
-        if (product.call_result[0] != '\0') {
-            (void)snprintf(s_call_result, sizeof(s_call_result), "%s",
-                           product.call_result);
-            s_call_result_hide_ms = now + 2600;
-            s_page = PAGE_CALL_RESULT;
-        } else {
-            s_page = PAGE_HOME_FACE;
-        }
-#endif
         render_page();
     }
     if (!show_call) {
         s_call_ring_kind = CALL_RING_NONE;
     }
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-    if (s_page == PAGE_CALL_RESULT && now >= s_call_result_hide_ms) {
-        s_page = PAGE_HOME_FACE;
-        render_page();
-    }
-#endif
-    /* S3 keeps the result until explicit navigation; a new incoming call still
+    /* Keep the result until explicit navigation; a new incoming call still
      * takes priority above. Do not turn a short reading delay into a lost result. */
 
     /* Wi-Fi 已连但尚未绑定时，验证码页优先于所有空闲产品页。 */
     bool binding_now = platform_client_provisioning();
     const char *verification_code = platform_client_verification_code();
-#if PRODUCT_MODERN_UI
     s3_update_setup(wifi_connected, session_idle, binding_now, verification_code);
-#else
-    if (!call_now && session_idle && wifi_connected && binding_now &&
-        !wifi_notice_visible &&
-        verification_code != NULL && verification_code[0] != '\0') {
-        bool code_changed = strcmp(verification_code,
-                                   s_previous_verification_code) != 0;
-        if (code_changed) {
-            (void)snprintf(s_previous_verification_code,
-                           sizeof(s_previous_verification_code),
-                           "%s",
-                           verification_code);
-        }
-        note_interaction();
-        if (s_page != PAGE_BINDING || code_changed) {
-            s_page = PAGE_BINDING;
-            render_page();
-            ESP_LOGI(TAG, "binding code is visible on the product screen");
-        }
-    } else if (!binding_now && s_page == PAGE_BINDING) {
-        memset(s_previous_verification_code,
-               0,
-               sizeof(s_previous_verification_code));
-        s_page = PAGE_HOME_FACE;
-        render_page();
-    }
-#endif
 
     /* 上面的通话/绑定跳转可能重建页面，后续刷新以当前页面为准。 */
     home = s_page == PAGE_HOME_FACE || s_page == PAGE_HOME_CLOCK;
@@ -2730,42 +1674,6 @@ static void product_tick(lv_timer_t *timer)
         render_page();
     }
 
-    if ((runtime.state == STARTER_RUNTIME_AI_ACTIVE ||
-         runtime.state == STARTER_RUNTIME_AI_CONNECTING) &&
-        product.caption_final) {
-        append_ai_history(product.subtitle);
-    }
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-    if (s_page == PAGE_AI_CHAT &&
-        (runtime_changed || product.ai_phase != s_previous_ai_phase ||
-         strcmp(product.subtitle, s_previous_subtitle) != 0)) {
-        if (s_state != NULL) {
-            lv_label_set_text(s_state,
-                              runtime.state == STARTER_RUNTIME_AI_CONNECTING
-                                  ? "正在连接 AI"
-                                  : (runtime.state == STARTER_RUNTIME_AI_ACTIVE
-                                         ? phase_text(product.ai_phase)
-                                         : "AI 会话已结束"));
-        }
-        if (s_ai_history_label != NULL) {
-            if (!product.caption_final && product.subtitle[0] != '\0') {
-                (void)snprintf(s_ai_display, sizeof(s_ai_display), "%s%s%s",
-                               s_ai_history,
-                               s_ai_history[0] == '\0' ? "" : "\n",
-                               product.subtitle);
-                lv_label_set_text(s_ai_history_label, s_ai_display);
-            } else {
-                lv_label_set_text(s_ai_history_label,
-                                  s_ai_history[0] == '\0'
-                                      ? "请说，我在听。" : s_ai_history);
-            }
-            if (s_ai_history_panel != NULL) {
-                lv_obj_scroll_to_y(s_ai_history_panel, LV_COORD_MAX,
-                                   LV_ANIM_ON);
-            }
-        }
-    }
-#endif
 
     bool ambient_before = s_ambient_visible;
     if (now >= s_audio_wake_guard_until_ms &&
@@ -2868,61 +1776,21 @@ static void product_tick(lv_timer_t *timer)
             if (s_date != NULL) {
                 char date_text[40];
                 (void)strftime(date_text, sizeof(date_text), "%Y-%m-%d", &local);
-#if PRODUCT_MODERN_UI
                 static const char *const weekdays[] = {
                     "星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"
                 };
                 size_t used = strlen(date_text);
                 (void)snprintf(date_text + used, sizeof(date_text) - used,
                                "  %s", weekdays[local.tm_wday]);
-#endif
                 label_set_text_if_changed(s_date, date_text);
             }
         }
     }
 
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-    if (home && (runtime_changed ||
-                 product.ai_phase != s_previous_ai_phase ||
-                 strcmp(product.subtitle, s_previous_subtitle) != 0 ||
-                 idle_stage_changed || ambient_changed || voice_state_changed)) {
-        if (s_state != NULL) {
-            const char *text = "小钛在这儿";
-            if (s_voice_feedback[0] != '\0') {
-                text = s_voice_feedback;
-            } else if (remote_viewing) {
-                text = "● 远程查看中";
-            } else if (runtime.state == STARTER_RUNTIME_AI_CONNECTING) {
-                text = "正在连接 AI";
-            } else if (runtime.state == STARTER_RUNTIME_AI_ACTIVE) {
-                text = phase_text(product.ai_phase);
-            } else if (s_ambient_visible) {
-                text = "听到一点声音…";
-            } else if (idle_stage >= 2U) {
-                text = "...zzZ";
-            } else if (idle_stage == 1U) {
-                text = "发会儿呆…";
-            }
-            lv_label_set_text(s_state, text);
-            lv_obj_fade_in(s_state, 200, 0);
-        }
-        if (s_subtitle != NULL) {
-            /* H5 查看不是 AI 对话；不能遗留上一段 AI 字幕。 */
-            lv_label_set_text(s_subtitle, remote_viewing ? "" : product.subtitle);
-            if (remote_viewing || product.subtitle[0] == '\0') {
-                lv_obj_add_flag(s_subtitle, LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_clear_flag(s_subtitle, LV_OBJ_FLAG_HIDDEN);
-            }
-            lv_obj_fade_in(s_subtitle, 200, 0);
-        }
-    }
-#else
     /* Home state and full captions have one writer: s3_refresh_ui below. */
     (void)idle_stage_changed;
     (void)ambient_changed;
     (void)voice_state_changed;
-#endif
     if (s_activity != NULL) {
         if (s_ambient_visible && session_idle) {
             static const char *const levels[] = {
@@ -2959,17 +1827,7 @@ static void product_tick(lv_timer_t *timer)
     }
 
     /* 无网络时产品页优先给出可执行的 AP 配网指引。 */
-#if CONFIG_IDF_TARGET_ESP32P4 && !PRODUCT_MODERN_UI
-    if (!wifi_connected && wifi_manager_provisioning() &&
-        s_page != PAGE_NETWORK && s_page != PAGE_DIAGNOSTICS && session_idle &&
-        !wifi_notice_visible) {
-        s_page = PAGE_NETWORK;
-        render_page();
-    }
-#endif
-#if PRODUCT_MODERN_UI
     s3_refresh_ui(now, runtime, &product);
-#endif
     s_previous_wifi_connected = wifi_connected;
     s_previous_wifi_failed = wifi_failed;
     s_previous_runtime_state = runtime.state;

@@ -6,16 +6,16 @@
 
 | 项目 | 版本或位置 |
 | --- | --- |
-| 应用 | `1.1.2`，项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
+| 应用 | `1.2.0`，项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
 | 开发板 | Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash |
-| 芯片修订 | 默认 P4 rev 1.0–1.99；rev 2.x/3.x 需另行适配 |
+| 芯片修订 | 默认镜像接受 P4 rev 1.0–1.99；其他修订需另行适配 |
 | 开发环境 | ESP-IDF 5.5.4，riscv32-esp-elf 14.2.0_20260121 |
 | TiRTC SDK | 2.3.0 P4 补丁库，详情见 [SDK VERSION](../components/tirtc_sdk/VERSION.md) |
 | Wi-Fi | C6 + ESP-Hosted 1.4.7 主机补丁组件；从机单独核验，见 [C6 指南](C6_PREPARATION.md) |
 
 SDK 的版本号相同不代表二进制相同。保留附带库和头文件，按 [SHA256SUMS](../components/tirtc_sdk/SHA256SUMS.txt) 核对；Hosted 修改见 [LOCAL_CHANGES](../components/espressif__esp_hosted/LOCAL_CHANGES.md)。
 
-应用版本只修改根 `CMakeLists.txt` 的 `PROJECT_VER`，启动日志和运行状态页读取生成的应用描述。`main/app_version.h` 是旧 Monitor 元数据，不是当前小钛的应用版本入口；不要通过修改它给现有固件改版本。
+应用版本在根 `CMakeLists.txt` 的 `PROJECT_VER` 中维护，启动日志和运行状态页读取生成的应用描述。
 
 ## 目录用途
 
@@ -33,7 +33,7 @@ SDK 的版本号相同不代表二进制相同。保留附带库和头文件，�
 
 工程可独立构建，不读取 S3 或父目录文件。ESP-IDF 和下载组件按开发指南安装。
 
-`main/` 中保留了早期工程的部分目录。当前入口由 `main/CMakeLists.txt` 指定，板级引用由 `components/p4_hardware/CMakeLists.txt` 指定；修改前按这两处确认文件是否参与构建。
+`main/` 保留启动入口、配置和仍被使用的板级、摄像头、视频呈现及内存策略。启动源文件由 `main/CMakeLists.txt` 指定，板级源文件由 `components/p4_hardware/CMakeLists.txt` 指定。界面与业务统一维护在 `components/starter_*`，不再保留旧 Monitor 的平行实现。
 
 ## 配置与缓存
 
@@ -46,10 +46,14 @@ SDK 的版本号相同不代表二进制相同。保留附带库和头文件，�
 
 ## 唤醒模型与适配
 
+模型来自 `nihaoxiaotai_v9.3_20260915_nhwc_tflite.zip`，模型文件与分类头必须成对替换，不能混用不同批次。当前输入为 INT8 `[1,98,32]`，输出为 INT8 `[1,256]`；NHWC 转换已在模型内部完成。
+
+默认唤醒阈值为 0.8，对应 `CONFIG_XIAOTAI_WAKE_THRESHOLD_MILLI=800`。已有本机配置优先于默认值；调整阈值不需要替换模型。
+
 | 文件 | SHA-256 |
 | --- | --- |
-| `components/starter_voice/model/head.h` | `170e80f7c850dfe45ae914cdb1ed2813b79125b58c82595a0c30d9574feda1c6` |
-| `components/starter_voice/model/nihaoxiaotai.tflite` | `9b3a844becbeffa185fafec0b8fe1550708d4ca2a600ae9ff9285247e3f8fac6` |
+| `components/starter_voice/model/head.h` | `cc0364fa603a43c90d9de0b0fc39587c7c4d3350c3d1537b7018cf3a923d1a1e` |
+| `components/starter_voice/model/nihaoxiaotai.tflite` | `1dcfe29a10733ec272854bfbafb8a231f10bf3b0399cf6192cc08b38006fac78` |
 
 当前使用 P4 ANSI FFT。TFLM 1.3.5 的卷积通道修正由 [conv_channels.cmake](../components/starter_voice/conv_channels.cmake)生成到 `build/p4_tflm/conv.cc`，不修改下载缓存。升级依赖前阅读[唤醒组件说明](../components/starter_voice/README.md)。
 

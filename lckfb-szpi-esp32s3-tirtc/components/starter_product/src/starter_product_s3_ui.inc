@@ -1,4 +1,4 @@
-/* Shared product presentation. Included by starter_product.c so LVGL ownership stays
+/* S3 product presentation. Included by starter_product.c so LVGL ownership stays
  * in one task. No network operations, media buffers or additional tasks here. */
 #define S3_TEXT 0xF1F3F4
 #define S3_CAPTION_AI 0xB5DFFF
@@ -10,11 +10,7 @@
 #define S3_ACCEPT 0x246F53
 
 #include "starter_product_wechat_qr.inc"
-#if CONFIG_IDF_TARGET_ESP32P4
-#include "starter_product_p4_phone.inc"
-#else
 #include "starter_product_s3_phone.inc"
-#endif
 
 enum {
     S3_ACTION_AI_STOP = 40,
@@ -34,6 +30,7 @@ enum {
     S3_ACTION_ROOM_PREVIOUS,
     S3_ACTION_ROOM_NEXT,
     S3_ACTION_ROOM_REFRESH,
+    S3_ACTION_VIEW_STOP,
 };
 
 /* UI-only state belongs in external RAM; it is never used with cache off. */
@@ -44,6 +41,7 @@ static EXT_RAM_BSS_ATTR struct {
     bool styles_ready;
     lv_obj_t *caption_panel;
     lv_obj_t *wake_hint;
+    lv_obj_t *view_stop;
     lv_obj_t *call_result;
     lv_obj_t *wechat_button;
     lv_obj_t *wechat_qr;
@@ -126,13 +124,25 @@ static lv_obj_t *s3_icon(lv_obj_t *parent, const char *symbol,
     return button;
 }
 
+static lv_obj_t *s3_view_stop_button(lv_obj_t *parent)
+{
+    lv_obj_t *button = make_button(parent, "结束查看", 90, 194, 140, 42,
+                                  (product_action_t)S3_ACTION_VIEW_STOP);
+    lv_obj_t *text = lv_obj_get_child(button, 0);
+    lv_obj_set_width(text, 88);
+    lv_obj_align(text, LV_ALIGN_CENTER, 12, 0);
+    /* Private-use symbols are not Chinese glyphs. Keep the existing icon font
+     * on its own label instead of changing every product label's fallback. */
+    lv_obj_t *icon = lv_label_create(button);
+    lv_label_set_text(icon, LV_SYMBOL_STOP);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);
+    lv_obj_align(icon, LV_ALIGN_LEFT_MID, 22, 0);
+    return button;
+}
+
 static void s3_draw_wechat(lv_event_t *event)
 {
-#if CONFIG_IDF_TARGET_ESP32P4
-    const lv_img_dsc_t *icon = &p4_phone_shortcut_image;
-#else
     const lv_img_dsc_t *icon = &s3_phone_shortcut_image;
-#endif
     /* Keep the source aspect ratio and alpha; the extended hit area is unchanged. */
     lv_obj_t *button = lv_event_get_target(event);
     lv_area_t area;
@@ -148,11 +158,7 @@ static void s3_draw_wechat(lv_event_t *event)
     lv_obj_init_draw_img_dsc(button, LV_PART_MAIN, &d);
     /* Back the transparent handset with white, inset inside the opaque green
      * disc so the outer antialiased edge keeps its original transparency. */
-#if CONFIG_IDF_TARGET_ESP32P4
-    lv_area_t backing = {area.x1 + 2, area.y1 + 2, area.x2 - 2, area.y2 - 2};
-#else
     lv_area_t backing = {area.x1 + 4, area.y1 + 4, area.x2 - 4, area.y2 - 4};
-#endif
     lv_draw_rect_dsc_t fill;
     lv_draw_rect_dsc_init(&fill);
     fill.bg_color = lv_color_white();
@@ -322,54 +328,25 @@ static void s3_refresh_settings(void)
 
 static void s3_render_home(lv_obj_t *screen)
 {
-#if CONFIG_IDF_TARGET_ESP32P4
-    p4_home_background_show(screen);
-#endif
     /* Keep the original robot mark and brand; state text owns its own column. */
     render_header(screen, "小钛");
     lv_obj_set_width(s_header_title, 36);
-#if CONFIG_IDF_TARGET_ESP32P4
-    lv_obj_set_pos(s_wifi_signal, 244, 6);
-    lv_obj_set_pos(s_clock, 200, 8);
-    lv_obj_set_width(s_clock, 40);
-    lv_label_set_long_mode(s_clock, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_color(s_clock, lv_color_hex(S3_ACCENT), 0);
-#else
     /* The 22 px icon ends before the menu's extended hit area at x=260. */
     lv_obj_set_pos(s_wifi_signal, 238, 7);
     lv_obj_add_flag(s_clock, LV_OBJ_FLAG_HIDDEN);
-#endif
     s_state = make_label(screen, "待唤醒", 80, 8, 100, lv_color_hex(S3_ACCENT));
     lv_label_set_long_mode(s_state, LV_LABEL_LONG_DOT);
     lv_obj_set_height(s_state, 20);
-#if CONFIG_IDF_TARGET_ESP32P4
-    /* Text uses physical font metrics; share the WiFi/menu vertical centre. */
-    lv_obj_t *header_labels[] = {s_header_title, s_state, s_clock};
-    for (unsigned i = 0; i < sizeof(header_labels) / sizeof(header_labels[0]); ++i) {
-        lv_coord_t line_height = lv_font_get_line_height(
-            lv_obj_get_style_text_font(header_labels[i], LV_PART_MAIN));
-        lv_obj_set_style_height(header_labels[i], line_height, 0);
-        lv_obj_set_style_y(header_labels[i], product_y(18) - line_height / 2, 0);
-    }
-#endif
     lv_obj_t *more = s3_icon(screen, LV_SYMBOL_BULLET " " LV_SYMBOL_BULLET " " LV_SYMBOL_BULLET,
                              280, 6, 32, ACTION_MENU);
     lv_obj_set_height(more, 24);
     lv_obj_set_style_bg_opa(more, LV_OPA_20, 0);
     lv_obj_set_style_bg_opa(more, LV_OPA_30, LV_STATE_PRESSED);
     /* Click padding is physical: S3 shows 32x24 px but accepts x=260..319,
-     * y=0..49. It ends above the face and right arrow; P4 keeps its scaling. */
+     * y=0..49. It ends above the face and right arrow. */
     lv_obj_set_ext_click_area(more, 20);
-#if CONFIG_IDF_TARGET_ESP32P4
-    s3_ui.wechat_button = make_button(screen, "", 282, 156, 32, 32,
-                                      (product_action_t)S3_ACTION_WECHAT);
-    /* Physical hit area: x=409..479, y=194..263. Keep clear of the arrow,
-     * face tap and captions while shrinking only the visible shortcut. */
-    lv_obj_set_ext_click_area(s3_ui.wechat_button, 14);
-#else
     s3_ui.wechat_button = make_button(screen, "", 276, 150, 44, 44,
                                       (product_action_t)S3_ACTION_WECHAT);
-#endif
     lv_obj_set_style_bg_opa(s3_ui.wechat_button, LV_OPA_TRANSP, 0);
     lv_obj_set_style_bg_opa(s3_ui.wechat_button, LV_OPA_TRANSP, LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(s3_ui.wechat_button, LV_OPA_TRANSP, LV_STATE_DISABLED);
@@ -395,13 +372,9 @@ static void s3_render_home(lv_obj_t *screen)
     lv_obj_set_style_text_line_space(s_subtitle, 4, 0);
     /* Font metrics and align offsets are physical pixels. Bottom alignment
      * clips older lines without copying UTF-8 text or adding scroll latency. */
-#if CONFIG_IDF_TARGET_ESP32P4
-    const lv_coord_t bottom_inset = product_y(6);
-#else
     /* Two 20 px lines + 4 px spacing occupy y=194..237 on S3; the 44 px
      * WeChat shortcut ends at y=193, so neither text nor hit targets overlap. */
     const lv_coord_t bottom_inset = 2;
-#endif
     lv_coord_t caption_height = 2 * lv_font_get_line_height(
         lv_obj_get_style_text_font(s_subtitle, LV_PART_MAIN)) +
         lv_obj_get_style_text_line_space(s_subtitle, LV_PART_MAIN);
@@ -444,11 +417,12 @@ static void s3_render_home(lv_obj_t *screen)
      * above that margin and above the transparent face-tap object. */
     lv_obj_move_foreground(s_state);
     lv_obj_move_foreground(s_wifi_signal);
-#if CONFIG_IDF_TARGET_ESP32P4
-    lv_obj_move_foreground(s_clock);
-#endif
     lv_obj_move_foreground(more);
     lv_obj_move_foreground(s3_ui.wechat_button);
+#if CONFIG_IDF_TARGET_ESP32S3
+    s3_ui.view_stop = s3_view_stop_button(screen);
+    lv_obj_add_flag(s3_ui.view_stop, LV_OBJ_FLAG_HIDDEN);
+#endif
 }
 
 #include "starter_product_s3_room.inc"
@@ -513,12 +487,7 @@ static void s3_render_contact_detail(lv_obj_t *screen)
         "微信联系人" : contact->id, 16, 144, 288, lv_color_hex(S3_MUTED));
     lv_label_set_long_mode(id, LV_LABEL_LONG_DOT);
     lv_obj_set_height(id, 36);
-#if CONFIG_IDF_TARGET_ESP32P4
-    lv_obj_t *call = make_button(screen, "语音呼叫", 8, 192, 148, 44, ACTION_VOICE_CALL);
-    (void)make_button(screen, "视频呼叫", 164, 192, 148, 44, ACTION_VIDEO_CALL);
-#else
     lv_obj_t *call = make_button(screen, "语音呼叫", 8, 192, 304, 44, ACTION_VOICE_CALL);
-#endif
     lv_obj_set_style_bg_color(call, lv_color_hex(S3_ACCEPT), 0);
 }
 
@@ -685,8 +654,7 @@ static void s3_reset_page(void)
     if (s3_ui.toast && s_page == PAGE_CALL) lv_obj_add_flag(s3_ui.toast, LV_OBJ_FLAG_HIDDEN);
     s3_ui.caption_panel = NULL;
     s3_ui.wake_hint = NULL;
-    s_ai_history_panel = NULL;
-    s_ai_history_label = NULL;
+    s3_ui.view_stop = NULL;
     s3_ui.call_result = NULL;
     s3_ui.wechat_button = NULL;
     s3_ui.wechat_qr = NULL;
@@ -709,17 +677,11 @@ static bool s3_render_page(lv_obj_t *screen)
     case PAGE_HOME_CLOCK: s3_render_home(screen); break;
     case PAGE_MENU: s3_render_menu(screen); break;
     case PAGE_ROOM: s3_room_render(screen); break;
-    /* Old navigation intents now lead to the single home conversation view. */
-    case PAGE_AI_CHAT: s_page = PAGE_HOME_FACE; s3_render_home(screen); break;
     case PAGE_SETTINGS: s3_render_settings(screen); break;
     case PAGE_CONTACTS: s3_render_contacts(screen); break;
     case PAGE_CONTACT_DETAIL: s3_render_contact_detail(screen); break;
     case PAGE_CALL:
-#if CONFIG_IDF_TARGET_ESP32P4
-        render_call(screen);
-#else
         s3_render_call(screen);
-#endif
         break;
     case PAGE_NETWORK: s3_render_network(screen); break;
     case PAGE_BINDING: s3_render_binding(screen); break;
@@ -797,6 +759,11 @@ static bool s3_handle_action(product_action_t action)
     if (s3_room_action(action)) return true;
     starter_runtime_status_t runtime = starter_runtime_status();
     bool ai = runtime.state == STARTER_RUNTIME_AI_ACTIVE || runtime.state == STARTER_RUNTIME_AI_CONNECTING;
+    if ((unsigned)action == S3_ACTION_VIEW_STOP) {
+        if (runtime.state == STARTER_RUNTIME_H5_ACTIVE)
+            (void)s3_submit(action, starter_runtime_h5_stop(runtime.connection_generation), runtime.state);
+        return true;
+    }
     if ((unsigned)action == S3_ACTION_QR_CLOSE) {
         s3_close_wechat_qr();
         return true;
@@ -879,10 +846,6 @@ static bool s3_handle_action(product_action_t action)
         (void)s3_submit(action, starter_runtime_call_hangup(), runtime.state);
     } else if (action == ACTION_VOICE_CALL) {
         if (s3_submit(action, starter_runtime_call_contact(s_selected_contact), runtime.state)) s3_feedback("正在发起呼叫");
-#if CONFIG_IDF_TARGET_ESP32P4
-    } else if (action == ACTION_VIDEO_CALL) {
-        if (s3_submit(action, starter_runtime_call_contact_video(s_selected_contact), runtime.state)) s3_feedback("正在发起呼叫");
-#endif
     } else return false;
     starter_runtime_product_snapshot_t product = starter_runtime_product_snapshot();
     s3_refresh_ui(monotonic_ms(), starter_runtime_status(), &product);
@@ -904,7 +867,19 @@ static void s3_refresh_home_status(starter_runtime_status_t runtime,
         state = (unsigned)s3_ui.pending_action == S3_ACTION_AI_STOP ? "结束对话中" : "正在连接 AI";
     } else {
         switch (runtime.state) {
-        case STARTER_RUNTIME_H5_ACTIVE: state = "远程查看中"; break;
+        case STARTER_RUNTIME_H5_ACTIVE:
+#if CONFIG_IDF_TARGET_ESP32S3
+        {
+            starter_camera_status_t camera = starter_media_camera_status();
+            state = camera.generation != runtime.connection_generation ? "远程查看中" :
+                    camera.phase == STARTER_CAMERA_ERROR ? "摄像头异常" :
+                    camera.phase == STARTER_CAMERA_STARTING ? "摄像头启动中" :
+                    camera.phase == STARTER_CAMERA_RUNNING ? "视频查看中" : "远程查看中";
+            break;
+        }
+#else
+            state = "远程查看中"; break;
+#endif
         case STARTER_RUNTIME_AI_CONNECTING: state = "正在连接 AI"; break;
         case STARTER_RUNTIME_AI_ACTIVE: state = phase_text(product->ai_phase); break;
         case STARTER_RUNTIME_CALL_INCOMING: state = "语音来电"; break;
@@ -916,6 +891,17 @@ static void s3_refresh_home_status(starter_runtime_status_t runtime,
         }
     }
     label_set_text_if_changed(s_state, state);
+#if CONFIG_IDF_TARGET_ESP32S3
+    if (s3_ui.view_stop) {
+        if (runtime.state == STARTER_RUNTIME_H5_ACTIVE) {
+            lv_obj_clear_flag(s3_ui.view_stop, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s3_ui.caption_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s3_ui.wake_hint, LV_OBJ_FLAG_HIDDEN);
+            return;
+        }
+        lv_obj_add_flag(s3_ui.view_stop, LV_OBJ_FLAG_HIDDEN);
+    }
+#endif
     if (idle) {
         label_set_text_if_changed(s3_ui.wake_hint, s_preferences.microphone_muted ?
             "麦克风已关闭\n点击表情唤醒对话" :
@@ -966,15 +952,6 @@ static void s3_refresh_ui(int64_t now, starter_runtime_status_t runtime,
                 runtime.state == STARTER_RUNTIME_CALL_CONNECTING ||
                 runtime.state == STARTER_RUNTIME_CALL_ACTIVE;
     if (s_page == PAGE_CALL && call && product->call_peer[0]) {
-#if CONFIG_IDF_TARGET_ESP32P4
-        /* Use the rendered tree, not a snapshot cleared during teardown. */
-        if (s_call_camera_button != NULL) {
-            refresh_call_controls(runtime, product);
-            s3_set_enabled(s_call_accept_button, !pending);
-            s3_set_enabled(s_call_reject_button, !pending);
-            s3_set_enabled(s_call_hangup_button, !pending);
-        } else
-#endif
         {
             bool incoming = runtime.state == STARTER_RUNTIME_CALL_INCOMING;
             bool active = runtime.state == STARTER_RUNTIME_CALL_ACTIVE;

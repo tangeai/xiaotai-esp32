@@ -1,4 +1,4 @@
-"""Compile the actual subscription callbacks with S3 and P4 feature guards."""
+"""Legacy filename: S3 H5 video, all other S3 applications stay audio-only."""
 import os
 from pathlib import Path
 import re
@@ -8,8 +8,8 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 source = (root / "components/starter_tirtc/src/starter_tirtc.c").read_text()
 callbacks = []
-for name in ("on_subscribe_audio", "on_subscribe_video"):
-    match = re.search(r"static int " + name + r"\([^\n]*\)\n\{.*?\n\}", source, re.S)
+for name in ("on_subscribe_audio", "on_subscribe_video", "on_unsubscribe_video"):
+    match = re.search(r"static (?:int|void) " + name + r"\([^\n]*\)\n\{.*?\n\}", source, re.S)
     assert match, name
     callbacks.append(match[0])
 prefix = r'''
@@ -46,12 +46,21 @@ int main(void) {
             assert(on_subscribe_audio(8,id)==-1);
             s_video_subscribed=false;
             unsigned before=key_requests;
-            bool video=CONFIG_IDF_TARGET_ESP32P4 && id==H5_VIDEO_STREAM &&
-                (mode==STARTER_TIRTC_H5 || mode==STARTER_TIRTC_CALL || mode==STARTER_TIRTC_VOIP);
+            bool video=id==H5_VIDEO_STREAM &&
+                (mode==STARTER_TIRTC_H5 || (CONFIG_IDF_TARGET_ESP32P4 &&
+                 (mode==STARTER_TIRTC_CALL || mode==STARTER_TIRTC_VOIP)));
             assert(on_subscribe_video(7,id)==(video?0:-1));
             assert(s_video_subscribed==video);
-            assert(key_requests==before+(video?1:0));
+            assert(key_requests==before+(video && CONFIG_IDF_TARGET_ESP32P4?1:0));
             assert(on_subscribe_video(8,id)==-1);
+            assert(s_video_subscribed==video);
+            on_unsubscribe_video(8,H5_VIDEO_STREAM);
+            assert(s_video_subscribed==video);
+            on_unsubscribe_video(7,H5_AUDIO_STREAM);
+            assert(s_video_subscribed==video);
+            on_unsubscribe_video(7,H5_VIDEO_STREAM);
+            assert(!s_video_subscribed);
+            assert(s_audio_subscribed==audio);
         }
     }
 }
@@ -65,4 +74,4 @@ with tempfile.TemporaryDirectory(prefix="s3-audio-only-") as tmp:
                         f"-DCONFIG_IDF_TARGET_ESP32P4={p4}", str(path / "test.c"),
                         "-o", str(path / "test")], check=True)
         subprocess.run([str(path / "test")], check=True)
-print("PASS: audio/video subscription matrix, stale connection rejection, P4 guard compatibility")
+print("PASS: H5-only S3 video matrix, unsubscribe isolation, stale connection rejection")

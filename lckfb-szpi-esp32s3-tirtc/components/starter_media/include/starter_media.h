@@ -127,7 +127,7 @@ void starter_media_cancel_pcm8k_playback(void);
  * 允许指定连接代次开始媒体采集。
  *
  * 该函数由会话状态任务调用。板级实现应启动自己的采集/编码任务，但不要在
- * 此函数中无限阻塞。所有 S3 会话均只使用音频。
+ * 此函数中无限阻塞。S3 的 H5 视频另由订阅门控，其他会话只使用音频。
  */
 esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation);
 
@@ -156,6 +156,21 @@ void starter_media_submit_audio(starter_tirtc_mode_t mode,
 /** 返回由原子变量组成的瞬时状态快照，可从任意任务调用。 */
 starter_media_status_t starter_media_status(void);
 #if CONFIG_IDF_TARGET_ESP32S3
+typedef enum {
+    STARTER_CAMERA_OFF, STARTER_CAMERA_STARTING, STARTER_CAMERA_RUNNING,
+    STARTER_CAMERA_STOPPING, STARTER_CAMERA_ERROR
+} starter_camera_phase_t;
+typedef struct {
+    starter_camera_phase_t phase;
+    uint32_t generation, width, height, quality;
+    uint32_t captured, sent, stale, congested, send_failed, encode_failed;
+    uint32_t encode_max_us, send_max_us, age_max_ms, late, fps_x10;
+    int error;
+} starter_camera_status_t;
+/* No driver calls/locks from UI; independently atomic diagnostic fields. */
+starter_camera_status_t starter_media_camera_status(void);
+#endif
+#if CONFIG_IDF_TARGET_ESP32S3
 /* Runtime owner only: rate-limited Room chain counters, no SDK calls. */
 void starter_media_log_room_audio(void);
 /* Lifetime maxima/counters and latest complete frame levels. ADC read timing
@@ -177,7 +192,7 @@ starter_media_pipeline_status_t starter_media_pipeline_status(void);
  * last_lock_owner samples the owner on timeout, or before a wait >= 20 ms;
  * it is a diagnostic hint, not proof of who held the mutex for the whole wait.
  * 0 unknown/none, 1 RX, 2 volume, 3 mute, 4 LCD,
- *                  5 local prompt, 6 media start, 7 media stop. */
+ *                  5 local prompt, 6 media start, 7 media stop, 8 camera PWDN. */
 typedef struct {
     uint32_t generation, target_ms, queued_ms, queued_peak_ms;
     bool buffering;

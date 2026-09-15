@@ -7,8 +7,6 @@
 extern "C" {
 #endif
 
-void app_log_policy_apply(void);
-
 /* Detailed flow logs are available for focused diagnosis without polluting the
  * normal realtime path. Warnings and errors must never use this macro. */
 #if CONFIG_APP_VERBOSE_RUNTIME_LOGS

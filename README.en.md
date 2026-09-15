@@ -20,7 +20,7 @@
 [![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
 [![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#wechat-calls)
 
-[Download firmware](#download-firmware) · [Browser flasher](https://espressif.github.io/esptool-js/) · [Demo platform](https://demo-open.tange-ai.com) · [Server & mini program](https://github.com/tangeai/tirtc-server-example)
+[Download firmware](#download-firmware) · [Browser flasher](https://espressif.github.io/esptool-js/) · [Demo platform](https://xiaotai.chat/) · [Server & mini program](https://github.com/tangeai/tirtc-server-example)
 
 </div>
 
@@ -36,12 +36,12 @@ Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi**
 
 | Board | Full BIN download (16 MB) | Features |
 | --- | --- | --- |
-| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.1.2](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.1.2/xiaotai-esp32-s3-app-v1.1.2-full-16MB.bin) | Voice calls and AI voice chat; no camera video |
-| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.1.2](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.1.2/xiaotai-esp32-p4-app-v1.1.2-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
+| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.2.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.2.0/xiaotai-esp32-s3-app-v1.2.0-full-16MB.bin) | Voice calls, AI voice chat, and browser camera viewing |
+| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.2.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.2.0/xiaotai-esp32-p4-app-v1.2.0-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
 
 Check the chip revision before flashing: **S3 rev 0.0–0.99 or P4 rev 1.0–1.99**. P4 rev 2.x/3.x is not supported by these images. The chip revision is different from the PCB version. Do not flash S3 firmware onto P4, or vice versa.
 
-These are **pre-release** images. See the [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.1.2) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.1.2) for flashing instructions, checksums, and validation status.
+These are **pre-release** images. See the [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.2.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.2.0) for flashing instructions, checksums, and validation status.
 
 ## Step 2: Flash from your browser
 
@@ -66,8 +66,8 @@ Switch your phone or computer back to a network with internet access before open
 
 The instructions below include the Chinese interface labels to help you find each control.
 
-1. Open the [XiaoTai demo platform](https://demo-open.tange-ai.com), register, and sign in.
-2. Go to [My Devices (我的设备)](https://demo-open.tange-ai.com/devices). Select **Add Device (添加设备) → Bind with Code (验证码绑定)**.
+1. Open the [XiaoTai demo platform](https://xiaotai.chat/), register, and sign in.
+2. Go to [My Devices (我的设备)](https://xiaotai.chat/devices). Select **Add Device (添加设备) → Bind with Code (验证码绑定)**.
 3. Enter the **6-digit code** shown on the device and click **Bind Device (绑定设备)**.
 4. Return to the device list and check that the device shows **Online (在线)**. If the code has expired, follow the device prompts to get a new one.
 
@@ -78,7 +78,7 @@ Live monitoring, WeChat calls, and AI voice chat each require one device. Device
 ### Live monitoring
 
 1. In the website's device list, click **Live (实时)** for your device.
-2. Click the sound button to hear audio from the device. P4 also provides live video when a camera is connected; S3 supports audio only.
+2. Click the sound button to hear audio from the device. Both S3 and P4 provide live video with their supported cameras connected. S3 uses a GC2145 at 240×176, targeting 12 fps.
 3. Allow microphone access in your browser. Press and hold **Hold to Talk (按住说话)** to send your voice to the device.
 
 ### WeChat calls

@@ -1,12 +1,3 @@
-menu "Audio"
-
-config AUDIO_LOCAL_LOOPBACK_TEST
-    bool "Enable temporary local mic-to-speaker loopback test"
-    default n
-
-endmenu
-
-# Product AEC and call media are owned by starter_media, not Monitor switches.
 menu "RTC video uplink"
 
 # Product media values are owned by media/media_tuning.h. Keep this menu for
@@ -96,58 +87,9 @@ config APP_RTC_SDK_VIDEO_ADAPT_ENABLE
         layer owns encoder bitrate changes. The encoder starts each connection
         at the normal profile and changes only after transport feedback.
 
-config APP_RTC_WAIT_VIDEO_SUBSCRIBE_BEFORE_CAPTURE
-    bool "Start camera capture after remote video subscription"
-    default n
-    help
-        Disable this for the normal IPC application path so the device starts the
-        physical camera/H264 hot path as soon as a call is accepted. That keeps
-        the capture/encoder path warm before the WebRTC proxy sends its video
-        subscription and shortens first-frame latency.
-
-        Enable it only when saving camera/H264 work before a confirmed remote
-        subscription is more important than first-frame time.
-
-config APP_DEVICE_ONLINE_PAUSE_DURING_RTC
-    bool "Pause device-online MQTT while RTC media is active"
-    default n
-    help
-        Keep this disabled for normal operation. The permanent MQTT connection
-        carries call_cancel, unbind, callers_update and other business events
-        that must remain available while RTC media is active.
-
-        Enable this only for isolated media stress tests where losing realtime
-        business notifications during the call is acceptable.
-
-config APP_TIRTC_QUERY_SEND_BUFFER_USED
-    bool "Query TiRTC SDK send-buffer usage"
-    default y
-    help
-        Keep SDK send-buffer backpressure enabled on the send hot path.
-        Close/error snapshots still use the cached waterline only, because
-        some SDK builds can invalidate a connection handle during remote close.
-        Disable this only when isolating SDK send-buffer internals.
-
 endmenu
 
 menu "Debug utilities"
-
-config APP_SERIAL_CALL_CLI_ENABLE
-    bool "Enable UART AT commands for device-call regression"
-    default y
-    help
-        Exposes AT+APP, AT+CALL, AT+ANSWER and AT+HANGUP on the existing
-        UART0 console. The command worker stack is allocated explicitly in
-        PSRAM and only submits application-layer intents; it never owns RTC,
-        media, or HTTP lifecycle state.
-
-config APP_MEMORY_WATERLINE_LOG
-    bool "Enable memory waterline transition logs"
-    default y
-    help
-        Record one memory baseline at startup, then log only pressure-level
-        transitions, recovery, or a new PSRAM allocation failure. This is the
-        normal maintenance signal and does not emit a periodic healthy line.
 
 config APP_VERBOSE_RUNTIME_LOGS
     bool "Enable verbose runtime flow logs"
@@ -176,21 +118,5 @@ config APP_MEDIA_COMPACT_HEALTH_LOG
         queue pressure, failures, and whether AEC is active and receiving a
         playback reference. Keep this off for normal operation and enable it
         only while collecting media performance evidence.
-
-config APP_DEBUG_SCREEN_SERVER_ENABLE
-    bool "Enable LAN screen debug web server"
-    default n
-    help
-        Starts a local HTTP server after the display is initialized.
-        The server exposes the current LVGL screen as BMP and accepts
-        debug tap/scroll commands from a browser on the same Wi-Fi LAN.
-        Disable this for production builds to avoid compiling or linking
-        the HTTP debug server.
-
-config APP_DEBUG_SCREEN_SERVER_PORT
-    int "LAN screen debug web server port"
-    range 1024 65534
-    default 8080
-    depends on APP_DEBUG_SCREEN_SERVER_ENABLE
 
 endmenu

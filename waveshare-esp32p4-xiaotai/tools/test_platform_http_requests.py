@@ -41,11 +41,12 @@ typedef void *esp_http_client_handle_t;
 #define ESP_OK 0
 #define ESP_ERR_NO_MEM 257
 #define ESP_ERR_INVALID_ARG 258
+#define ESP_ERR_NOT_FOUND 261
 #define ESP_ERR_INVALID_SIZE 260
 #define ESP_ERR_INVALID_RESPONSE 264
 #define PLATFORM_DEFAULT_HTTP_TIMEOUT_MS 15000
 #define PLATFORM_TTS_HTTP_TIMEOUT_MS 20000
-enum { HTTP_EVENT_ON_HEADER, HTTP_EVENT_ON_DATA, HTTP_METHOD_POST };
+enum { HTTP_EVENT_ON_HEADER, HTTP_EVENT_ON_DATA, HTTP_METHOD_POST, HTTP_METHOD_GET };
 typedef struct {
     int event_id, data_len;
     void *user_data, *data;
@@ -79,6 +80,7 @@ static esp_err_t setting(void) {
     return setters == fail_at ? ESP_ERR_NO_MEM : ESP_OK;
 }
 static esp_err_t esp_http_client_set_method(esp_http_client_handle_t c, int method) {
+    if (method == HTTP_METHOD_GET) return ESP_OK;
     assert(c && method == HTTP_METHOD_POST); post_set = true; return setting();
 }
 static esp_err_t esp_http_client_set_header(esp_http_client_handle_t c, const char *key, const char *value) {
@@ -87,6 +89,7 @@ static esp_err_t esp_http_client_set_header(esp_http_client_handle_t c, const ch
     return setting();
 }
 static esp_err_t esp_http_client_set_post_field(esp_http_client_handle_t c, const char *body, int len) {
+    if (body == NULL) { assert(c && len == 0); return ESP_OK; }
     assert(c && body && len == (int)strlen(body) && post_set); return setting();
 }
 void platform_http_trace_begin(platform_http_trace_t *t) {
@@ -108,6 +111,25 @@ static int esp_http_client_get_status_code(esp_http_client_handle_t c) {
 }
 static esp_err_t esp_http_client_cleanup(esp_http_client_handle_t c) {
     assert(c); cleanups++; clock_ms += 1; return 0;
+}
+/* Reuse lifetime is exercised separately against the real helpers. Keep setup
+ * error injection independent of whether the previous response was cached. */
+static esp_http_client_handle_t http_reuse_take(const char *url) { (void)url; return NULL; }
+static void http_reuse_close(void) {}
+static void http_reuse_put(esp_http_client_handle_t c, const char *url) {
+    (void)url; esp_http_client_cleanup(c);
+}
+static esp_err_t esp_http_client_set_url(esp_http_client_handle_t c, const char *url) {
+    assert(c); config.url = url; return 0;
+}
+static esp_err_t esp_http_client_set_timeout_ms(esp_http_client_handle_t c, int ms) {
+    assert(c); config.timeout_ms = ms; return 0;
+}
+static esp_err_t esp_http_client_set_user_data(esp_http_client_handle_t c, void *data) {
+    assert(c); config.user_data = data; return 0;
+}
+static esp_err_t esp_http_client_delete_header(esp_http_client_handle_t c, const char *key) {
+    assert(c && key); return 0;
 }
 static void mbedtls_platform_zeroize(void *p, size_t n) { memset(p, 0, n); zeroes++; }
 static void http_log_result(const char *url, bool post, uint32_t start, uint32_t queue,

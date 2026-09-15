@@ -50,6 +50,8 @@ static int lv_color_hex(int color) {return color;}
 static void lv_obj_clear_flag(lv_obj_t *o,int flag) {(void)o;(void)flag;}
 static void on_screen_event(void *e) {(void)e;}
 static int lvgl_port_lock(int timeout) {(void)timeout;return 1;}
+static void s3_reset_page(void) {}
+static void s3_face_detach(void) {}
 '''+add+page+"static int start_screen(void) {\n"+startup+"return 0;\n}\n"+r'''
 int main(void) {
     assert(start_screen()==0);

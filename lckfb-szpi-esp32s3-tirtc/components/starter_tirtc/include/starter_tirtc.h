@@ -22,7 +22,7 @@ extern "C" {
 
 typedef enum {
     STARTER_TIRTC_NONE = 0, /**< 当前没有连接。 */
-    STARTER_TIRTC_H5,      /**< H5 入站查看/对讲连接；S3 仅音频。 */
+    STARTER_TIRTC_H5,      /**< H5 入站查看/对讲连接；S3 视频仅在订阅后发送。 */
     STARTER_TIRTC_AI,      /**< AI WHIP 外连，只有音频。 */
     STARTER_TIRTC_VOIP,    /**< 微信 VoIP WHIP 语音连接。 */
     STARTER_TIRTC_CALL,    /**< 设备互呼 P2P 语音连接。 */
@@ -165,8 +165,15 @@ int starter_tirtc_send_mjpeg(uint32_t timestamp_ms,
  * 才启动媒体任务，不能依赖可选的订阅回调。
  */
 bool starter_tirtc_audio_ready(void);
-#if CONFIG_IDF_TARGET_ESP32P4
 bool starter_tirtc_video_ready(void);
+#if CONFIG_IDF_TARGET_ESP32S3
+/* Also true for a revoked/busy slot; never queries a stale local handle. */
+bool starter_tirtc_h5_video_congested(uint32_t generation);
+/* Complete JPEG, H5 stream 11 only; stale connection generations are rejected. */
+int starter_tirtc_send_h5_jpeg(uint32_t generation, uint32_t timestamp_ms,
+                              const void *data, uint32_t length);
+#endif
+#if CONFIG_IDF_TARGET_ESP32P4
 int starter_tirtc_send_h264(uint32_t timestamp_ms, const void *data, uint32_t length, bool key);
 int starter_tirtc_subscribe_call_video(void);
 int starter_tirtc_request_remote_key_frame(void);

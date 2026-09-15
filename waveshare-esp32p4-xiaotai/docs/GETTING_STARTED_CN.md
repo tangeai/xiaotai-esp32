@@ -1,14 +1,14 @@
 # P4 开发指南
 
-本指南适用于小钛 P4 1.1.2。按顺序完成编译烧录、热点配网和平台绑定，再体验 AI、设备呼叫、微信、多人对讲和 H5。
+本指南适用于小钛 P4 1.2.0。按顺序完成编译烧录、热点配网和平台绑定，再体验 AI、设备呼叫、微信、多人对讲和 H5。
 
 ## 准备源码与硬件
 
 准备完整的 `waveshare-esp32p4-xiaotai/` 目录，以及：
 
-- 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash，P4 rev 1.x/2.x。
+- 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash，P4 芯片 rev 1.0–1.99。
 - 配套屏幕、触摸、麦克风、扬声器和 OV5647 摄像头。
-- USB 数据线、可联网的 Wi-Fi、手机及[体验平台](https://demo-open.tange-ai.com/)账号。
+- USB 数据线、可联网的 Wi-Fi、手机及[体验平台](https://xiaotai.chat/)账号。
 
 源码已包含 SDK、模型、字体和提示音；首次编译由组件管理器下载其余依赖。版本和文件说明见[版本与依赖](DEPENDENCIES.md)。
 
@@ -64,7 +64,7 @@ Windows 通常为 `COM数字`，Linux 通常为 `/dev/ttyACM数字` 或 `/dev/tt
 python -m esptool --port PORT chip_id
 ```
 
-确认是 ESP32-P4，修订与当前配置一致。若显示 ESP32-C6，重新选择接口；当前配置也不能直接用于 P4 rev 3。
+确认是 ESP32-P4，芯片修订在当前默认镜像接受的 rev 1.0–1.99 范围内。若显示 ESP32-C6，重新选择接口；其他 P4 修订需先适配配置与依赖，不能强制烧录。板卡 PCB 版本与芯片修订是不同的编号。
 
 ### 4. 烧录并查看启动
 
@@ -74,7 +74,7 @@ idf.py -p PORT flash monitor
 
 IDF 按生成的参数写入 bootloader、分区表和应用。下载模式未自动进入时，按板卡 BOOT/RESET 步骤重试。退出日志监视使用 `Ctrl+]`。
 
-启动日志应显示 `xiaotai_esp32p4`、版本 `1.1.2` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
+启动日志应显示 `xiaotai_esp32p4`、版本 `1.2.0` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
 
 **单独的应用 BIN 不能写到 0x0。** 日常使用上述完整烧录命令，保留 NVS 中的 Wi-Fi 和绑定信息。若旧固件分区不同，先比较[分区表](../partitions.csv)，不要直接整片擦除。
 
@@ -99,11 +99,13 @@ IDF 按生成的参数写入 bootloader、分区表和应用。下载模式未�
 
 联网且未绑定时，设备显示“绑定设备”和六位验证码。
 
-1. 手机打开[平台“我的设备”](https://demo-open.tange-ai.com/devices)，登录账号。
+1. 手机打开[平台“我的设备”](https://xiaotai.chat/devices)，登录账号。
 2. 选择“添加设备”，填写设备上的六位验证码。
 3. 按平台提示完成名称和绑定配置。
 
 **预期结果：**平台列表出现该设备，设备进入首页。验证码填写在平台，不是在设备端输入。
+
+设备上线后会自动上报实时查看、设备通话和微信通话的媒体能力，可在平台“我的设备 → 更多 → 设备信息”查看；无需手动填写。具体字段见[设备能力上报](P4_MEDIA_ARCHITECTURE.md#设备能力上报)。
 
 显示 `------` 表示验证码尚未就绪；显示“绑定未完成”时可点右上角刷新。保留 NVS 的已绑定设备通常直接复用原配置，无需重新绑定。
 
@@ -177,7 +179,7 @@ AI 播放时可以说话打断，结束时表达结束意图。打断、结束�
 | 配置 | 默认值 | 用途 |
 | --- | --- | --- |
 | `CONFIG_XIAOTAI_DISCOVERY_URL` | `http://ep-open.tangeopen.com/services` | 获取平台及各业务服务地址 |
-| `CONFIG_XIAOTAI_PORTAL_URL` | `https://demo-open.tange-ai.com` | 设备上展示的绑定平台地址 |
+| `CONFIG_XIAOTAI_PORTAL_URL` | `https://xiaotai.chat/` | 设备上展示的绑定平台地址 |
 | `CONFIG_XIAOTAI_DEVELOPMENT_CONSOLE` | 关闭 | 串口开发控制台，正常体验无需开启 |
 
 使用默认平台不需要把开发者 AK/SK 写入固件。自建服务需实现发现、绑定、消息和通话接口；仅修改展示地址不会改变 API/MQTT 地址。

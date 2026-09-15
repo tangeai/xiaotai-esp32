@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_VER "1.1.2")
+set(PROJECT_VER "1.2.0")
 # This Kconfig is loaded through starter_voice's rsource. Track it explicitly
 # so incremental Ninja builds regenerate sdkconfig.h when its options change.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -39,10 +39,10 @@ add_custom_command(TARGET ${CMAKE_PROJECT_NAME}.elf POST_BUILD
             $<TARGET_FILE:${CMAKE_PROJECT_NAME}.elf>
             --config ${CMAKE_BINARY_DIR}/config/sdkconfig.json
  COMMAND ${CMAKE_COMMAND} -E env CROSS_NM=${CMAKE_NM}
-         ${PYTHON} -X utf8 ${CMAKE_CURRENT_LIST_DIR}/tools/check_build_policies.py
-         --policy i2c_driver_family --nm ${CMAKE_NM}
+         ${PYTHON} -X utf8 ${CMAKE_CURRENT_LIST_DIR}/tools/check_i2c_driver_family.py
+         --nm ${CMAKE_NM}
          --elf $<TARGET_FILE:${CMAKE_PROJECT_NAME}.elf>
  VERBATIM)
 set_property(TARGET ${CMAKE_PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/tools/check_product_image.py"
-    "${CMAKE_CURRENT_LIST_DIR}/tools/check_build_policies.py")
+    "${CMAKE_CURRENT_LIST_DIR}/tools/check_i2c_driver_family.py")

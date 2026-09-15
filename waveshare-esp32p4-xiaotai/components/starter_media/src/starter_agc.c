@@ -14,6 +14,12 @@ static EXT_RAM_BSS_ATTR struct {
 /* TX-owner only: fixed gain after resampling, never fed back into wake/AEC.
  * One 8 kHz/10 ms scratch frame avoids relying on vendor in-place support. */
 #define UPLINK_BOOST_SAMPLES 80U
+/* ESP-SR accepts integer dB only. 10 dB plus this input attenuation gives
+ * 9.5219 dB: nominally 1.5x the previous 6 dB stage, below limiter onset.
+ * Attenuate before the vendor limiter, never amplify int16 PCM into clipping.
+ * No analog, AEC/reference, wake or speaker gain is changed. */
+#define UPLINK_BOOST_GAIN_DB 10
+#define UPLINK_BOOST_INPUT_Q15 31013
 static EXT_RAM_BSS_ATTR struct {
     void *handle;
     int16_t input[UPLINK_BOOST_SAMPLES];
@@ -39,12 +45,12 @@ esp_err_t starter_agc_init(void)
         starter_agc_deinit();
         return err;
     }
-    set_agc_config(s_uplink_boost.handle, 6, 1, 3);
+    set_agc_config(s_uplink_boost.handle, UPLINK_BOOST_GAIN_DB, 1, 3);
 #endif
     ESP_LOGI("starter_agc", "WebRTC adaptive digital: compression=%ddB target=-6dBFS limiter=on state=PSRAM delay=10ms",
              CONFIG_XIAOTAI_CAPTURE_AGC_GAIN_DB);
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4
-    ESP_LOGI("starter_agc", "TX fixed gain=6dB limiter=on target=-3dBFS state=PSRAM; wake unchanged");
+    ESP_LOGI("starter_agc", "TX nominal gain=9.52dB (previous x1.5) limiter=on target=-3dBFS state=PSRAM; wake unchanged");
 #endif
     return ESP_OK;
 }
@@ -80,7 +86,11 @@ esp_err_t starter_agc_boost_uplink(int16_t *pcm, size_t samples)
     if (!s_uplink_boost.handle) return ESP_ERR_INVALID_STATE;
     if (!pcm || !samples || samples % UPLINK_BOOST_SAMPLES) return ESP_ERR_INVALID_ARG;
     for (size_t offset = 0; offset < samples; offset += UPLINK_BOOST_SAMPLES) {
-        memcpy(s_uplink_boost.input, pcm + offset, sizeof(s_uplink_boost.input));
+        for (size_t i = 0; i < UPLINK_BOOST_SAMPLES; ++i) {
+            int32_t scaled = (int32_t)pcm[offset + i] * UPLINK_BOOST_INPUT_Q15;
+            s_uplink_boost.input[i] = (int16_t)(
+                (scaled + (scaled >= 0 ? 16384 : -16384)) / 32768);
+        }
         if (esp_agc_process(s_uplink_boost.handle, s_uplink_boost.input, pcm + offset,
                             UPLINK_BOOST_SAMPLES, 8000) < ESP_AGC_SUCCESS) return ESP_FAIL;
     }

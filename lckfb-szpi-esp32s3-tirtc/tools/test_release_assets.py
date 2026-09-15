@@ -38,13 +38,13 @@ def main() -> None:
         assert path.read_bytes()[36:40] == b"data", f"non-canonical WAV header: {relative}"
 
     expected_models = {
-        "head.h": "170e80f7c850dfe45ae914cdb1ed2813b79125b58c82595a0c30d9574feda1c6",
-        "nihaoxiaotai.tflite": "9b3a844becbeffa185fafec0b8fe1550708d4ca2a600ae9ff9285247e3f8fac6",
+        "head.h": "cc0364fa603a43c90d9de0b0fc39587c7c4d3350c3d1537b7018cf3a923d1a1e",
+        "nihaoxiaotai.tflite": "1dcfe29a10733ec272854bfbafb8a231f10bf3b0399cf6192cc08b38006fac78",
     }
     for name, expected in expected_models.items():
         path = PROJECT / "components/starter_voice/model" / name
         assert path.is_file(), f"missing wake asset: {name}"
-        assert digest(path) == expected, f"wake asset differs from pinned v9.3: {name}"
+        assert digest(path) == expected, f"wake asset differs from pinned v9.3-20260915-nhwc: {name}"
 
     for path in FORBIDDEN:
         assert not path.exists(), f"obsolete or duplicate asset returned: {path.relative_to(PROJECT)}"

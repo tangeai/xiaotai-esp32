@@ -676,8 +676,6 @@ static void s3_reset_page(void)
     if (s3_ui.toast && s_page == PAGE_CALL) lv_obj_add_flag(s3_ui.toast, LV_OBJ_FLAG_HIDDEN);
     s3_ui.caption_panel = NULL;
     s3_ui.wake_hint = NULL;
-    s_ai_history_panel = NULL;
-    s_ai_history_label = NULL;
     s3_ui.call_result = NULL;
     s3_ui.wechat_button = NULL;
     s3_ui.wechat_qr = NULL;

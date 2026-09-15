@@ -8,8 +8,10 @@ Copied only `esp32/sdk/voicute/mel_extractor.c`, `mel_extractor.h`,
 failure instead of continuing with an invalid table. No example BSP, I2S, AFE,
 MultiNet, SPIFFS loader, L1-L5 gates, or recognizer lifecycle was imported.
 
-`../model/` is the user's `docs/nihaoxiaotai_v9.3_voice_tflite` model/head,
-not the example Hey Robot assets. Both were copied byte-for-byte.
+`../model/` contains the paired model/head from the user-supplied
+`nihaoxiaotai_v9.3_20260915_nhwc_tflite.zip`, not the example Hey Robot assets.
+Both were copied byte-for-byte. See [model provenance](../model/README.md)
+for their hashes and the input contract. The frontend above is unchanged.
 
 At the original import review, the inspected upstream and model package did not
 include a license grant. That is a historical provenance observation, not the

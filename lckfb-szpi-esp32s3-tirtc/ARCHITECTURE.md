@@ -17,6 +17,7 @@
 | 会话切换、呼叫状态 | [starter_runtime](components/starter_runtime/include/starter_runtime.h) | AI、H5、设备、微信与多人对讲的业务仲裁及状态快照 |
 | 多人对讲 | [starter_room.inc](components/starter_runtime/src/starter_room.inc)、[房间页面](components/starter_product/src/starter_product_s3_room.inc) | 房间归属、连接、成员、租约及按住讲话 |
 | 采集、AEC、播放 | [starter_media](components/starter_media/include/starter_media.h) | Codec/I2S、AFE、增益、收发与播放队列 |
+| H5 视频上行 | [starter_camera.c](components/starter_media/src/starter_camera.c) | GC2145 按需采集、JPEG 编码、限速与资源释放 |
 | 唤醒识别 | [starter_voice](components/starter_voice/include/starter_voice.h) | 音频窗口、模型推理、唤醒意图 |
 | 页面、字幕、表情 | [starter_product](components/starter_product/src/starter_product.c) | LCD、触摸、LVGL 对象、背光 |
 | BOOT、开发命令 | `starter_button`、`starter_console` | 向 runtime 提交操作；开发控制台默认关闭 |
@@ -111,9 +112,16 @@ TiRTC 下行
 
 修改采集、播放或提示音时，重点检查帧连续性、参考信号时序、输出锁和会话代次。参数变更应同时回归 AI、H5、设备、微信及多人对讲。
 
+H5 视频由独立的低优先级 PSRAM 工作任务处理，仅当前 H5 会话订阅 stream 11 后打开摄像头。
+视频不经过音频队列，不修改 AFE、I2S 或采集增益。停止时先撤销发送资格，工作任务归还帧后
+关闭摄像头和编码器；不在 UI 或 SDK 回调中等待拍摄。共用 I2C0，不销毁音频和触摸的总线。
+这只能保证代码分层，实际 DMA/总线/算力竞争仍需测量，性能与验证边界见[H5 视频查看](KNOWN_LIMITATIONS.md#h5-视频查看)。
+
 ## 页面与字幕
 
 首页布局位于 [starter_product_s3_ui.inc](components/starter_product/src/starter_product_s3_ui.inc)，表情绘制位于 [starter_product_s3_face.inc](components/starter_product/src/starter_product_s3_face.inc)。
+
+S3 只保留这一套 320×240 页面，不再包含旧布局或 P4 显示分支。AI 对话留在首页，字幕直接读取 runtime 快照，不另外累积旧聊天页历史。页面切换先撤销房间交互和表情绘制引用，再销毁 LVGL 对象；业务连接的所有权仍由 runtime 管理。
 
 - 同页状态变化更新现有对象，不反复创建整页。
 - 文本先按协议合并，再裁成最新两行显示。ASR 快照替换当前话语；TTS 按模式和话语编号合并。

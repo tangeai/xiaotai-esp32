@@ -169,7 +169,19 @@ assert "const lv_coord_t bottom_inset = product_y(6);" in home
 assert "lv_obj_add_event_cb(tap, on_home_tap, LV_EVENT_CLICKED, NULL);" in home
 assert "create_expression_face(screen, 50, 32);" not in home
 assert '#if CONFIG_IDF_TARGET_ESP32P4\n    p4_home_background_show(screen);' in home
-assert '#if CONFIG_IDF_TARGET_ESP32P4 && PRODUCT_MODERN_UI\n    p4_home_background_reset(screen);' in source
+assert '#if CONFIG_IDF_TARGET_ESP32P4\n    p4_home_background_reset(screen);' in source
+assert 'PRODUCT_MODERN_UI' not in source
+assert 'if (!s3_render_page(screen)) {' in source
+for obsolete in ('render_home(', 'render_ai_chat(', 'make_home_menu_button(',
+                 'on_page_indicator(', 'expression_geometry_t'):
+    assert obsolete not in source, obsolete
+video_page = source[source.index('static void render_call(lv_obj_t *screen)'):]
+video_page = video_page[:video_page.index('\n}\n')]
+assert 's3_render_call(screen);' in video_page
+assert 'ACTION_CALL_CAMERA' in video_page
+assert 'refresh_call_controls(runtime, &product);' in video_page
+assert 'p4_video_ui_tick(lv_scr_act(), s_page == PAGE_CALL);' in source
+assert 'append_ai_history' not in source
 assert 'MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT' in background
 assert 'if (s_p4_home_background.pixels == NULL)' in background
 assert 'lv_timer_create' not in background and 'xTaskCreate' not in background
