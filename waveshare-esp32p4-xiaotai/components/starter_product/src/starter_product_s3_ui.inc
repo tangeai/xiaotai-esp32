@@ -749,7 +749,8 @@ static bool s3_submit(product_action_t action, esp_err_t result,
 {
     if (result != ESP_OK) {
         ESP_LOGW(TAG, "UI intent rejected: action=%u error=%s", (unsigned)action, esp_err_to_name(result));
-        s3_feedback("操作未受理，请重试");
+        s3_feedback(action == ACTION_AI && result == ESP_ERR_INVALID_STATE ?
+                    "设备尚未就绪，请稍候" : "操作未受理，请重试");
         return false;
     }
     /* Queue acceptance is not connection success. Wait for the real snapshot. */

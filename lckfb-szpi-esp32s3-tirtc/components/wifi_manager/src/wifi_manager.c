@@ -25,6 +25,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lwip/ip_addr.h"
 #include "lwip/sockets.h"
 #include "nvs.h"
 #include "nvs_worker.h"
@@ -549,6 +550,40 @@ static esp_err_t start_provisioning(void)
     return ESP_OK;
 }
 
+static esp_err_t configure_station_dns(esp_netif_t *station)
+{
+    if (station == NULL) return ESP_ERR_INVALID_ARG;
+    esp_netif_dns_info_t dns = {0};
+    unsigned present = 0;
+    for (unsigned i = 0; i < ESP_NETIF_DNS_MAX; ++i) {
+        esp_err_t err = esp_netif_get_dns_info(station, (esp_netif_dns_type_t)i, &dns);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Wi-Fi DNS read failed: slot=%u error=%s", i, esp_err_to_name(err));
+            return err;
+        }
+        if (!ESP_IP_IS_ANY(dns.ip)) present |= 1U << i;
+    }
+    ESP_LOGI(TAG, "Wi-Fi DNS: main_set=%u backup_set=%u fallback_set=%u",
+             (unsigned)!!(present & (1U << ESP_NETIF_DNS_MAIN)),
+             (unsigned)!!(present & (1U << ESP_NETIF_DNS_BACKUP)),
+             (unsigned)!!(present & (1U << ESP_NETIF_DNS_FALLBACK)));
+    if (present != 0) return ESP_OK;
+
+    /* An IP lease need not include DNS. With no resolver, lwIP rejects the
+     * hostname before SNTP can send. Only fill the application-owned fallback
+     * slot; leave DHCP main/backup and any existing resolver untouched.
+     * This addresses missing DNS, not blocked DNS/NTP or a broken uplink. */
+    dns.ip.type = ESP_IPADDR_TYPE_V4;
+    esp_netif_set_ip4_addr(&dns.ip.u_addr.ip4, 223, 5, 5, 5);
+    esp_err_t err = esp_netif_set_dns_info(station, ESP_NETIF_DNS_FALLBACK, &dns);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Wi-Fi DNS fallback failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGW(TAG, "Wi-Fi DNS missing: fallback=223.5.5.5 configured; reachability not verified");
+    return ESP_OK;
+}
+
 static void retry_timer_callback(void *argument)
 {
     (void)argument;
@@ -805,6 +840,9 @@ static void wifi_event(void *argument,
         }
         const ip_event_got_ip_t *got_ip = event_data;
         const int64_t ip_ready_us = esp_timer_get_time();
+        /* Finish resolver setup before the startup worker observes got-IP.
+         * IP connectivity remains factual even if DNS setup reports an error. */
+        (void)configure_station_dns(got_ip->esp_netif);
         s_connected = true;
         s_connecting = false;
         retry_stop();

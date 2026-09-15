@@ -3010,6 +3010,8 @@ esp_err_t starter_runtime_start(const char *device_id)
 static esp_err_t enqueue_simple(runtime_event_type_t type)
 {
     /* 返回成功只代表控制意图已入队，状态转换结果通过 status 查询。 */
+    /* Before clock/binding complete, no consumer exists. This is not a full queue. */
+    if (s_queue == NULL) return ESP_ERR_INVALID_STATE;
     const runtime_event_t event = {.type = type};
     return queue_event(&event) ? ESP_OK : ESP_ERR_TIMEOUT;
 }
@@ -3025,7 +3027,7 @@ esp_err_t starter_runtime_ai_start(void)
 esp_err_t starter_runtime_ai_start_from_wake(uint32_t wake_token)
 {
     if (wake_token == 0) return ESP_ERR_INVALID_ARG;
-    if (!ai_network_ready()) return ESP_ERR_INVALID_STATE;
+    if (!ai_network_ready() || s_queue == NULL) return ESP_ERR_INVALID_STATE;
     const runtime_event_t event = {.type = EVENT_AI_START, .generation = wake_token};
     return queue_event(&event) ? ESP_OK : ESP_ERR_TIMEOUT;
 }

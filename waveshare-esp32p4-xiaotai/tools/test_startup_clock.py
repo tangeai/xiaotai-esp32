@@ -13,6 +13,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORM = (ROOT / "components/platform_client/src/platform_client.c").read_text(encoding="utf-8")
 APP = (ROOT / "main/xiaotai_main.c").read_text(encoding="utf-8")
+RUNTIME = (ROOT / "components/starter_runtime/src/starter_runtime.c").read_text(encoding="utf-8")
 
 
 def function(source, name):
@@ -41,14 +42,16 @@ code = r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <time.h>
 typedef int esp_err_t;
 enum { ESP_OK, ESP_ERR_TIMEOUT, ESP_ERR_INVALID_STATE,
-       ESP_ERR_INVALID_RESPONSE, ESP_ERR_NO_MEM };
+       ESP_ERR_INVALID_RESPONSE, ESP_ERR_NO_MEM, ESP_ERR_INVALID_ARG };
 typedef struct { unsigned num_of_servers; } esp_sntp_config_t;
 #define ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(n, ...) { .num_of_servers = (n) }
 #define SNTP_RECV_TIMEOUT 15000U
+#define PLATFORM_CLOCK_PEERS 2U
 #define pdMS_TO_TICKS(ms) (ms)
 #define START_RETRY_DELAY_MS 5000U
 #define TAG "test"
@@ -58,6 +61,8 @@ typedef struct { unsigned num_of_servers; } esp_sntp_config_t;
 static bool s_clock_initialized, s_clock_synchronized;
 static time_t wall_time;
 static int init_calls, wait_calls, init_result, wait_result;
+static unsigned diagnostics;
+static void clock_log_failure(void) { diagnostics++; }
 static bool valid_on_reply, timeout_once, wifi_wait_once;
 static unsigned delays_100, delays_retry;
 static int64_t elapsed_us;
@@ -87,10 +92,24 @@ static void vTaskDelay(unsigned ticks) {
     else { assert(ticks == START_RETRY_DELAY_MS); delays_retry++; }
     elapsed_us += ticks * 1000LL;
 }
+typedef enum { EVENT_AI_START } runtime_event_type_t;
+typedef struct { runtime_event_type_t type; uint32_t generation; } runtime_event_t;
+static void *s_queue;
+static bool network_ready, queue_space;
+static unsigned queue_calls;
+static runtime_event_t queued_event;
+static bool ai_network_ready(void) { return network_ready; }
+static bool queue_event(const runtime_event_t *event) {
+    queue_calls++;
+    if (s_queue == NULL || !queue_space) return false;
+    queued_event = *event;
+    return true;
+}
 static void reset(void) {
     s_clock_initialized = s_clock_synchronized = false;
     wall_time = 0;
     init_calls = wait_calls = 0;
+    diagnostics = 0;
     init_result = wait_result = ESP_OK;
     valid_on_reply = true;
     timeout_once = wifi_wait_once = false;
@@ -100,11 +119,14 @@ static void reset(void) {
 '''
 code += function(PLATFORM, "platform_client_sync_clock")
 code += function(APP, "wait_for_network_clock")
+for name in ("enqueue_simple", "starter_runtime_ai_start", "starter_runtime_ai_start_from_wake"):
+    code += function(RUNTIME, name)
 code += r'''
 int main(void) {
     reset();
     assert(platform_client_sync_clock() == ESP_OK);
     assert(s_clock_synchronized && init_calls == 1 && wait_calls == 1);
+    assert(diagnostics == 0);
     assert(platform_client_sync_clock() == ESP_OK);
     assert(init_calls == 1 && wait_calls == 1);
 
@@ -112,9 +134,11 @@ int main(void) {
     reset(); wall_time = 1800000000; wait_result = ESP_ERR_TIMEOUT;
     assert(platform_client_sync_clock() == ESP_ERR_TIMEOUT);
     assert(!s_clock_synchronized && wait_calls == 1);
+    assert(diagnostics == 1);
     wait_result = ESP_OK;
     assert(platform_client_sync_clock() == ESP_OK);
     assert(init_calls == 1 && wait_calls == 2);
+    assert(diagnostics == 1);
 
     reset(); init_result = ESP_ERR_NO_MEM;
     assert(platform_client_sync_clock() == ESP_ERR_NO_MEM);
@@ -140,6 +164,24 @@ int main(void) {
     wait_for_network_clock();
     assert(s_clock_synchronized && init_calls == 1 && wait_calls == 2);
     assert(delays_100 == 1 && delays_retry == 1);
+
+    /* GOT_IP precedes clock/binding and creation of the session queue. */
+    network_ready = true; queue_space = true; s_queue = NULL;
+    assert(starter_runtime_ai_start() == ESP_ERR_INVALID_STATE);
+    assert(starter_runtime_ai_start_from_wake(7) == ESP_ERR_INVALID_STATE);
+    assert(queue_calls == 0);
+    s_queue = &queued_event; queue_space = false;
+    assert(starter_runtime_ai_start() == ESP_ERR_TIMEOUT);
+    assert(starter_runtime_ai_start_from_wake(7) == ESP_ERR_TIMEOUT);
+    queue_space = true;
+    assert(starter_runtime_ai_start() == ESP_OK);
+    assert(queued_event.type == EVENT_AI_START && queued_event.generation == 0);
+    assert(starter_runtime_ai_start_from_wake(7) == ESP_OK);
+    assert(queued_event.generation == 7);
+    assert(starter_runtime_ai_start_from_wake(0) == ESP_ERR_INVALID_ARG);
+    network_ready = false;
+    assert(starter_runtime_ai_start() == ESP_ERR_INVALID_STATE);
+    assert(starter_runtime_ai_start_from_wake(7) == ESP_ERR_INVALID_STATE);
     puts("startup clock contracts: PASS");
     return 0;
 }

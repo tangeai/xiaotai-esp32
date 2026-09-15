@@ -29,7 +29,7 @@ bash tools/run_host_tests.sh
 
 `test_room.py` 和 `test_room_ui.py` 检查房间状态机、按住讲话门控、页面生命周期与数字键盘；`test_home_wake_hint.py` 检查首页提示与会话状态的一致性。
 
-`test_wifi_credentials.py` 检查当前凭据、最近 5 个成功网络的历史和密码复用；`test_wifi_portal.py` 检查异步扫描、连接优先、超时清理、列表 JSON 和密码不外传；`test_wifi_manual_disconnect.py` 检查主动断开及持续重连。它们模拟驱动和存储，不证明手机热点兼容或射频扫描时序。
+`test_wifi_credentials.py` 检查当前凭据、最近 5 个成功网络的历史和密码复用；`test_wifi_portal.py` 检查异步扫描、连接优先、超时清理、列表 JSON 和密码不外传；`test_wifi_manual_disconnect.py` 检查主动断开、持续重连及缺失 DNS 的配置处理。它们模拟驱动和存储，不证明手机热点兼容、DNS/NTP 可达或射频扫描时序。
 
 `test_face_animation.py` 使用实际表情绘制代码和 LVGL 数学函数，检查 23 类共 44 个可用姿态、动作切换、局部刷新与定时器复用；思考和放松固定第一套，其余类别二选一。检查使用 ASan/UBSan，不连接开发板。`test_clock_fallback.py` 检查本次开机首次校时、备用服务器等待、失败返回与后续复用。
 

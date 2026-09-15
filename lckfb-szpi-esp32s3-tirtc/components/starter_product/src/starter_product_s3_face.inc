@@ -60,37 +60,37 @@ static const s3_face_pose_t s3_face_poses[] = {
 };
 /* Approved B concept: broad beans/folds, shallow coloured lips and readable props. */
 #define BL(w,h,r,s,b) FP(58-(w)/2,48-(h)/2,w,h,r,s,b)
-#define BR(w,h,r,s,b) FP(162-(w)/2,48-(h)/2,w,h,r,s,b)
+#define S3_FACE_B_RIGHT(w,h,r,s,b) FP(162-(w)/2,48-(h)/2,w,h,r,s,b)
 #define BM(w,h,r,b) FP(110-(w)/2,83-(h)/2,w,h,r,0,b)
 #define BX(tear,think,blush,heart,tongue,tilt,c) \
     FX(tear,think,blush,heart,tongue,tilt,c), [FACE_STYLE_B]=256*16
 static const s3_face_pose_t s3_face_alternate_poses[] = {
-    {"neutral", {BL(68,40,18,0,0), BR(68,40,18,0,0), BM(48,12,6,0), BX(0,0,0,0,0,0,0xECF8F5)}, 560},
-    {"happy", {BL(64,24,12,-1,9), BR(64,26,13,0,9), BM(50,14,7,-4), BX(0,0,0,0,0,0,0xD5F8EE), [FACE_MOUTH_PINK]=256*16, [FACE_LEAN]=-16}, 560},
-    {"laughing", {BL(62,38,13,0,0), BR(62,36,13,0,0), BM(62,22,10,-2), BX(0,0,0,0,0,0,0xD9F8F4), [FACE_FOLD_LEFT]=256*16, [FACE_FOLD_RIGHT]=256*16, [FACE_MOUTH_TWO_TONE]=256*16, [FACE_LEAN]=-16}, 480},
-    {"funny", {BL(66,42,20,0,0), BR(62,26,13,0,9), FP(93,76,44,14,7,0,-4), BX(0,0,0,0,0,-4,0xECF7F4), [FACE_MOUTH_PINK]=128*16, [FACE_LEAN]=16}, 600},
-    {"sad", {BL(64,34,15,-5,2), BR(64,34,15,5,2), BM(40,11,5,5), BX(0,0,0,0,0,0,0xE0E7FA), [FACE_GAZE_Y]=2*16}, 760},
-    {"angry", {BL(64,34,15,5,2), BR(64,34,15,-5,2), BM(34,12,6,4), BX(0,0,0,0,0,0,0xF7DCF0), [FACE_STEAM]=256*16}, 640},
-    {"crying", {BL(62,36,13,0,0), BR(62,36,13,0,0), BM(44,11,5,0), BX(256,0,0,0,0,0,0xE1EAFB), [FACE_FOLD_LEFT]=256*16, [FACE_FOLD_RIGHT]=256*16, [FACE_MOUTH_WAVE]=4*16, [FACE_GAZE_Y]=16}, 760},
-    {"loving", {BL(64,26,13,-1,9), BR(64,26,13,1,9), BM(48,14,7,-4), BX(0,0,0,256,0,0,0xDAF7F2), [FACE_MOUTH_PINK]=256*16}, 680},
-    {"embarrassed", {BL(64,28,14,-4,1), BR(64,28,14,3,1), FP(97,76,36,14,7,0,-3), BX(0,0,230,0,0,-4,0xE5EAF8), [FACE_MOUTH_PINK]=192*16, [FACE_GAZE_Y]=2*16, [FACE_LEAN]=2*16}, 720},
-    {"surprised", {BL(68,40,16,0,0), BR(68,40,16,0,0), BM(32,18,5,0), BX(0,0,0,0,0,0,0xEAF8F4), [FACE_EXCLAIM]=256*16, [FACE_MOUTH_PINK]=160*16, [FACE_GAZE_Y]=-16}, 440},
-    {"shocked", {BL(68,44,18,0,0), BR(68,44,18,0,0), BM(46,11,5,0), BX(0,0,0,0,0,0,0xE6F2F9), [FACE_EMPHASIS]=256*16, [FACE_MOUTH_WAVE]=4*16, [FACE_LEAN]=2*16}, 480},
+    {"neutral", {BL(68,40,18,0,0), S3_FACE_B_RIGHT(68,40,18,0,0), BM(48,12,6,0), BX(0,0,0,0,0,0,0xECF8F5)}, 560},
+    {"happy", {BL(64,24,12,-1,9), S3_FACE_B_RIGHT(64,26,13,0,9), BM(50,14,7,-4), BX(0,0,0,0,0,0,0xD5F8EE), [FACE_MOUTH_PINK]=256*16, [FACE_LEAN]=-16}, 560},
+    {"laughing", {BL(62,38,13,0,0), S3_FACE_B_RIGHT(62,36,13,0,0), BM(62,22,10,-2), BX(0,0,0,0,0,0,0xD9F8F4), [FACE_FOLD_LEFT]=256*16, [FACE_FOLD_RIGHT]=256*16, [FACE_MOUTH_TWO_TONE]=256*16, [FACE_LEAN]=-16}, 480},
+    {"funny", {BL(66,42,20,0,0), S3_FACE_B_RIGHT(62,26,13,0,9), FP(93,76,44,14,7,0,-4), BX(0,0,0,0,0,-4,0xECF7F4), [FACE_MOUTH_PINK]=128*16, [FACE_LEAN]=16}, 600},
+    {"sad", {BL(64,34,15,-5,2), S3_FACE_B_RIGHT(64,34,15,5,2), BM(40,11,5,5), BX(0,0,0,0,0,0,0xE0E7FA), [FACE_GAZE_Y]=2*16}, 760},
+    {"angry", {BL(64,34,15,5,2), S3_FACE_B_RIGHT(64,34,15,-5,2), BM(34,12,6,4), BX(0,0,0,0,0,0,0xF7DCF0), [FACE_STEAM]=256*16}, 640},
+    {"crying", {BL(62,36,13,0,0), S3_FACE_B_RIGHT(62,36,13,0,0), BM(44,11,5,0), BX(256,0,0,0,0,0,0xE1EAFB), [FACE_FOLD_LEFT]=256*16, [FACE_FOLD_RIGHT]=256*16, [FACE_MOUTH_WAVE]=4*16, [FACE_GAZE_Y]=16}, 760},
+    {"loving", {BL(64,26,13,-1,9), S3_FACE_B_RIGHT(64,26,13,1,9), BM(48,14,7,-4), BX(0,0,0,256,0,0,0xDAF7F2), [FACE_MOUTH_PINK]=256*16}, 680},
+    {"embarrassed", {BL(64,28,14,-4,1), S3_FACE_B_RIGHT(64,28,14,3,1), FP(97,76,36,14,7,0,-3), BX(0,0,230,0,0,-4,0xE5EAF8), [FACE_MOUTH_PINK]=192*16, [FACE_GAZE_Y]=2*16, [FACE_LEAN]=2*16}, 720},
+    {"surprised", {BL(68,40,16,0,0), S3_FACE_B_RIGHT(68,40,16,0,0), BM(32,18,5,0), BX(0,0,0,0,0,0,0xEAF8F4), [FACE_EXCLAIM]=256*16, [FACE_MOUTH_PINK]=160*16, [FACE_GAZE_Y]=-16}, 440},
+    {"shocked", {BL(68,44,18,0,0), S3_FACE_B_RIGHT(68,44,18,0,0), BM(46,11,5,0), BX(0,0,0,0,0,0,0xE6F2F9), [FACE_EMPHASIS]=256*16, [FACE_MOUTH_WAVE]=4*16, [FACE_LEAN]=2*16}, 480},
     {0}, /* thinking: first set only; preserve the menu index. */
-    {"winking", {BL(66,44,21,0,0), BR(64,28,14,0,9), BM(48,14,7,-4), BX(0,0,0,0,0,-3,0xDDF8F0), [FACE_WINK]=256*16, [FACE_MOUTH_PINK]=220*16}, 520},
+    {"winking", {BL(66,44,21,0,0), S3_FACE_B_RIGHT(64,28,14,0,9), BM(48,14,7,-4), BX(0,0,0,0,0,-3,0xDDF8F0), [FACE_WINK]=256*16, [FACE_MOUTH_PINK]=220*16}, 520},
     {"cool", {FP(26,26,64,28,14,0,1), FP(130,23,64,28,14,0,1), BM(44,14,7,-3), BX(0,0,0,0,0,-4,0xE4F7F4), [FACE_GLASSES]=256*16, [FACE_MOUTH_PINK]=96*16, [FACE_LEAN]=-16}, 680},
     {0}, /* relaxed: first set only; preserve the menu index. */
-    {"delicious", {BL(64,26,13,0,10), BR(64,26,13,0,10), BM(48,14,7,-4), BX(0,0,0,0,256,-2,0xD9F4F2), [FACE_TONGUE_X]=17*16, [FACE_MOUTH_PINK]=160*16}, 680},
-    {"kissy", {BL(64,28,14,0,10), BR(64,28,14,0,10), BM(24,24,10,0), BX(0,0,0,0,0,0,0xDEF5F2), [FACE_KISS]=256*16, [FACE_MOUTH_PUCKER]=256*16, [FACE_MOUTH_PINK]=256*16}, 680},
-    {"confident", {BL(64,32,14,4,1), BR(62,30,14,-4,1), FP(90,76,48,14,7,0,-3), BX(0,0,0,0,0,-5,0xE5F7F1), [FACE_SPARKLE]=256*16, [FACE_MOUTH_PINK]=96*16, [FACE_GAZE_Y]=-16, [FACE_LEAN]=-16}, 600},
-    {"sleepy", {BL(64,26,13,0,0), BR(64,26,13,1,0), BM(36,11,5,0), BX(0,0,0,0,0,0,0xE4E4F9), [FACE_ZZZ]=256*16, [FACE_GAZE_Y]=16, [FACE_LEAN]=3*16}, 920},
-    {"silly", {BL(64,28,14,0,9), BR(62,36,13,0,0), BM(46,14,7,-4), BX(0,0,0,0,256,3,0xD8F9EF), [FACE_FOLD_RIGHT]=256*16, [FACE_TONGUE_X]=8*16, [FACE_MOUTH_PINK]=96*16, [FACE_LEAN]=16}, 600},
-    {"confused", {BL(66,42,20,0,0), BR(66,42,20,0,0), BM(38,12,6,0), BX(0,0,0,0,0,-4,0xE6F6F1), [FACE_QUESTION]=256*16, [FACE_LEAN]=-16}, 680},
-    {"listening", {BL(64,42,20,0,0), BR(64,42,20,0,0), BM(36,11,5,0), BX(0,0,0,0,0,0,0xE1F4F8), [FACE_LISTEN]=256*16, [FACE_GAZE_X]=-2*16, [FACE_LEAN]=2*16}, 560},
-    {"ambient", {BL(64,28,14,-3,1), BR(64,28,14,3,1), FP(87,76,50,14,7,0,-4), BX(0,0,0,0,0,1,0xDBF5ED), [FACE_MOUTH_PINK]=128*16, [FACE_LEAN]=-2*16}, 880},
+    {"delicious", {BL(64,26,13,0,10), S3_FACE_B_RIGHT(64,26,13,0,10), BM(48,14,7,-4), BX(0,0,0,0,256,-2,0xD9F4F2), [FACE_TONGUE_X]=17*16, [FACE_MOUTH_PINK]=160*16}, 680},
+    {"kissy", {BL(64,28,14,0,10), S3_FACE_B_RIGHT(64,28,14,0,10), BM(24,24,10,0), BX(0,0,0,0,0,0,0xDEF5F2), [FACE_KISS]=256*16, [FACE_MOUTH_PUCKER]=256*16, [FACE_MOUTH_PINK]=256*16}, 680},
+    {"confident", {BL(64,32,14,4,1), S3_FACE_B_RIGHT(62,30,14,-4,1), FP(90,76,48,14,7,0,-3), BX(0,0,0,0,0,-5,0xE5F7F1), [FACE_SPARKLE]=256*16, [FACE_MOUTH_PINK]=96*16, [FACE_GAZE_Y]=-16, [FACE_LEAN]=-16}, 600},
+    {"sleepy", {BL(64,26,13,0,0), S3_FACE_B_RIGHT(64,26,13,1,0), BM(36,11,5,0), BX(0,0,0,0,0,0,0xE4E4F9), [FACE_ZZZ]=256*16, [FACE_GAZE_Y]=16, [FACE_LEAN]=3*16}, 920},
+    {"silly", {BL(64,28,14,0,9), S3_FACE_B_RIGHT(62,36,13,0,0), BM(46,14,7,-4), BX(0,0,0,0,256,3,0xD8F9EF), [FACE_FOLD_RIGHT]=256*16, [FACE_TONGUE_X]=8*16, [FACE_MOUTH_PINK]=96*16, [FACE_LEAN]=16}, 600},
+    {"confused", {BL(66,42,20,0,0), S3_FACE_B_RIGHT(66,42,20,0,0), BM(38,12,6,0), BX(0,0,0,0,0,-4,0xE6F6F1), [FACE_QUESTION]=256*16, [FACE_LEAN]=-16}, 680},
+    {"listening", {BL(64,42,20,0,0), S3_FACE_B_RIGHT(64,42,20,0,0), BM(36,11,5,0), BX(0,0,0,0,0,0,0xE1F4F8), [FACE_LISTEN]=256*16, [FACE_GAZE_X]=-2*16, [FACE_LEAN]=2*16}, 560},
+    {"ambient", {BL(64,28,14,-3,1), S3_FACE_B_RIGHT(64,28,14,3,1), FP(87,76,50,14,7,0,-4), BX(0,0,0,0,0,1,0xDBF5ED), [FACE_MOUTH_PINK]=128*16, [FACE_LEAN]=-2*16}, 880},
 };
 #undef BL
-#undef BR
+#undef S3_FACE_B_RIGHT
 #undef BM
 #undef BX
 _Static_assert(sizeof(s3_face_alternate_poses) == sizeof(s3_face_poses), "Face slots must preserve meaning indices");

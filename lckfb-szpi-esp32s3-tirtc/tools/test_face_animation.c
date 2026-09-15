@@ -61,7 +61,11 @@ static lv_timer_t *lv_timer_create(void (*fn)(lv_timer_t *), uint32_t ms, void *
     return &t;
 }
 
+/* Match Xtensa's register macro and ensure the renderer leaves it intact. */
+#define BR 4
 #include "starter_product_s3_face.inc"
+_Static_assert(BR == 4, "Face helpers must preserve Xtensa register macros");
+#undef BR
 
 static void frame(void)
 {

@@ -27,8 +27,10 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_memory_utils.h"
+#include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_random.h"
+#include "esp_sntp.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -36,6 +38,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lwip/apps/sntp_opts.h"
+#include "lwip/dns.h"
 #include "lwip/sockets.h"
 #include "lwip/tcp.h"
 #include "mbedtls/base64.h"
@@ -977,6 +980,61 @@ static esp_err_t start_mqtt(bool binding_owner)
 /* Only the startup/platform owner calls this gate. A retained wall clock
  * alone is not evidence that SNTP succeeded in the current boot. */
 static bool s_clock_synchronized;
+static bool s_clock_initialized;
+
+typedef struct {
+    ip_addr_t dns[ESP_NETIF_DNS_MAX];
+    ip_addr_t peer[2];
+    uint8_t reach[2];
+    bool enabled;
+} clock_network_snapshot_t;
+
+static esp_err_t clock_network_snapshot(void *context)
+{
+    clock_network_snapshot_t *snapshot = context;
+    /* Getter pointers belong to lwIP. Copy them together in TCP/IP context;
+     * never perform DNS queries or write serial logs on the TCP/IP task. */
+    snapshot->enabled = esp_sntp_enabled();
+    for (uint8_t i = 0; i < ESP_NETIF_DNS_MAX; ++i) {
+        snapshot->dns[i] = *dns_getserver(i);
+    }
+    for (uint8_t i = 0; i < 2; ++i) {
+        snapshot->peer[i] = *esp_sntp_getserver(i);
+#if SNTP_MONITOR_SERVER_REACHABILITY
+        snapshot->reach[i] = esp_sntp_getreachability(i);
+#endif
+    }
+    return ESP_OK;
+}
+
+static void clock_log_network(const esp_sntp_config_t *config)
+{
+    /* Scratch lives on the existing PSRAM platform stack. No new task, socket,
+     * packet allocation, DNS cache change or restart of the active request. */
+    clock_network_snapshot_t snapshot = {0};
+    esp_err_t err = esp_netif_tcpip_exec(clock_network_snapshot, &snapshot);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "CLOCK snapshot failed: %s", esp_err_to_name(err));
+        return;
+    }
+    char dns0[IPADDR_STRLEN_MAX], dns1[IPADDR_STRLEN_MAX], dns2[IPADDR_STRLEN_MAX];
+    ipaddr_ntoa_r(&snapshot.dns[0], dns0, sizeof(dns0));
+    ipaddr_ntoa_r(&snapshot.dns[1], dns1, sizeof(dns1));
+    ipaddr_ntoa_r(&snapshot.dns[ESP_NETIF_DNS_FALLBACK], dns2, sizeof(dns2));
+    ESP_LOGW(TAG, "CLOCK net: enabled=%u dns=%s/%s/%s internal_free=%u largest=%u",
+             (unsigned)snapshot.enabled, dns0, dns1, dns2,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    for (unsigned i = 0; i < config->num_of_servers; ++i) {
+        char address[IPADDR_STRLEN_MAX];
+        ipaddr_ntoa_r(&snapshot.peer[i], address, sizeof(address));
+        /* Zero address means unresolved/pending/not yet attempted, not proven
+         * DNS failure. Reachability is reply history, not TX or loss counts. */
+        ESP_LOGW(TAG, "CLOCK peer: host=%s addr=%s reach=0x%02x reach_supported=%u",
+                 config->servers[i], address, (unsigned)snapshot.reach[i],
+                 (unsigned)SNTP_MONITOR_SERVER_REACHABILITY);
+    }
+}
 
 esp_err_t platform_client_sync_clock(void)
 {
@@ -987,14 +1045,25 @@ esp_err_t platform_client_sync_clock(void)
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(
         2,
         ESP_SNTP_SERVER_LIST("ntp.aliyun.com", "pool.ntp.org"));
-    esp_err_t err = esp_netif_sntp_init(&config);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        return err;
+    esp_err_t err;
+    if (!s_clock_initialized) {
+        err = esp_netif_sntp_init(&config);
+        if (err != ESP_OK) {
+            /* An unexpected owner is not our initialized service: its server
+             * list and wait semaphore may not satisfy this module's contract. */
+            ESP_LOGE(TAG, "CLOCK init failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        s_clock_initialized = true;
+        ESP_LOGI(TAG, "CLOCK init: peers=%s,%s transport=UDP/123",
+                 config.servers[0], config.servers[1]);
     }
     /* lwIP switches peers only after SNTP_RECV_TIMEOUT (15 s in IDF 5.5.4).
      * Cover both peers plus one resolution/start window; the former 10 s
      * deadline abandoned first binding before the fallback could answer.
-     * This blocks only the startup worker, not LVGL or audio capture. */
+     * This blocks only the startup worker, not LVGL or audio capture. A wait
+     * timeout leaves SNTP running: subsequent calls wait on the same semaphore
+     * without reinitializing, resetting peer rotation or discarding a late reply. */
     uint32_t timeout_ms = (config.num_of_servers + 1U) * SNTP_RECV_TIMEOUT;
 #if SNTP_STARTUP_DELAY && defined(CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY)
     timeout_ms += CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY;
@@ -1012,6 +1081,7 @@ esp_err_t platform_client_sync_clock(void)
     if (err == ESP_OK) err = ESP_ERR_INVALID_RESPONSE;
     ESP_LOGE(TAG, "network clock unavailable: elapsed_ms=%lu error=%s",
              elapsed_ms, esp_err_to_name(err));
+    clock_log_network(&config);
     return err;
 }
 

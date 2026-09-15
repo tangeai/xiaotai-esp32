@@ -8,6 +8,7 @@
 #include "wifi_manager.h"
 #include "captive_dns.h"
 #include "wifi_history.h"
+#include "sdkconfig.h"
 
 #include <stdio.h>
 #include <stdatomic.h>
@@ -962,6 +963,42 @@ static esp_err_t configure_p4_realtime_wifi(void)
 }
 #endif
 
+static esp_err_t wifi_apply_fallback_dns(esp_netif_t *station)
+{
+    const char *address = CONFIG_XIAOTAI_FALLBACK_DNS_IPV4;
+    if (address[0] == '\0') return ESP_OK;
+    if (station == NULL) return ESP_ERR_INVALID_ARG;
+    esp_netif_dns_info_t dns = {0};
+    esp_err_t err = esp_netif_get_dns_info(station, ESP_NETIF_DNS_FALLBACK, &dns);
+    if (err != ESP_OK) return err;
+    if (!ESP_IP_IS_ANY(dns.ip)) return ESP_OK;
+    dns.ip.type = ESP_IPADDR_TYPE_V4;
+    err = esp_netif_str_to_ip4(address, &dns.ip.u_addr.ip4);
+    if (err != ESP_OK || dns.ip.u_addr.ip4.addr == 0) return ESP_ERR_INVALID_ARG;
+    /* Only the fallback slot is ours; never replace DHCP's main/backup.
+     * Install before publishing connected so first SNTP/HTTP sees a resolver. */
+    err = esp_netif_set_dns_info(station, ESP_NETIF_DNS_FALLBACK, &dns);
+    if (err == ESP_OK) ESP_LOGI(TAG, "Wi-Fi DNS fallback configured: %s", address);
+    return err;
+}
+
+static void wifi_log_dns_servers(esp_netif_t *station, const char *stage)
+{
+    for (unsigned i = ESP_NETIF_DNS_MAIN; i < ESP_NETIF_DNS_MAX; ++i) {
+        esp_netif_dns_info_t dns = {0};
+        esp_err_t err = esp_netif_get_dns_info(station, (esp_netif_dns_type_t)i, &dns);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Wi-Fi DNS: stage=%s slot=%u error=%s", stage, i, esp_err_to_name(err));
+        } else if (dns.ip.type == ESP_IPADDR_TYPE_V6) {
+            ESP_LOGI(TAG, "Wi-Fi DNS: stage=%s slot=%u addr=" IPV6STR,
+                     stage, i, IPV62STR(dns.ip.u_addr.ip6));
+        } else {
+            ESP_LOGI(TAG, "Wi-Fi DNS: stage=%s slot=%u addr=" IPSTR,
+                     stage, i, IP2STR(&dns.ip.u_addr.ip4));
+        }
+    }
+}
+
 static void wifi_event(void *argument,
                        esp_event_base_t event_base,
                        int32_t event_id,
@@ -1018,6 +1055,12 @@ static void wifi_event(void *argument,
         }
         const ip_event_got_ip_t *got_ip = event_data;
         const int64_t ip_ready_us = esp_timer_get_time();
+        /* Preserve pre-policy evidence: GOT_IP alone does not prove DHCP DNS.
+         * This is a resolver compatibility policy, not proof of why DNS was absent. */
+        wifi_log_dns_servers(got_ip->esp_netif, "got-ip");
+        esp_err_t dns_err = wifi_apply_fallback_dns(got_ip->esp_netif);
+        if (dns_err != ESP_OK)
+            ESP_LOGE(TAG, "Wi-Fi DNS fallback setup failed: %s", esp_err_to_name(dns_err));
         s_connected = true;
         s_connecting = false;
         retry_stop();
@@ -1026,12 +1069,15 @@ static void wifi_event(void *argument,
         signal_connection_changed();
         s_connection_failed = false;
         s_retry_count = 0;
+        const int64_t portal_stop_started_us = esp_timer_get_time();
         atomic_store(&s_control_error, stop_provisioning());
+        const int64_t portal_stop_ms = (esp_timer_get_time() - portal_stop_started_us) / 1000;
+        wifi_log_dns_servers(got_ip->esp_netif, "after-portal-stop");
         ESP_LOGI(TAG, "Wi-Fi connected, IP=" IPSTR, IP2STR(&got_ip->ip_info.ip));
         ESP_LOGI(TAG, "Wi-Fi setup: link_ms=%ld dhcp_ms=%ld portal_stop_ms=%lu",
                  s_associated_us ? (long)((s_associated_us - s_connect_started_us) / 1000) : -1L,
                  s_associated_us ? (long)((ip_ready_us - s_associated_us) / 1000) : -1L,
-                 (unsigned long)((esp_timer_get_time() - ip_ready_us) / 1000));
+                 (unsigned long)portal_stop_ms);
 #if CONFIG_IDF_TARGET_ESP32S3
         log_s3_realtime_wifi();
 #endif

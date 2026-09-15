@@ -15,6 +15,14 @@ config XIAOTAI_DEVELOPMENT_CONSOLE
 config XIAOTAI_PORTAL_URL
     string "Device binding portal URL (display only)"
     default "https://demo-open.tange-ai.com"
+config XIAOTAI_FALLBACK_DNS_IPV4
+    string "Fallback IPv4 DNS server (empty disables)"
+    default "223.5.5.5"
+    help
+        Fill only an empty fallback DNS slot after STA obtains an IP address.
+        Keep DHCP main/backup DNS unchanged. The resolver can use this server
+        when DHCP supplies no DNS, or after its preferred servers fail.
+        Private networks can specify their resolver or disable this policy.
 config XIAOTAI_WAKE_THRESHOLD_MILLI
     int "Voicute wake threshold (thousandths)"
     range 50 990

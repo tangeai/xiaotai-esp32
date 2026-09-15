@@ -26,8 +26,10 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_memory_utils.h"
+#include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_random.h"
+#include "esp_sntp.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -35,6 +37,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lwip/apps/sntp_opts.h"
+#include "lwip/dns.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/md.h"
 #include "mbedtls/platform_util.h"
@@ -811,6 +814,51 @@ static esp_err_t start_mqtt(void)
 static bool s_clock_initialized;
 static bool s_clock_synchronized;
 
+#define PLATFORM_CLOCK_PEERS 2U
+typedef struct {
+    bool active;
+    ip_addr_t dns[DNS_MAX_SERVERS];
+    ip_addr_t peer[PLATFORM_CLOCK_PEERS];
+    uint8_t reach[PLATFORM_CLOCK_PEERS];
+} clock_snapshot_t;
+
+static esp_err_t clock_snapshot_read(void *context)
+{
+    /* Copy in the TCP/IP context; do not log, resolve DNS or send probes here. */
+    clock_snapshot_t *snapshot = context;
+    snapshot->active = esp_sntp_enabled();
+    for (unsigned i = 0; i < DNS_MAX_SERVERS; ++i)
+        snapshot->dns[i] = *dns_getserver(i);
+    for (unsigned i = 0; i < PLATFORM_CLOCK_PEERS; ++i) {
+        snapshot->peer[i] = *esp_sntp_getserver(i);
+        snapshot->reach[i] = esp_sntp_getreachability(i);
+    }
+    return ESP_OK;
+}
+
+static void clock_log_failure(void)
+{
+    clock_snapshot_t snapshot = {0};
+    esp_err_t err = esp_netif_tcpip_exec(clock_snapshot_read, &snapshot);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "network clock snapshot failed: %s", esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGW(TAG, "network clock snapshot: active=%u", (unsigned)snapshot.active);
+    char address[IPADDR_STRLEN_MAX];
+    for (unsigned i = 0; i < DNS_MAX_SERVERS; ++i) {
+        ipaddr_ntoa_r(&snapshot.dns[i], address, sizeof(address));
+        ESP_LOGW(TAG, "network clock DNS: slot=%u addr=%s", i, address);
+    }
+    for (unsigned i = 0; i < PLATFORM_CLOCK_PEERS; ++i) {
+        ipaddr_ntoa_r(&snapshot.peer[i], address, sizeof(address));
+        /* An address is not proof of transmission; reach=0 is not a loss rate.
+         * The first unresolved peer also leaves later, untried peers at zero. */
+        ESP_LOGW(TAG, "network clock peer: slot=%u addr=%s reach=0x%02x",
+                 i, address, (unsigned)snapshot.reach[i]);
+    }
+}
+
 esp_err_t platform_client_sync_clock(void)
 {
     /* Require a received SNTP result in this boot, not just a retained date.
@@ -818,7 +866,7 @@ esp_err_t platform_client_sync_clock(void)
     if (s_clock_synchronized && time(NULL) > 1700000000) return ESP_OK;
     s_clock_synchronized = false;
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(
-        2,
+        PLATFORM_CLOCK_PEERS,
         ESP_SNTP_SERVER_LIST("ntp.aliyun.com", "pool.ntp.org"));
     esp_err_t err;
     if (!s_clock_initialized) {
@@ -850,6 +898,7 @@ esp_err_t platform_client_sync_clock(void)
     if (err == ESP_OK) err = ESP_ERR_INVALID_RESPONSE;
     ESP_LOGE(TAG, "network clock unavailable: elapsed_ms=%lu error=%s",
              elapsed_ms, esp_err_to_name(err));
+    clock_log_failure();
     return err;
 }
 

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
 set(PROJECT_VER "1.1.2")
+# This Kconfig is loaded through starter_voice's rsource. Track it explicitly
+# so incremental Ninja builds regenerate sdkconfig.h when its options change.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_LIST_DIR}/main/Kconfig.xiaotai")
 # Wi-Fi Remote 0.14 includes Kconfig by this major.minor environment value.
 # Derive it from the selected IDF even on Ninja/CMake-triggered reconfigure;
 # a missing value silently drops C6/SDIO symbols before Hosted compilation.

@@ -89,6 +89,8 @@ typedef void (*platform_online_callback_t)(void *user_data);
  * The startup/platform owner task may block; never call from UI/SDK callbacks.
  * Later calls reuse that result while the clock remains valid; SNTP keeps
  * refreshing in the background. A timeout/error does not open the gate.
+ * Initialize once; timeout retries keep the same SNTP service and pending
+ * completion notification. Failure diagnostics do not send extra probes.
  */
 esp_err_t platform_client_sync_clock(void);
 

@@ -32,6 +32,25 @@
 
 接收槽丢弃、I2S 写失败和网络未到包要分别记录。每次只改变一个主要变量，保留故障前后时间线。
 
+### 获得 IP 后校时超时
+
+`network clock unavailable` 表示本轮等待没有获得有效同步结果，后续绑定和 TiRTC 初始化仍未放行。当前依次使用 `ntp.aliyun.com`、`pool.ntp.org`，请求走 UDP 123；45 秒是应用等待窗口，不代表 Wi-Fi 建连用了 45 秒。
+
+失败后保留同一轮的 `network clock snapshot / DNS / peer` 日志：
+
+- `active=0`：校时服务未运行，先检查初始化或停止路径。
+- `DNS slot`：当前解析服务器配置；有地址不代表该 DNS 可达。
+- `peer slot=0/1`：对应上述两台时间服务器。地址为零可能是尚未解析、解析中或未轮到该服务器，不能直接判定 DNS 故障；非零只说明有已解析地址，不证明请求成功发出。
+- `reach=0x00`：近期没有记录成功响应，不能把它换算为丢包率或认定防火墙拦截。确认 DNS 与 UDP 123 的具体失败位置仍需设备侧日志或热点侧抓包。
+
+`UI intent rejected: action=1` 对应启动 AI。校时/绑定完成前，业务队列尚未创建，此时返回 `ESP_ERR_INVALID_STATE` 并提示稍候；就绪后队列满返回 `ESP_ERR_TIMEOUT`。按状态区分未就绪和排队失败，不把错误名称直接当作 UI 阻塞时长。
+
+新增快照只在失败时读取现有网络状态，不新增任务、不主动发送探测包、不更改校时超时、服务器或鉴权顺序。排查时不要用伪造日期或跳过校时来制造上线成功。
+
+若三个 DNS 均为 `0.0.0.0`，当前 IDF 的解析器会直接返回错误，未缓存的域名无法发起 DNS 查询。这已经足以解释校时无法推进，但不能证明 DHCP 服务端没有下发 DNS。网络管理层在 GOT_IP 时保留 `Wi-Fi DNS: stage=got-ip` 快照，再向空备用槽配置 `CONFIG_XIAOTAI_FALLBACK_DNS_IPV4`（默认 `223.5.5.5`），最后记录 `stage=after-portal-stop`。主、备 DNS 和已存在的备用地址均不覆盖。
+
+前一快照就为空时，检查 DHCP ACK 中的 DNS 选项及解析；前一快照非空、后面被清空时，检查网卡生命周期和 DNS 写入路径。必要时抓 DHCP/DNS/NTP 包。验证须覆盖服务器地址解析、`network clock synchronized` 及平台实际上线，不能仅凭备用地址写入成功判为通过。
+
 ## 多人对讲排障
 
 | 现象 | 检查顺序 |
@@ -58,6 +77,7 @@
 | 修改范围 | 脚本入口 | 目标板还需检查 |
 | --- | --- | --- |
 | 启动校时 | `tools/test_startup_clock.py` | 已绑定/首次绑定、冷启动/保留日期复位；阻断 SNTP 后恢复，确认同步日志先于 SDK 初始化及平台请求 |
+| Wi-Fi DNS 策略 | `tools/test_wifi_dns.py` | DHCP 有/无 DNS、备用地址不可达、断网重连与 AP 退出前后快照；校时和后续业务实际上线 |
 | AI 握手和 HTTP | `tools/test_ai_start_contract.py`、`tools/test_platform_http_requests.py`、`tools/test_platform_http_trace.py` | 重复建连、完整应答后开放音频、DNS/连接/响应等待时序 |
 | NVS 与建连资源 | `tools/test_nvs_store.py`、`tools/test_runtime_resources.py` | 快速改设置后复位、配网/绑定保存、连续呼叫时 MQTT 在线及内存水位 |
 | 多人房间与 UI 快照 | `tools/test_room_release.py`、`tools/test_room_navigation.py` | 创建/加入/退出、返回断连再进入、PTT 松手停止、AI 切换、断网释放后重连、断电后的租约恢复 |
