@@ -10,7 +10,7 @@
 
 完整 16 MB 固件、烧录指南与校验文件见 [1.2.0 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.2.0)。体验平台统一为 [xiaotai.chat](https://xiaotai.chat/)。完整包会清除配网、绑定和用户设置，请先备份。
 
-本版作为受控网络体验固件提供。持续播放爆音的现场根因尚未完全证实，本次播放调整不等于已完成听感验收；0.80 阈值、全双工及弱网长稳效果需在目标板验证。构建与运行证据分别见发布页，排障方法见[测试与排障](docs/TESTING.md)。
+本版作为受控网络体验固件提供，H5 播放调整已收到效果改善的实机体验反馈。唤醒阈值、全双工和弱网表现可结合实际环境继续验证。构建与运行证据分别见发布页，排障方法见[测试与排障](docs/TESTING.md)。
 
 目标板：微雪 ESP32-P4-WIFI6-Touch-LCD-3.5。应用操作见[开发指南](docs/GETTING_STARTED_CN.md)，SDK 和配置见[版本与依赖](docs/DEPENDENCIES.md)。
 
