@@ -21,6 +21,7 @@
 | 现象 | 先找哪段数据 |
 | --- | --- |
 | 有 IP，没有六位码 | 校时、DNS、服务发现、HTTP 请求及临时 MQTT 订阅 |
+| 热点已开启或验证码已播报，屏幕却不切换 | 核对固件 ELF，再看 `setup view` 页面转换；配网/绑定刷新不能被尚未初始化或加锁中的业务快照拦住 |
 | 平台绑定后设备仍等待 | 平台结果、绑定消息接收和确认 |
 | AI 唤醒后不回答 | 角色配置、token 请求、TiRTC 建连和 `start_session` 结果 |
 | AI 查询联系人没有回包 | `AI tool rx` 是否包含 `query_contact_status` 和有效 `id`，随后是否有 `AI query tx` |
@@ -103,6 +104,7 @@
 
 | 修改范围 | 脚本入口 | 目标板还需检查 |
 | --- | --- | --- |
+| 配网与绑定页面生命周期 | `tools/test_setup_lifecycle.py` | 无 Wi-Fi 启动先显示配网，热点就绪后更新名称/网址；首次绑定显示和更新六位码，不等播报结束；重试、绑定成功、解绑及通话中断网的页面顺序 |
 | 启动校时 | `tools/test_startup_clock.py` | 已绑定/首次绑定、冷启动/保留日期复位；阻断 SNTP 后恢复，确认同步日志先于 SDK 初始化及平台请求 |
 | Wi-Fi DNS 策略 | `tools/test_wifi_dns.py` | DHCP 有/无 DNS、备用地址不可达、断网重连与 AP 退出前后快照；校时和后续业务实际上线 |
 | AI 握手和 HTTP | `tools/test_ai_start_contract.py`、`tools/test_platform_http_requests.py`、`tools/test_platform_http_trace.py`、`tools/test_platform_http_reuse.py` | 重复建连、完整应答后开放音频、DNS/连接/响应等待时序、复用和空闲释放 |
@@ -131,6 +133,8 @@
 运行前阅读脚本的编译器要求。需要 gcc/g++ 或 sanitizer 的检查使用 Linux/WSL 主机环境；IDF 交叉编译器不能直接替代主机编译器。卷积适配检查需要 CMake 和 Ninja。
 
 HTTP 复用检查还需设置当前环境的 `IDF_PATH`，用于编译 IDF 的实际 URL 解析器；不进行网络请求。
+
+配网生命周期检查执行真实 UI 定时器前段、配网页状态更新及页面构建后的刷新分支，以 stub 模拟网络、LVGL 和快照锁。可用 `--revision <commit>` 对照历史源码，不切换工作树。它能验证首次启动的依赖顺序、锁竞争和文本更新，不能替代实际屏幕、热点与绑定消息测试。
 
 表情检查读取本工程 `managed_components` 中的 LVGL 源码，不自动下载依赖；覆盖 44 套有效姿态与局部重绘一致性，其中“思考”“放松”仅使用第一套。主机结果不能替代屏幕目视检查与运行时耗时验证。启动校时检查使用 SNTP stub，不能证明真实服务器可达或 SDK 防重放错误已消失。
 

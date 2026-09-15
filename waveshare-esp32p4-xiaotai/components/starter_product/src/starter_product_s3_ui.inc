@@ -611,7 +611,7 @@ static void s3_render_binding(lv_obj_t *screen)
     lv_obj_add_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void s3_update_setup(bool connected, bool idle, bool provisioning,
+static void s3_update_setup(int64_t now, bool connected, bool idle, bool provisioning,
                             const char *verification_code)
 {
     /* Offline configuration owns navigation even if an old session is still
@@ -652,6 +652,12 @@ static void s3_update_setup(bool connected, bool idle, bool provisioning,
         if (binding == STARTER_BINDING_FAILED)
             lv_obj_clear_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
+    }
+    /* The AP can become ready seconds after the page is created. Its SSID,
+     * URL and control results must refresh without a runtime snapshot too. */
+    if (s3_ui.network_text && now >= s3_ui.network_due) {
+        s3_ui.network_due = now + 1000;
+        s3_network_text();
     }
 }
 
@@ -737,6 +743,9 @@ static bool s3_render_page(lv_obj_t *screen)
         break;
     default: return false;
     }
+    /* Setup pages use network/binding state, never the runtime snapshot.
+     * This also avoids its 50 ms lock wait when unbinding during a call. */
+    if (s_page == PAGE_NETWORK || s_page == PAGE_BINDING) return true;
     starter_runtime_product_snapshot_t product = starter_runtime_product_snapshot();
     s3_refresh_ui(monotonic_ms(), starter_runtime_status(), &product);
     return true;
@@ -1015,9 +1024,5 @@ static void s3_refresh_ui(int64_t now, starter_runtime_status_t runtime,
     if (s3_ui.call_result && product->call_result[0]) {
         (void)snprintf(s_call_result, sizeof(s_call_result), "%s", product->call_result);
         label_set_text_if_changed(s3_ui.call_result, s_call_result);
-    }
-    if (s3_ui.network_text && now >= s3_ui.network_due) {
-        s3_ui.network_due = now + 1000;
-        s3_network_text();
     }
 }

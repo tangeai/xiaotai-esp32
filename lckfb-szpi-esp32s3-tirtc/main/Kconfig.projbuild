@@ -18,7 +18,7 @@ config XIAOTAI_PORTAL_URL
 config XIAOTAI_WAKE_THRESHOLD_MILLI
     int "Voicute wake threshold (thousandths)"
     range 50 990
-    default 800
+    default 900
     help
         Model-specific; requires acoustic validation. Console overrides are volatile.
 config XIAOTAI_CAPTURE_AGC

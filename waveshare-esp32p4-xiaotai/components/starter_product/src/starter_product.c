@@ -1529,6 +1529,14 @@ static void product_tick(lv_timer_t *timer)
         voice_state_changed = true;
     }
     starter_runtime_status_t runtime = starter_runtime_status();
+    bool session_idle = runtime.state == STARTER_RUNTIME_WAITING;
+    bool wifi_connected = wifi_manager_connected();
+    /* Setup precedes runtime creation: first binding cannot depend on a
+     * snapshot whose mutex is created only after binding completes. Keep
+     * setup navigation and portal/code updates alive even on lock contention. */
+    s3_update_setup(now, wifi_connected, session_idle, platform_client_provisioning(),
+                    platform_client_verification_code());
+    if (s3_ui.setup_active) s_call_ring_kind = CALL_RING_NONE;
     starter_runtime_product_snapshot_t product;
     /* Never spend an LVGL frame waiting for HTTP/contact/caption publication.
      * Keep the currently rendered content on contention, not an empty snapshot. */
@@ -1541,12 +1549,10 @@ static void product_tick(lv_timer_t *timer)
     bool call_before = s_previous_runtime_state == STARTER_RUNTIME_CALL_INCOMING ||
                         s_previous_runtime_state == STARTER_RUNTIME_CALL_CONNECTING ||
                         s_previous_runtime_state == STARTER_RUNTIME_CALL_ACTIVE;
-    bool session_idle = runtime.state == STARTER_RUNTIME_WAITING;
     bool remote_viewing = runtime.state == STARTER_RUNTIME_H5_ACTIVE;
     bool ai_now = runtime.state == STARTER_RUNTIME_AI_CONNECTING ||
                   runtime.state == STARTER_RUNTIME_AI_ACTIVE;
     bool home = s_page == PAGE_HOME_FACE || s_page == PAGE_HOME_CLOCK;
-    bool wifi_connected = wifi_manager_connected();
     bool wifi_failed = wifi_manager_connection_failed();
     if (wifi_connected && !s_previous_wifi_connected) {
         s_pending_wifi_notice = WIFI_NOTICE_CONNECTED;
@@ -1617,7 +1623,7 @@ static void product_tick(lv_timer_t *timer)
     }
 
     bool show_call = call_now;
-    show_call = call_now && wifi_connected;
+    show_call = call_now && wifi_connected && !s3_ui.setup_active;
     if (show_call) {
         if (s_ai_ack_queue != NULL) {
             (void)xQueueReset(s_ai_ack_queue);
@@ -1657,11 +1663,6 @@ static void product_tick(lv_timer_t *timer)
     }
     /* Keep the result until explicit navigation; a new incoming call still
      * takes priority above. Do not turn a short reading delay into a lost result. */
-
-    /* Wi-Fi 已连但尚未绑定时，验证码页优先于所有空闲产品页。 */
-    bool binding_now = platform_client_provisioning();
-    const char *verification_code = platform_client_verification_code();
-    s3_update_setup(wifi_connected, session_idle, binding_now, verification_code);
 
     /* 上面的通话/绑定跳转可能重建页面，后续刷新以当前页面为准。 */
     home = s_page == PAGE_HOME_FACE || s_page == PAGE_HOME_CLOCK;

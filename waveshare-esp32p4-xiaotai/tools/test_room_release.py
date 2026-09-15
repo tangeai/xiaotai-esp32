@@ -34,6 +34,8 @@ assert 'op == ROOM_RELEASE' in tick  # lost / timed out callback retains cleanup
 assert 'memset(&s_room, 0' in function(room, 'room_reset')  # binding epoch discards old authority
 ui = function(product, 'product_tick')
 assert 'if (!starter_runtime_try_product_snapshot(&product)) return;' in ui
+# Snapshot contention may defer business content, never Wi-Fi/binding setup.
+assert ui.index('s3_update_setup(') < ui.index('starter_runtime_try_product_snapshot(')
 assert 'starter_runtime_product_snapshot()' not in ui
 
 code = r'''
