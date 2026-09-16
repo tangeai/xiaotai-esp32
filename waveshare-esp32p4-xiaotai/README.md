@@ -58,7 +58,7 @@
 | 联网 | C6 / ESP-Hosted，SDIO 4 线 40 MHz SDR |
 | 工具链 | riscv32-esp-elf GCC 14.2.0，`esp-14.2.0_20260121` |
 | TiRTC SDK | 2.3.0 P4 验证补丁库，[版本与校验值](docs/DEPENDENCIES.md) |
-| 应用版本 | 1.2.0，[版本内容](RELEASE_NOTES.md) |
+| 应用版本 | 1.2.0，[变更记录](../CHANGELOG.md#120) |
 
 **本目录可独立构建。** 应用、SDK、音视频驱动、字体、模型和提示音均已包含，无需另外下载 S3 工程或公共资源目录。
 

@@ -20,7 +20,7 @@
 [![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
 [![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#wechat-calls)
 
-[Download firmware](#download-firmware) · [Browser flasher](https://espressif.github.io/esptool-js/) · [Demo platform](https://xiaotai.chat/) · [Server & mini program](https://github.com/tangeai/tirtc-server-example)
+[Download firmware](#download-firmware) · [Changelog](CHANGELOG.md) · [Browser flasher](https://espressif.github.io/esptool-js/) · [Demo platform](https://xiaotai.chat/) · [Server & mini program](https://github.com/tangeai/tirtc-server-example)
 
 </div>
 
@@ -41,7 +41,23 @@ Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi**
 
 Check the chip revision before flashing: **S3 rev 0.0–0.99 or P4 rev 1.0–1.99**. P4 rev 2.x/3.x is not supported by these images. The chip revision is different from the PCB version. Do not flash S3 firmware onto P4, or vice versa.
 
-These are **pre-release** images. See the [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.2.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.2.0) for flashing instructions, checksums, and validation status.
+These are **pre-release** images. The **Assets** section of each [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.2.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.2.0) also includes `FLASHING_CN.md`, `SHA256SUMS.txt`, and `release-manifest.json`. The flashing guide is in Chinese. `Source code` is not a flashable image.
+
+<details>
+<summary>Verify downloads and view build records</summary>
+
+A full BIN must be **16,777,216 bytes**. Open PowerShell in the download directory to check its size and SHA-256:
+
+```powershell
+Get-Item ./*-full-16MB.bin | Select-Object Name, Length
+Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
+```
+
+Compare the results with `SHA256SUMS.txt` from the same release. On Linux, use `sha256sum -c SHA256SUMS.txt`; on macOS, use `shasum -a 256 -c SHA256SUMS.txt`. Download every file listed in the checksum file first.
+
+`release-manifest.json` records the source, SDK, build configuration, firmware hashes, and validation scope. Build and file checks do not establish target-board media quality or long-term stability. For older firmware, follow its attached board and flashing instructions.
+
+</details>
 
 ## Step 2: Flash from your browser
 
@@ -113,10 +129,13 @@ This feature requires room support on the platform and uses voice on both S3 and
 
 The linked development guides are in Chinese.
 
+- **Version changes:** [Changelog](CHANGELOG.md), covering S3/P4 features, fixes, and dependency changes by version.
 - **Build and configuration:** [S3 guide](lckfb-szpi-esp32s3-tirtc/README.md) and [P4 guide](waveshare-esp32p4-xiaotai/README.md). Builds use ESP-IDF 5.5.4. Each project includes its own code, SDK, model, and resources and can be built independently.
 - **Architecture and code:** [S3 communication and audio](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md) and [P4 communication, audio, and video](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md).
 - **Troubleshooting and limitations:** [S3 known issues](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md) and [P4 troubleshooting](waveshare-esp32p4-xiaotai/docs/TESTING.md).
 - **Server, Web, and WeChat mini program:** [tirtc-server-example](https://github.com/tangeai/tirtc-server-example). For self-hosting, see the [deployment guide](https://github.com/tangeai/tirtc-server-example/blob/main/thing-connect/deployment.md).
+
+These evaluation images are for controlled networks; do not use production credentials. Before production integration, review the [S3 network and credential limitations](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md#网络与凭据) and [P4 service configuration](waveshare-esp32p4-xiaotai/docs/GETTING_STARTED_CN.md#配置服务). Assess transport authentication separately for the SDK, APIs, and MQTT.
 
 ## Feedback and license
 
