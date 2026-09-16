@@ -56,7 +56,7 @@ S3 支持 H5 按需查看 GC2145 摄像头画面，默认 240×176、目标 12fp
 | 工具链 | Xtensa GCC 14.2.0，`esp-14.2.0_20260121` |
 | TiRTC SDK | 2.3.0，[SDK 编译配置](third_party/tirtc/README.md) |
 | 主要组件 | LVGL 8.3.11、ESP-SR 2.4.7，[完整依赖锁](dependencies.lock) |
-| 应用版本 | 1.2.0，[版本内容](RELEASE_NOTES.md) |
+| 应用版本 | 1.2.0，[变更记录](CHANGELOG.md#120) |
 
 换了板卡修订，先核对音频、屏幕、触摸和电源引脚。本目录可独立构建；SDK、`components/starter_voice/model/` 中的模型、字体和提示音均为构建输入。
 
