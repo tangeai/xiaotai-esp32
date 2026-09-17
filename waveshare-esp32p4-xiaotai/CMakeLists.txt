@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_VER "1.2.0")
+set(PROJECT_VER "1.3.0")
 # This Kconfig is loaded through starter_voice's rsource. Track it explicitly
 # so incremental Ninja builds regenerate sdkconfig.h when its options change.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

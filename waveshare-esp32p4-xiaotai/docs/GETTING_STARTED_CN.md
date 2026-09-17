@@ -1,6 +1,6 @@
 # P4 开发指南
 
-本指南适用于小钛 P4 1.2.0。按顺序完成编译烧录、热点配网和平台绑定，再体验 AI、设备呼叫、微信、多人对讲和 H5。
+本指南适用于小钛 P4 1.3.0。按顺序完成编译烧录、热点配网和平台绑定，再体验 AI、设备呼叫、微信、多人对讲和 H5。
 
 ## 准备源码与硬件
 
@@ -46,6 +46,8 @@ idf.py build
 
 SDK、产品链接符号和 I2C 驱动检查也应通过。Windows 构建后处理使用 Python，无需 Bash。
 
+若配置阶段报 `LV_USE_LIBJPEG_TURBO`、`LV_USE_LIBPNG` 或 `LV_USE_LZ4` 缺失，先按[组件版本检查误报](TESTING.md#组件版本检查误报)核对组件管理器版本，不要为此添加虚假的配置项。
+
 已有目录的 `sdkconfig` 优先于 defaults。调整配置使用 `idf.py menuconfig`，有效值可在 `build/config/sdkconfig.json` 核对。Windows 与 WSL 切换构建时，保留需要的配置和日志后重新生成 `build/`，不要共用旧 CMake 缓存。
 
 ### 3. 确认串口
@@ -74,7 +76,7 @@ idf.py -p PORT flash monitor
 
 IDF 按生成的参数写入 bootloader、分区表和应用。下载模式未自动进入时，按板卡 BOOT/RESET 步骤重试。退出日志监视使用 `Ctrl+]`。
 
-启动日志应显示 `xiaotai_esp32p4`、版本 `1.2.0` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
+启动日志应显示 `xiaotai_esp32p4`、版本 `1.3.0` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
 
 **单独的应用 BIN 不能写到 0x0。** 日常使用上述完整烧录命令，保留 NVS 中的 Wi-Fi 和绑定信息。若旧固件分区不同，先比较[分区表](../partitions.csv)，不要直接整片擦除。
 

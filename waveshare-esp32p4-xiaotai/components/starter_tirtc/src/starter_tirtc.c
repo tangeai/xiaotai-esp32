@@ -9,6 +9,7 @@
 #include "starter_tirtc.h"
 
 #include <stdatomic.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -19,6 +20,7 @@
 #include "freertos/task.h"
 #endif
 #include "tirtc/tiRTC.h"
+#include "tirtc/tgtrp.h"
 
 #ifndef TIRTC_SDK_STATIC_SEMAPHORE_SIZE
 #error "TiRTC SDK build contract did not define StaticSemaphore_t size"
@@ -163,6 +165,65 @@ static void sdk_log(const char *log, uint32_t length)
     }
 }
 
+static void sdk_transport_log(const char *format, va_list args)
+{
+    /* SDK 2.3.0 / e3911473 and 2.5.0 / f72f5d3c emit these after creating
+     * the transport. Match the entire format before reading varargs; never
+     * print SDK text, source paths, SDP, tokens, or negotiation capability.
+     * Unknown SDK formats fail closed and are not proof of a protocol. */
+    if (format == NULL) return;
+    bool tgmp = strcmp(format,
+        "(%s:%d) peer_connection_tgtrp_init ok ice=%p mtu=%u "
+        "poll_segments=%u pacing=%u send_buffer_max=%zu") == 0;
+    bool kcp = strcmp(format,
+        "(%s:%d) peer_connection_kcp_init ikcp_nodelay(%d %d %d %d) "
+        "sndwnd=%d mtu=%d") == 0;
+    bool failed = strcmp(format,
+        "(%s:%d) peer_connection_tgtrp_init failed ice=%p ret=%d mtu=%u "
+        "poll_segments=%u send_buffer_max=%zu") == 0;
+    if (!tgmp && !kcp && !failed) return;
+
+    va_list values;
+    va_copy(values, args);
+    (void)va_arg(values, const char *);
+    (void)va_arg(values, int);
+    if (tgmp || failed) {
+        void *ice = va_arg(values, void *);
+        int error = failed ? va_arg(values, int) : 0;
+        unsigned mtu = va_arg(values, unsigned);
+        unsigned poll = va_arg(values, unsigned);
+        if (tgmp) (void)va_arg(values, unsigned); /* Initial pacing, not throughput. */
+        size_t capacity = va_arg(values, size_t);
+        if (failed) {
+            ESP_LOGE(TAG, "TP init-failed proto=TGMP ice=%p rc=%d mtu=%u "
+                     "poll=%u sndcap=%zu", ice, error, mtu, poll, capacity);
+        } else {
+            ESP_LOGI(TAG, "TP init proto=TGMP transport=tgtrp ice=%p mtu=%u "
+                     "poll=%u sndcap=%zu", ice, mtu, poll, capacity);
+        }
+    } else {
+        int nodelay = va_arg(values, int);
+        int interval = va_arg(values, int);
+        int resend = va_arg(values, int);
+        int nc = va_arg(values, int);
+        int window = va_arg(values, int);
+        int mtu = va_arg(values, int);
+        ESP_LOGI(TAG, "TP init proto=KCP transport=kcp nodelay=%d interval=%d "
+                 "resend=%d nc=%d sndwnd=%d mtu=%d",
+                 nodelay, interval, resend, nc, window, mtu);
+    }
+    va_end(values);
+}
+
+static void sdk_transport_probe(bool enabled)
+{
+    /* NOTICE only during connection setup; no STAT/per-packet logs. The
+     * callback discards other formats before formatting or allocating. Turn
+     * this off before media starts so weak-network timings stay comparable.
+     * Use the SDK's public lower-layer log hook, never cast opaque handles. */
+    tgtrp_set_log_level(enabled ? 5 : 0);
+}
+
 static void on_event(int event, const void *data, int length)
 {
     /* 系统事件只发布 SDK 生命周期，不在回调中启停其他模块。 */
@@ -213,7 +274,8 @@ static void on_conn_accepted(tirtc_conn_t connection)
     uint32_t generation = next_generation();
     atomic_store_explicit(&s_mode, accepted_mode, memory_order_release);
     atomic_store_explicit(&s_active_generation, generation, memory_order_release);
-    ESP_LOGI(TAG, "inbound connection accepted mode=%d generation=%lu",
+    sdk_transport_probe(false);
+    ESP_LOGI(TAG, "inbound connection accepted mode=%d generation=%lu tp_probe=off",
              (int)accepted_mode, (unsigned long)generation);
     notify_connection(accepted_mode, generation, call_tag, true, 0);
 }
@@ -248,6 +310,7 @@ static void on_disconnected(tirtc_conn_t connection)
     uint32_t generation = (uint32_t)atomic_exchange_explicit(
         &s_active_generation, 0, memory_order_acq_rel);
     clear_subscriptions();
+    sdk_transport_probe(true);
     ESP_LOGI(TAG, "connection closed generation=%lu", (unsigned long)generation);
     notify_connection(mode, generation, 0, false, 0);
 }
@@ -290,7 +353,8 @@ static void on_external_connect(int error, tirtc_conn_t connection, void *user_d
     uint32_t generation = next_generation();
     atomic_store_explicit(&s_mode, pending_mode, memory_order_release);
     atomic_store_explicit(&s_active_generation, generation, memory_order_release);
-    ESP_LOGI(TAG, "external connection ready mode=%d generation=%lu",
+    sdk_transport_probe(false);
+    ESP_LOGI(TAG, "external connection ready mode=%d generation=%lu tp_probe=off",
              (int)pending_mode, (unsigned long)generation);
     notify_connection(pending_mode, generation, request_tag, true, 0);
 }
@@ -575,6 +639,7 @@ static int rollback_start(const char *stage, int rc)
 {
     log_start_failure(stage, rc);
     TiRtcUninit();
+    sdk_transport_probe(false);
     s_initialized = false;
     log_start_memory("post-rollback");
     return rc;
@@ -593,6 +658,10 @@ int starter_tirtc_start(const starter_tirtc_config_t *config)
      */
     TiRtcLogSetCallback(sdk_log);
     TiRtcLogSetLevel(config->log_level > 0 ? config->log_level : 3);
+    /* Override only the lower-layer sink after TiRtcLogSetCallback. Keep the
+     * existing upper-layer service-error filter and configured level intact. */
+    tgtrp_set_log_callback(sdk_transport_log);
+    sdk_transport_probe(true);
     int rc = 0;
     if (config->max_send_buffer_bytes > 0U) {
         rc = TiRtcSetOption(TIRTC_OPT_MAX_SEND_BUFFER,
@@ -600,13 +669,17 @@ int starter_tirtc_start(const starter_tirtc_config_t *config)
                             sizeof(config->max_send_buffer_bytes));
         if (rc != 0) {
             log_start_failure("TiRtcSetOption(MAX_SEND_BUFFER)", rc);
+            sdk_transport_probe(false);
             return rc;
         }
+        ESP_LOGI(TAG, "TP config sdk=%s sndcap=%lu set=ok",
+                 TiRtcGetVersion(), (unsigned long)config->max_send_buffer_bytes);
     }
     log_start_memory("pre-init");
     rc = TiRtcInit();
     if (rc != 0) {
         log_start_failure("TiRtcInit", rc);
+        sdk_transport_probe(false);
         return rc;
     }
     s_initialized = true;
@@ -700,6 +773,7 @@ static int external_connect(starter_tirtc_mode_t mode,
     }
     atomic_store_explicit(&s_pending_tag, request_tag, memory_order_release);
     atomic_store_explicit(&s_pending_mode, mode, memory_order_release);
+    sdk_transport_probe(true);
     int rc = mode == STARTER_TIRTC_CALL
                  ? TiRtcConnect(peer_id, token, on_external_connect,
                                 (void *)(uintptr_t)request)
@@ -753,6 +827,7 @@ int starter_tirtc_disconnect(void)
     atomic_store_explicit(&s_mode, STARTER_TIRTC_NONE, memory_order_release);
     atomic_store_explicit(&s_active_generation, 0, memory_order_release);
     clear_subscriptions();
+    if (starter_tirtc_started()) sdk_transport_probe(true);
     return connection == NULL ? TIRTC_E_INVALID_HANDLE : TiRtcDisconnect(connection);
 }
 

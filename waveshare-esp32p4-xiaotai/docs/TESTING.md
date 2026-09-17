@@ -16,6 +16,30 @@
 
 构建错误应从最早出现的错误向后分析，避免被最终的 Ninja 或链接失败信息带偏。
 
+### 组件版本检查误报
+
+本机 ESP-IDF 5.5.4 环境中的 `idf-component-manager 2.4.9` 曾在可选的组件新版本检查阶段，将 `LV_USE_LIBJPEG_TURBO`、`LV_USE_LIBPNG`、`LV_USE_LZ4` 报为缺失。本工程锁定的 LVGL 8.3.11 不要求这些配置。先用 `python -m pip show idf-component-manager` 核对版本，并保留最早的配置错误；其他组件下载或编译错误不适用此处理。
+
+命中上述情况时，可仅对当前构建关闭新版本提示。Windows ESP-IDF PowerShell 终端执行：
+
+```powershell
+$previous = $env:IDF_COMPONENT_CHECK_NEW_VERSION
+try {
+    $env:IDF_COMPONENT_CHECK_NEW_VERSION = "0"
+    idf.py reconfigure build
+} finally {
+    $env:IDF_COMPONENT_CHECK_NEW_VERSION = $previous
+}
+```
+
+Linux/WSL 对应命令：
+
+```sh
+IDF_COMPONENT_CHECK_NEW_VERSION=0 idf.py reconfigure build
+```
+
+这只是组件管理器版本检查的临时规避，不是其根因修复。正常依赖解析、锁文件及下载校验仍启用，不修改 `sdkconfig`、锁定版本或 SDK；不要设置全局环境变量，也不要添加上述无关配置项。后续更换组件管理器环境时，先在不设置此变量的条件下验证，再决定是否仍需使用。
+
 ## 业务与媒体
 
 | 现象 | 先找哪段数据 |
@@ -179,6 +203,32 @@ python -B -X utf8 tools/test_dependency_lock.py --resolved build/dependencies.lo
 启动校时专项应同时覆盖已有绑定和首次绑定：`network clock synchronized` 必须先于 `pre-tirtc-bootstrap` 和设备上报/鉴权请求。SNTP 无响应时保留 `network clock unavailable`，后续上线不能提前执行；网络恢复后应由同一校时服务继续推进，UI 和采集仍可运行。顺序通过不等于 SDK 防重放问题已经闭环，仍需多次断电与复位日志验证。
 
 ## 弱网检查
+
+### 先确认实际传输协议
+
+TiRTC 2.3.0 / 2.5.0 的版本信息只能证明包含哪一版库，不能证明每次连接都走 TGMP。
+建连时检查 `starter_tirtc` 的以下记录：
+
+- `TP init proto=TGMP transport=tgtrp ...`：SDK 已选中并成功创建 TGMP 传输会话。
+- `TP init proto=KCP transport=kcp ...`：SDK 实际初始化了 KCP。
+- `TP init-failed proto=TGMP ... rc=...`：TGMP 初始化失败，不能记为已启用。
+
+同一次呼叫还应出现 `connection ready` 或 `connection accepted`，随后有媒体收发。
+`TP init` 本身不代表通话成功；没有对应记录时协议仍是未确认，不能用 `mode=4`、
+SDK 版本、服务端能力字段或“没有 KCP 日志”代替。若混有多次呼叫、取消或失败重试，
+先按时间线分开，不把上一条连接的初始化记录套到下一条连接。
+
+`mtu` 为 SDK 生效的 MTU；TGMP 的 `poll` 是每次 poll 的最大发送分段数，**不是毫秒**；
+`sndcap` 是发送缓存上限（字节），不是实际占用。KCP 的 `interval` 是更新间隔，不能当成 RTO。
+
+探针使用当前 SDK 的公开底层日志回调，仅提取三个固定初始化格式的数值；不输出原始
+SDK 文本、源码路径、SDP 或凭据。连接建立后 `tp_probe=off` 表示底层诊断关闭，挂断后
+重新等待下次建连。媒体阶段继续使用原有 `AP/CP` 指标，不开启逐包或 SDK STAT 日志。
+以后更新 SDK 若日志格式变化，需要重新核对过滤器。没有新增任务、PCM 队列或应用堆分配。
+
+`tools/test_transport_diagnostics.py` 检查日志提取、敏感字段过滤、失败语义和日志开关；
+它是主机检查，不能证明真机协议协商。实测时保留从建连到挂断的完整日志，再施加丢包、
+延迟和抖动，分别记录协议、首次收发、缓冲水位、变速、队列丢弃、供音超时和听感。
 
 按“无整形 → 延时 → 抖动 → 丢包 → 组合条件 → 恢复正常”的顺序测试，先建立同一网络下的基线。
 

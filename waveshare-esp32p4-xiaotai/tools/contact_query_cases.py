@@ -8,7 +8,7 @@ import tempfile
 project = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--sdk-header', type=Path,
-                    default=project / 'components/tirtc_sdk/include/tiRTC.h')
+                    default=project / 'components/tirtc_sdk/include/tirtc/tiRTC.h')
 parser.add_argument('--cjson-dir', type=Path,
                     default=project / 'managed_components/espressif__cjson/cJSON')
 args = parser.parse_args()
