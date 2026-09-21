@@ -1,4 +1,10 @@
 # Keep developer README dependencies; exclude local workflow and audit records.
 /AGENTS.md export-ignore
+/RELEASE_NOTES.md export-ignore
 /docs/** export-ignore
 /docs/GETTING_STARTED_CN.md -export-ignore
+
+# Keep vendor headers byte-identical to the SDK package and SHA256SUMS.
+# These two supplied files contain existing trailing spaces; other checks remain.
+/third_party/tirtc/include/tirtc/basedef.h whitespace=-blank-at-eol
+/third_party/tirtc/include/tirtc/tiRTC.h whitespace=-blank-at-eol

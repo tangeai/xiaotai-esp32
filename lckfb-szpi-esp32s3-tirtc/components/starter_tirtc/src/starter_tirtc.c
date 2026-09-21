@@ -29,8 +29,8 @@
 _Static_assert(sizeof(StaticSemaphore_t) == TIRTC_SDK_STATIC_SEMAPHORE_SIZE,
                "FreeRTOS StaticSemaphore_t does not match the TiRTC SDK build contract");
 
-#define H5_AUDIO_STREAM 10U
-#define H5_VIDEO_STREAM 11U
+#define H5_AUDIO_STREAM STARTER_H5_UP_AUDIO_STREAM_ID
+#define H5_VIDEO_STREAM STARTER_H5_UP_VIDEO_STREAM_ID
 #define H5_VIDEO_BACKLOG_BYTES (32U * 1024U)
 #define AI_AUDIO_STREAM 1U
 #define CALL_AUDIO_STREAM 10U
@@ -45,7 +45,8 @@ static starter_tirtc_handlers_t s_handlers;
 
 /* SDK 回调和产品任务会并发读取这些字段，因此都使用原子操作。 */
 static atomic_bool s_started;
-static atomic_bool s_accept_h5 = true;
+/* Runtime opens viewing only after the server accepts this firmware's IDs. */
+static atomic_bool s_accept_h5;
 static atomic_uintptr_t s_connection;
 static atomic_int s_mode;
 
@@ -59,6 +60,7 @@ static atomic_uint_fast32_t s_request_counter;
 static atomic_uint_fast32_t s_pending_request;
 static atomic_uint_fast32_t s_pending_tag;
 static atomic_bool s_audio_subscribed;
+static atomic_uint s_h5_audio_rx_generation;
 static atomic_bool s_video_subscribed;
 #if CONFIG_IDF_TARGET_ESP32P4
 static portMUX_TYPE s_bitrate_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -94,6 +96,7 @@ static uint32_t next_generation(void)
 static void clear_subscriptions(void)
 {
     atomic_store_explicit(&s_audio_subscribed, false, memory_order_release);
+    atomic_store_explicit(&s_h5_audio_rx_generation, 0, memory_order_release);
     atomic_store_explicit(&s_video_subscribed, false, memory_order_release);
 #if CONFIG_IDF_TARGET_ESP32P4
     taskENTER_CRITICAL(&s_bitrate_lock);
@@ -338,9 +341,14 @@ static void on_audio(tirtc_conn_t connection,
     /*
      * stream_id 是发送端的媒体流标识，不能把本端的发送流号当成
      * 对端下行流号。设备呼叫和 VoIP 均可能从服务端收到不同的流号。
-     * 连接句柄已经完成会话隔离；这里仅验证本产品的可播放编码格式。
+     * H5 按能力上报的接收流号匹配，房间按固定流 1 匹配；设备呼叫和
+     * VoIP 保留对端流号语义，均需验证本产品的可播放编码格式。
      */
-    bool expected = (mode != STARTER_TIRTC_ROOM || frame->stream_id == 1U) &&
+    bool expected = (mode != STARTER_TIRTC_H5 ||
+                     (frame->stream_id == STARTER_H5_DOWN_AUDIO_STREAM_ID &&
+                      generation != 0U && generation == atomic_load_explicit(
+                          &s_h5_audio_rx_generation, memory_order_acquire))) &&
+                    (mode != STARTER_TIRTC_ROOM || frame->stream_id == 1U) &&
                     frame->media == TIRTC_AUDIO_ALAW &&
                     frame->flags == TIRTC_AUDIOSAMPLE_8K16B1C;
     if (!expected) {
@@ -481,9 +489,13 @@ static int on_subscribe_video(tirtc_conn_t connection, uint8_t stream_id)
 
 static void on_unsubscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
 {
-    (void)stream_id;
-    if (connection_matches(connection)) {
+    starter_tirtc_mode_t mode = starter_tirtc_mode();
+    bool expected = (mode == STARTER_TIRTC_H5 && stream_id == H5_AUDIO_STREAM) ||
+                    ((mode == STARTER_TIRTC_AI || mode == STARTER_TIRTC_ROOM) && stream_id == AI_AUDIO_STREAM) ||
+                    ((mode == STARTER_TIRTC_VOIP || mode == STARTER_TIRTC_CALL) && stream_id == CALL_AUDIO_STREAM);
+    if (connection_matches(connection) && expected) {
         atomic_store_explicit(&s_audio_subscribed, false, memory_order_release);
+        ESP_LOGI(TAG, "audio unsubscribe mode=%d stream=%u", (int)mode, (unsigned)stream_id);
     }
 }
 
@@ -491,6 +503,7 @@ static void on_unsubscribe_video(tirtc_conn_t connection, uint8_t stream_id)
 {
     if (connection_matches(connection) && stream_id == H5_VIDEO_STREAM) {
         atomic_store_explicit(&s_video_subscribed, false, memory_order_release);
+        ESP_LOGI(TAG, "video unsubscribe stream=%u", (unsigned)stream_id);
     }
 }
 
@@ -849,9 +862,16 @@ int starter_tirtc_send_alaw(uint32_t timestamp_ms,
          mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL && mode != STARTER_TIRTC_ROOM)) {
         return TIRTC_E_INVALID_PARAMETER;
     }
+    /* Recheck at the SDK boundary: a queued capture frame may outlive an
+     * unsubscribe received after the producer checked audio_ready(). */
+    if (mode == STARTER_TIRTC_H5 &&
+        !atomic_load_explicit(&s_audio_subscribed, memory_order_acquire)) {
+        return TIRTC_E_INVALID_PARAMETER;
+    }
     /* 调用者只提交编码数据；协议 stream/media/flags 在此集中固定。 */
     TIRTCFRAMEINFO frame = {
-        .stream_id = (mode == STARTER_TIRTC_AI || mode == STARTER_TIRTC_ROOM) ? AI_AUDIO_STREAM : CALL_AUDIO_STREAM,
+        .stream_id = mode == STARTER_TIRTC_H5 ? H5_AUDIO_STREAM :
+                     (mode == STARTER_TIRTC_AI || mode == STARTER_TIRTC_ROOM) ? AI_AUDIO_STREAM : CALL_AUDIO_STREAM,
         .media = TIRTC_AUDIO_ALAW,
         .flags = TIRTC_AUDIOSAMPLE_8K16B1C,
         .ts = timestamp_ms,
@@ -911,6 +931,42 @@ bool starter_tirtc_video_ready(void)
 #endif
     return starter_tirtc_connected() && starter_tirtc_mode() == STARTER_TIRTC_H5 &&
            atomic_load_explicit(&s_video_subscribed, memory_order_acquire);
+}
+
+int starter_tirtc_subscribe_h5_audio(uint32_t generation)
+{
+#if CONFIG_IDF_TARGET_ESP32S3
+    /* Reuse the existing handle-lifetime lock, no new task or buffer. */
+    if (!s_video_send_mutex) return TIRTC_E_INVALID_HANDLE;
+    xSemaphoreTake(s_video_send_mutex, portMAX_DELAY);
+#endif
+    tirtc_conn_t connection = (tirtc_conn_t)atomic_load_explicit(
+        &s_connection, memory_order_acquire);
+    int ret = TIRTC_E_INVALID_HANDLE;
+    if (connection && generation && generation == starter_tirtc_generation() &&
+        starter_tirtc_mode() == STARTER_TIRTC_H5) {
+        if (atomic_load_explicit(&s_h5_audio_rx_generation, memory_order_acquire) ==
+            generation) {
+            ret = 0;
+        } else {
+            atomic_store_explicit(&s_h5_audio_rx_generation, generation,
+                                  memory_order_release);
+            ret = TiRtcSubscribeAudio(connection, STARTER_H5_DOWN_AUDIO_STREAM_ID);
+            if (ret < 0 || !connection_matches(connection) ||
+                generation != starter_tirtc_generation()) {
+                unsigned expected = generation;
+                (void)atomic_compare_exchange_strong(&s_h5_audio_rx_generation,
+                                                     &expected, 0);
+                if (ret >= 0) ret = TIRTC_E_INVALID_HANDLE;
+            }
+        }
+    }
+#if CONFIG_IDF_TARGET_ESP32S3
+    xSemaphoreGive(s_video_send_mutex);
+#endif
+    ESP_LOGI(TAG, "H5 subscribe remote audio: gen=%lu stream=%u rc=%d",
+             (unsigned long)generation, (unsigned)STARTER_H5_DOWN_AUDIO_STREAM_ID, ret);
+    return ret;
 }
 
 #if CONFIG_IDF_TARGET_ESP32S3

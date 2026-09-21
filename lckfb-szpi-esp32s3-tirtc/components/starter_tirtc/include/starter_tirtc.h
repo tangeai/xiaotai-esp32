@@ -20,6 +20,14 @@
 extern "C" {
 #endif
 
+/* Real-time viewing only, direction relative to this device. Keep the
+ * /v1/device/profile snapshot consistent; AI/room/call/VoIP have own contracts.
+ * RX video is reserved, not a declaration of a video decoder on S3. */
+#define STARTER_H5_UP_AUDIO_STREAM_ID 10
+#define STARTER_H5_UP_VIDEO_STREAM_ID 11
+#define STARTER_H5_DOWN_AUDIO_STREAM_ID 14
+#define STARTER_H5_DOWN_VIDEO_STREAM_ID 15
+
 typedef enum {
     STARTER_TIRTC_NONE = 0, /**< 当前没有连接。 */
     STARTER_TIRTC_H5,      /**< H5 入站查看/对讲连接；S3 视频仅在订阅后发送。 */
@@ -75,7 +83,7 @@ typedef struct {
     void (*on_video)(starter_tirtc_mode_t mode, uint32_t generation,
                      const starter_tirtc_frame_t *frame, const void *data, void *user_data);
 
-    /** H5 请求 stream 11 刷新帧；MJPEG 的每一帧本身都是独立图像。 */
+    /** H5 请求 UP_VIDEO 流刷新帧；MJPEG 每帧都是独立图像。 */
     void (*on_key_frame)(uint32_t generation, void *user_data);
 #endif
 
@@ -146,14 +154,14 @@ int starter_tirtc_service_request(const char *path, const char *json_body);
 
 /**
  * 发送 G.711 A-law、8 kHz、16 bit、单声道音频。
- * H5 自动使用 stream 10，AI 自动使用 stream 1。
+ * H5 使用 STARTER_H5_UP_AUDIO_STREAM_ID，AI/房间使用 1，设备/微信通话使用 10。
  */
 int starter_tirtc_send_alaw(uint32_t timestamp_ms,
                             const void *data,
                             uint32_t length);
 
 #if CONFIG_IDF_TARGET_ESP32P4
-/** 发送一张完整 JPEG 图像；只允许 H5，固定使用 stream 11。 */
+/** 发送一张完整 JPEG 图像；只允许 H5，使用 UP_VIDEO 流。 */
 int starter_tirtc_send_mjpeg(uint32_t timestamp_ms,
                              const void *data,
                              uint32_t length);
@@ -166,10 +174,14 @@ int starter_tirtc_send_mjpeg(uint32_t timestamp_ms,
  */
 bool starter_tirtc_audio_ready(void);
 bool starter_tirtc_video_ready(void);
+/** Runtime owner calls after H5 media is ready, outside SDK callbacks.
+ * Subscribes only the supported downlink audio. Nonnegative means queued,
+ * not remote acceptance. Rejects a stale connection generation. */
+int starter_tirtc_subscribe_h5_audio(uint32_t generation);
 #if CONFIG_IDF_TARGET_ESP32S3
 /* Also true for a revoked/busy slot; never queries a stale local handle. */
 bool starter_tirtc_h5_video_congested(uint32_t generation);
-/* Complete JPEG, H5 stream 11 only; stale connection generations are rejected. */
+/* Complete JPEG, H5 UP_VIDEO stream only; stale generations are rejected. */
 int starter_tirtc_send_h5_jpeg(uint32_t generation, uint32_t timestamp_ms,
                               const void *data, uint32_t length);
 #endif

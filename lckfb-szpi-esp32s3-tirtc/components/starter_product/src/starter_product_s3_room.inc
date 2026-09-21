@@ -58,6 +58,7 @@ static const char *s3_room_state_text(const starter_room_view_t *view)
     case STARTER_ROOM_OFFLINE: return "未连接";
     case STARTER_ROOM_ERROR:
         switch (view->error) {
+        case 40300: return "请检查设备绑定";
         case 40320: return "密码错误";
         case 40400: return "房间不存在";
         case 40920: return "房间已满";

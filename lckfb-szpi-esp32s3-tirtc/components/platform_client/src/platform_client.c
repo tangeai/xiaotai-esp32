@@ -399,6 +399,9 @@ static const char *http_api_name(const char *url_or_path)
         "/v1/call/request", "/v1/call/room", "/v1/call/cancel",
         "/v1/call/hangup", "/v1/call/reject", "/v1/voip/device/profile",
         "/v1/voip/device/call", "/v1/wxvoip/reject",
+        "/v1/call/group/device/assignment", "/v1/call/group/device/create",
+        "/v1/call/group/device/join", "/v1/call/group/device/leave",
+        "/v1/call/group/device/connect-token", "/v1/call/group/device/presence",
     };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         if (strlen(names[i]) == length && strncmp(path, names[i], length) == 0) return names[i];
@@ -420,8 +423,9 @@ static void http_log_result(const char *path, bool post, uint32_t request_ms,
     long wait_ms = single ? (long)(io->first_rx_ms - io->write_ms) : -1;
     long net_ms = io->enabled && io->connect_ms >= io->dns_ms
                       ? (long)(io->connect_ms - io->dns_ms) : -1;
-    if (strcmp(path, "/v1/ai/token") != 0 && !timing->reused && !timing->retained &&
-        queue_ms < 500U && total_ms < 500U && err == ESP_OK && status >= 200 && status < 300) return;
+    if (strcmp(path, "/v1/ai/token") != 0 && strcmp(path, "/v1/call/group/device/assignment") != 0 &&
+        !timing->reused && !timing->retained && queue_ms < 500U && total_ms < 500U &&
+        err == ESP_OK && status >= 200 && status < 300) return;
     ESP_LOGI(TAG,
              "CONN http done: api=%s method=%s req_ms=%lu q_ms=%lu http_ms=%lu rc=%d status=%d reuse=%d keep=%d new_conn=%u prep=%lu conn=%ld head=%ld first=%ld done=%ld redir=%d dns_ms=%ld dns_n=%lu dns_rc=%d net_ms=%ld tx_done=%ld rx_first=%ld wait_ms=%ld tx=%lu rx=%lu nd=%d",
              path, post ? "POST" : "GET", (unsigned long)request_ms,

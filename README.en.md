@@ -63,12 +63,26 @@ Compare the results with `SHA256SUMS.txt` from the same release. On Linux, use `
 
 > Flashing a full BIN erases Wi-Fi credentials, binding information, and user settings stored on the device. Back up any settings you need first.
 
-1. Connect the board using a USB data cable and close any software using its serial port. **For P4, use the main chip's flashing port. Do not flash the onboard C6.**
-2. Open the [Espressif browser flasher](https://espressif.github.io/esptool-js/) in **Chrome/Edge** on your computer. Click **Connect** and select the board's serial port.
-3. Click **Add File** and select the downloaded `*-full-16MB.bin`. Set **Flash Address to `0x0`**, and set Flash Mode, Flash Frequency, and Flash Size to **`keep`**.
-4. Click **Program**. Once flashing succeeds, click **Disconnect** and press the board's reset button to restart it.
+1. Connect the board directly to your computer with a short USB data cable and close any software using its serial port. **For P4, use the main chip's flashing port; the onboard C6 handles wireless connectivity and must not receive this image.**
+2. Open the [Espressif browser flasher](https://espressif.github.io/esptool-js/) in **Chrome/Edge**. In the **Program** section, leave Baudrate at `921600`, click **Connect**, and select the board's serial port. **Console** is for serial logs; do not click **Start** while flashing.
 
-If no serial port appears, check that your USB cable supports data transfer. If connection fails, hold **BOOT**, press **RESET** once, release BOOT, and retry.
+   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-connect.png" alt="Click Connect in the Program section, not Start in Console" width="760">
+
+   The pictured `No port selected` message means port selection was cancelled. Click **Connect** again.
+
+   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-port.png" alt="Select the board's serial port, then click Connect (连接)" width="480">
+
+   The screenshots show an S3 example. Select your actual device's port; it does not need to be `COM42`.
+
+3. Click **Add File** and add only the `*-full-16MB.bin` for your board. Set **Flash Address to `0x0`** (the pictured `0` is equivalent) and Flash Mode, Flash Frequency, and Flash Size to **`keep`**. There is no need to click **Erase Flash** separately.
+
+   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-program.png" alt="Choose the full 16 MB BIN, set address 0 and all three Flash options to keep, then click Program" width="760">
+
+4. Click **Program** and wait for writing to finish without errors. Then click **Disconnect** and press the board's **RESET/RST** button to restart it.
+
+- **Which serial port?** Unplug and reconnect the board, then select the entry that disappears or appears. Its name may include `USB JTAG/serial debug unit`, `USB Serial`, or `COM…`. Do not select a Bluetooth port.
+- **Connection fails?** Check that the cable supports data transfer. Hold **BOOT**, press and release **RESET**, then release BOOT and retry.
+- **`Serial data stream stopped`?** Try a short data cable without a hub or extension. If it still fails, disconnect, lower **Program → Baudrate** to `115200`, and reconnect before retrying.
 
 ## Step 3: Connect to Wi-Fi
 

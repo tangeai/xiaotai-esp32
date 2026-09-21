@@ -65,12 +65,26 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 
 > 烧录完整 BIN 会清除设备中的配网信息、绑定信息和用户设置，请先备份。
 
-1. 用 USB 数据线连接开发板，关闭占用串口的软件。**P4 接主芯片烧录口，不刷板载 C6。**
-2. 在电脑的 **Chrome/Edge** 中打开[乐鑫在线烧录工具](https://espressif.github.io/esptool-js/)，点击 **Connect**，选择开发板串口。
-3. 点击 **Add File**，选择下载的 `*-full-16MB.bin` 文件，**Flash Address 填 `0x0`**；Flash Mode、Flash Frequency、Flash Size 均选 **`keep`**。
-4. 点击 **Program**。烧录成功后点击 **Disconnect**，按复位键重启设备。
+1. 用短 USB 数据线直连电脑，关闭占用串口的软件。**P4 接主芯片烧录口；板载 C6 负责无线通信，不刷本包。**
+2. 在电脑的 **Chrome/Edge** 中打开[乐鑫在线烧录工具](https://espressif.github.io/esptool-js/)，在 **Program** 区域保留 Baudrate `921600`，点击 **Connect**，选择开发板串口。**Console** 用于查看串口日志，烧录时无需点击 **Start**。
 
-找不到串口时，请检查 USB 线是否支持数据传输。连接失败时，可按住 **BOOT**，按一下 **RESET**，松开 BOOT 后重试。
+   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-connect.png" alt="在 Program 区域点击 Connect，不使用 Console 的 Start" width="760">
+
+   图中 `No port selected` 表示取消了串口选择，重新点击 **Connect** 即可。
+
+   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-port.png" alt="选择开发板对应的串口，再点击连接" width="480">
+
+   图示为 S3，串口号以实际设备为准，不必与图中的 `COM42` 一致。
+
+3. 点击 **Add File**，只添加一个对应板型的 `*-full-16MB.bin`，**Flash Address 填 `0x0`**（图中的 `0` 与 `0x0` 相同）；Flash Mode、Flash Frequency、Flash Size 均选 **`keep`**，无需另点 **Erase Flash**。
+
+   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-program.png" alt="选择完整 16 MB BIN，地址为 0，三项 Flash 参数选 keep，再点击 Program" width="760">
+
+4. 点击 **Program**，等待写入完成且无报错，再点击 **Disconnect**，按开发板的 **RESET/RST** 键重启。
+
+- **串口选哪个？** 拔插开发板，对比列表中消失或新增的一项；名称可能为 `USB JTAG/serial debug unit`、`USB Serial` 或 `COM…`，不要选蓝牙串口。
+- **连接失败？** 确认使用数据线；按住 **BOOT**，按下并松开 **RESET**，再松开 BOOT 后重试。
+- **出现 `Serial data stream stopped`？** 先换短数据线、避开 Hub/延长线；仍失败时，断开连接，将 **Program → Baudrate** 降到 `115200` 后重连重试。
 
 ## 步骤 3：连接 Wi-Fi
 

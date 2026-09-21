@@ -4,7 +4,7 @@
 
 ## 网络与凭据
 
-默认服务发现使用 HTTP，后续使用发现服务返回的地址。随附 TiRTC 2.3.0 库的自研 HTTPS 客户端未验证服务端证书；ESP-IDF 证书包不会自动保护这条链路。
+默认服务发现使用 HTTP，后续使用发现服务返回的地址。当前方案不提供全链路 TLS 认证，ESP-IDF 证书包也不会自动保护 SDK 的自研 HTTP 链路。随附 TiRTC 2.5.0 库的 `httpclt.o` 未引用 TLS 客户端函数；本轮未验证 SDK 的 HTTPS 能力，不能沿用旧库的证书认证结论，也不能仅改 URL 就视为安全升级。
 
 因此，当前默认方案仅适合受控网络评估：令牌、设备凭据和控制消息可能被窃听或篡改。生产部署需分别处理服务发现、API、MQTT 和 SDK 的传输认证。热点配网无密码，应限制开放环境与时间；分享日志前删除密码、token 和设备密钥。
 
@@ -56,10 +56,14 @@ Wi-Fi 配置保存在 `wifi_cfg/credentials`，为一条 99 字节记录：格�
 
 ```text
 third_party/tirtc/lib/libTiRTC.a
-TiRTC: 2.3.0
-size: 8079682 bytes
-SHA-256: 43b06d1da421c7d24cc7fdb1385d600ecdffbfd2d3801f7faf0c540fb5cdbaa2
+TiRTC: 2.5.0 (v2.5.0-9088239c)
+size: 8714728 bytes
+SHA-256: 7334e846ed4261b5297607c85acafe1d586a22374f7c8e37b102b2742e47c7aa
 ```
+
+包身份与逐文件校验见 [VERSION.md](third_party/tirtc/VERSION.md) 和
+[SHA256SUMS.txt](third_party/tirtc/SHA256SUMS.txt)。SDK 同时保留 TGTRP 与 KCP
+传输路径，实际使用哪一种取决于会话协商；Build Info 或双方版本相同不能代替协议日志。
 
 更换源码、SDK、模型或配置后，重新构建并验证受影响路径。同一版本号不能区分未提交改动；报告问题时同时记录 commit、工作树状态和设备 ELF 身份。
 

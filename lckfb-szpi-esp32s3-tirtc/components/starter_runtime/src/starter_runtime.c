@@ -600,7 +600,7 @@ static void finish_session(int error)
     /* Also invalidates pending external requests / inbound call expectations.
      * No established handle is normal while cancelling a connecting session. */
     (void)starter_tirtc_disconnect();
-    starter_tirtc_accept_h5(platform_client_ready());
+    starter_tirtc_accept_h5(platform_client_ready() && s_voip_profile_ready);
     s_connection_generation = 0;
     s_deadline_ms = 0;
     s_ai_role_id[0] = '\0';
@@ -963,7 +963,9 @@ static void request_voip_profile(void)
      * This const snapshot is not camera health or runtime telemetry. */
     static const char profile[] =
         "{\"profiles\":{"
-        "\"stream\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"stream\":{\"up_audio_streamid\":10,\"up_video_streamid\":11,"
+        "\"down_audio_streamid\":14,\"down_video_streamid\":15,"
+        "\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
         "\"up_video_mt\":[\"mjpeg\"],\"down_video_mt\":[],"
         "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false,"
         "\"camera_rotation\":0,\"hor_mirror\":false,\"vert_mirror\":false,"
@@ -995,7 +997,7 @@ static void request_voip_profile(void)
         ESP_LOGI(TAG, "VoIP profile submission queued");
         ESP_LOGI(TAG, "VoIP profile: video enabled, up=h264 down=mjpeg screen=480x320 camera_rotation=270 aspect_ratio=0.75 mirror=none object_fit=contain");
 #else
-        ESP_LOGI(TAG, "device profile queued api=/v1/device/profile fields=12/12/16 bytes=%u stream=mjpeg/alaw call=alaw voip=alaw",
+        ESP_LOGI(TAG, "device profile queued api=/v1/device/profile fields=16/12/16 bytes=%u stream_tx=10/11 stream_rx=14/15(video=off) call=alaw voip=alaw",
                  (unsigned)(sizeof(profile) - 1));
 #endif
     } else {
@@ -1012,6 +1014,10 @@ static void handle_voip_profile(const runtime_event_t *event)
     if (response_ok(root)) {
         s_voip_profile_ready = true;
         s_voip_profile_retry_at_ms = 0;
+        /* The peer learns our advertised stream IDs from this snapshot. Do not
+         * admit viewing against the old/default IDs before report success. */
+        if (atomic_load(&s_public_state) == STARTER_RUNTIME_WAITING && platform_client_ready())
+            starter_tirtc_accept_h5(true);
 #if CONFIG_IDF_TARGET_ESP32P4
         ESP_LOGI(TAG, "VoIP profile reported; WeChat calling is ready");
 #else
@@ -2000,6 +2006,11 @@ static void handle_connection(const runtime_event_t *event)
     }
 
     if (event->mode == STARTER_TIRTC_H5 && state == STARTER_RUNTIME_WAITING) {
+        if (!s_voip_profile_ready) {
+            ESP_LOGW(TAG, "H5 waiting for device profile registration");
+            finish_session(ESP_ERR_INVALID_STATE);
+            return;
+        }
         /* H5 建连即允许媒体模块启动；实际发送还要等待远端订阅。 */
         s_connection_generation = event->generation;
         s_session_generation++;
@@ -2009,6 +2020,15 @@ static void handle_connection(const runtime_event_t *event)
         atomic_store_explicit(&s_last_error, 0, memory_order_release);
         if (starter_media_start(STARTER_TIRTC_H5, event->generation) != ESP_OK) {
             finish_session(ESP_ERR_INVALID_STATE);
+            return;
+        }
+        /* Receive audio is ready before asking the peer to send. This never
+         * opens our TX gate: the peer must separately subscribe to our stream.
+         * S3 has no video decoder, so do not subscribe to remote video. */
+        int subscribe_ret = starter_tirtc_subscribe_h5_audio(event->generation);
+        if (subscribe_ret < 0) {
+            ESP_LOGE(TAG, "H5 downlink subscription failed: rc=%d", subscribe_ret);
+            finish_session(subscribe_ret);
             return;
         }
         publish_state(STARTER_RUNTIME_H5_ACTIVE);
@@ -3012,9 +3032,8 @@ static void runtime_task(void *argument)
             case EVENT_PLATFORM_ONLINE:
                 if (!platform_client_ready()) break;
                 room_invalidate_assignment();
-                if (atomic_load(&s_public_state) == STARTER_RUNTIME_WAITING)
-                    starter_tirtc_accept_h5(true);
                 /* MQTT token/会话换代后，服务端 profile 必须重新建立。 */
+                starter_tirtc_accept_h5(false);
                 s_voip_profile_ready = false;
                 request_voip_profile();
                 break;

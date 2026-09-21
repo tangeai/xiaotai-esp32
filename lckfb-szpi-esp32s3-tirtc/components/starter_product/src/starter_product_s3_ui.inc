@@ -531,7 +531,7 @@ static void s3_network_text(void)
             platform_client_mqtt_connected() ? "已连接" : "未连接");
     } else if (wifi_manager_provisioning()) {
         (void)snprintf(details, sizeof(details),
-            "热点配网\n\n1. 手机连接热点\n%s（无需密码）\n\n2. 打开配网页\n%s\n\n%s",
+            "热点配网\n\n1. 手机连接热点\n%s（无需密码）\n\n2. 用手机端打开并连接\n%s\n\n%s",
             wifi_manager_provisioning_ssid(), wifi_manager_provisioning_url(),
             wifi_manager_provisioning_status());
     } else if (wifi_manager_manually_disconnected()) {
@@ -575,11 +575,18 @@ static void s3_render_binding(lv_obj_t *screen)
     (void)make_label(screen, "网络已连接", 16, 50, 240, lv_color_hex(S3_ACCENT));
     /* BINDING_CODE_TOP_LEVEL: digits have their own measured, unclipped area. */
     lv_obj_t *code = make_label(screen, s_previous_verification_code[0] ?
-        s_previous_verification_code : "------", 16, 90, 288, lv_color_hex(S3_TEXT));
+        s_previous_verification_code : "------", 16, 82, 288, lv_color_hex(S3_TEXT));
     s3_ui.binding_code = code;
     lv_obj_set_style_text_font(code, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_align(code, LV_TEXT_ALIGN_CENTER, 0);
-    (void)make_label(screen, "在体验平台输入上方 6 位验证码", 16, 166, 288, lv_color_hex(S3_TEXT));
+    (void)make_label(screen, "打开下方网址，输入验证码绑定", 16, 145, 288, lv_color_hex(S3_TEXT));
+    /* Share the configured portal with the binding log; custom deployments
+     * must not send users to a different hard-coded service. */
+    lv_obj_t *portal = make_label(screen, CONFIG_XIAOTAI_PORTAL_URL,
+                                  16, 176, 288, lv_color_hex(S3_ACCENT));
+    lv_obj_set_style_text_font(portal, &lv_font_montserrat_14, 0);
+    lv_label_set_long_mode(portal, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_text_align(portal, LV_TEXT_ALIGN_CENTER, 0);
     s3_ui.binding_hint = make_label(screen, "正在获取验证码…", 16, 202, 288, lv_color_hex(S3_MUTED));
     s3_ui.binding_retry = s3_icon(screen, LV_SYMBOL_REFRESH, 268, 44, 44,
                                 (product_action_t)S3_ACTION_BINDING_RETRY);

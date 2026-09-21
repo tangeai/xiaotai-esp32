@@ -15,6 +15,7 @@ static EXT_RAM_BSS_ATTR struct {
     bool assignment_known;
     bool snapshot_ready;
     bool needs_sync;
+    bool access_denied;
     bool connected_attempt;
     bool mic_announced;
     bool dirty;
@@ -89,6 +90,7 @@ static void room_invalidate_assignment(void)
 {
     ++s_room.notice_revision;
     s_room.needs_sync = true;
+    s_room.access_denied = false;
     s_room.due = now_ms();
 }
 
@@ -296,13 +298,14 @@ static void room_fail(int error)
     if (room_owns_media()) finish_session(error);
     s_room.phase = STARTER_ROOM_ERROR;
     s_room.error = error;
+    s_room.access_denied = error == 40300;
     s_room.retry_due = now_ms() + (error == 40921 ? s_room.lease_ms : 5000);
     if (s_room.retry_due <= now_ms()) s_room.retry_due = now_ms() + 45000;
     ++s_room.retries;
     s_room.needs_sync = true;
     s_room.due = s_room.retry_due;
     s_room.dirty = true;
-    ESP_LOGW(TAG, "ROOM failure code=%d attempt=%u", error, s_room.retries);
+    ESP_LOGW(TAG, "ROOM failure code=%d attempt=%u retry=%d", error, s_room.retries, !s_room.access_denied);
 }
 
 static bool room_audio_profile(const cJSON *object)
@@ -518,7 +521,12 @@ static void room_apply_assignment(const cJSON *data)
     strcpy(s_room.room_code, code);
     s_room.needs_sync = false;
     s_room.due = now_ms() + ROOM_SYNC_MS;
-    if (changed) { s_room.retries = 0; s_room.retry_due = 0; s_room.error = 0; }
+    if (changed || s_room.error == 40300) {
+        s_room.access_denied = false;
+        s_room.retries = 0;
+        s_room.retry_due = 0;
+        s_room.error = 0;
+    }
     if (!room_owns_media()) s_room.phase = !assigned ? STARTER_ROOM_EMPTY : !room_app_open() ? STARTER_ROOM_OFFLINE :
         atomic_load(&s_public_state) != STARTER_RUNTIME_WAITING ? STARTER_ROOM_SUSPENDED :
         s_room.error ? STARTER_ROOM_ERROR : STARTER_ROOM_SYNCING;
@@ -676,7 +684,8 @@ static void room_tick(int64_t current_ms)
         s_room.pending = 0; ++s_room.ticket;
         room_http_failure(operation, ESP_ERR_TIMEOUT);
     }
-    if (!room_app_current()) { room_publish(); return; }
+    /* A denial needs a fresh user/platform event, not another timer retry. */
+    if (!room_app_current() || s_room.access_denied) { room_publish(); return; }
     if (atomic_load(&s_public_state) == STARTER_RUNTIME_ROOM_ACTIVE) {
 #if CONFIG_IDF_TARGET_ESP32S3
         starter_media_log_room_audio();
