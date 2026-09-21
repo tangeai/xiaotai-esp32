@@ -18,7 +18,7 @@
 
 1. 按[开发指南](docs/GETTING_STARTED_CN.md#编译与烧录)安装环境，在本目录运行 `idf.py build`，再烧录到 P4。
 2. 手机连接设备显示的 `XiaoTai-XXXX` 开放热点，访问 `http://192.168.6.1`，选择扫描到的 Wi-Fi 并输入密码；已保存网络可直接复用密码。
-3. 设备联网后显示六位验证码。在[平台“我的设备”](https://demo-open.tange-ai.com/devices)中添加设备并填写验证码。
+3. 设备联网后显示六位验证码。在[平台“我的设备”](https://xiaotai.chat/devices)中添加设备并填写验证码。
 4. 完成绑定后，按[功能体验](docs/GETTING_STARTED_CN.md#功能体验)配置 AI、联系人或微信授权，开始通话。
 
 ## 使用范围

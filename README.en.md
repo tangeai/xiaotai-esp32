@@ -36,12 +36,12 @@ Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi**
 
 | Board | Full BIN download (16 MB) | Features |
 | --- | --- | --- |
-| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.2.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.2.0/xiaotai-esp32-s3-app-v1.2.0-full-16MB.bin) | Voice calls, AI voice chat, and browser camera viewing |
-| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.3.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.3.0/xiaotai-esp32-p4-app-v1.3.0-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
+| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.4.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.4.0/xiaotai-esp32-s3-app-v1.4.0-full-16MB.bin) | Voice calls, AI voice chat, and browser camera viewing |
+| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.4.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.4.0/xiaotai-esp32-p4-app-v1.4.0-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
 
-Check the chip revision before flashing: **S3 rev 0.0–0.99 or P4 rev 1.0–1.99**. P4 rev 2.x/3.x is not supported by these images. The chip revision is different from the PCB version. Do not flash S3 firmware onto P4, or vice versa.
+Check the chip revision before flashing: **S3 rev 0.0–0.99 or P4 rev 1.0–1.99**. Other P4 revisions require separate support. The chip revision is different from the PCB version. Do not flash S3 firmware onto P4, or vice versa.
 
-These are **pre-release** images. The **Assets** section of each [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.2.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.3.0) also includes `FLASHING_CN.md`, `SHA256SUMS.txt`, and `release-manifest.json`. The flashing guide is in Chinese. `Source code` is not a flashable image.
+These are **pre-release** images. The **Assets** section of each [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.4.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.4.0) also includes `FLASHING_CN.md`, `SHA256SUMS.txt`, and `release-manifest.json`. The flashing guide is in Chinese. `Source code` is not a flashable image.
 
 <details>
 <summary>Verify downloads and view build records</summary>

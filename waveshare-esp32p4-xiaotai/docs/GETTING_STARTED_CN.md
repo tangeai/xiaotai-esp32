@@ -8,7 +8,7 @@
 
 - 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash，P4 芯片 rev 1.0–1.99。
 - 配套屏幕、触摸、麦克风、扬声器和 OV5647 摄像头。
-- USB 数据线、可联网的 Wi-Fi、手机及[体验平台](https://demo-open.tange-ai.com/)账号。
+- USB 数据线、可联网的 Wi-Fi、手机及[体验平台](https://xiaotai.chat/)账号。
 
 源码已包含 SDK、模型、字体和提示音；首次编译由组件管理器下载其余依赖。版本和文件说明见[版本与依赖](DEPENDENCIES.md)。
 
@@ -101,7 +101,7 @@ IDF 按生成的参数写入 bootloader、分区表和应用。下载模式未�
 
 联网且未绑定时，设备显示“绑定设备”和六位验证码。
 
-1. 手机打开[平台“我的设备”](https://demo-open.tange-ai.com/devices)，登录账号。
+1. 手机打开[平台“我的设备”](https://xiaotai.chat/devices)，登录账号。
 2. 选择“添加设备”，填写设备上的六位验证码。
 3. 按平台提示完成名称和绑定配置。
 
@@ -181,7 +181,7 @@ AI 播放时可以说话打断，结束时表达结束意图。打断、结束�
 | 配置 | 默认值 | 用途 |
 | --- | --- | --- |
 | `CONFIG_XIAOTAI_DISCOVERY_URL` | `http://ep-open.tangeopen.com/services` | 获取平台及各业务服务地址 |
-| `CONFIG_XIAOTAI_PORTAL_URL` | `https://demo-open.tange-ai.com` | 设备上展示的绑定平台地址 |
+| `CONFIG_XIAOTAI_PORTAL_URL` | `https://xiaotai.chat/` | 设备上展示的绑定平台地址 |
 | `CONFIG_XIAOTAI_DEVELOPMENT_CONSOLE` | 关闭 | 串口开发控制台，正常体验无需开启 |
 
 使用默认平台不需要把开发者 AK/SK 写入固件。自建服务需实现发现、绑定、消息和通话接口；仅修改展示地址不会改变 API/MQTT 地址。
