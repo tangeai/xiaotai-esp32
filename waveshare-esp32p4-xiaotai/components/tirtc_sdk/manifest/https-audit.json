@@ -1,0 +1,56 @@
+{
+  "vendor_sha256": "9b4e35c7a2cb203fc463417739199429057c8b036936faa11f844c726455301f",
+  "https_sha256": "6265a3516035cf9921076da0dd637f83f0a9f0e2b4ef8202b20d6100e416ec25",
+  "archive_members": 107,
+  "unchanged_members": 102,
+  "changed_members": [
+    "httpclt.o",
+    "svc.o",
+    "tiRTC.o",
+    "ts_oss.o",
+    "ts_platform.o"
+  ],
+  "ssl0_to_ssl1_changed_members": [
+    "httpclt.o",
+    "svc.o",
+    "tiRTC.o",
+    "ts_oss.o",
+    "ts_platform.o"
+  ],
+  "vendor_to_rebuilt_ssl0_different_members": [
+    "platforms.o",
+    "tiRTC.o"
+  ],
+  "symbols_added": [
+    "MbedTlsConnInit"
+  ],
+  "symbols_removed": [],
+  "new_external_symbols_resolved_in_current_IDF_archives": [
+    "esp_crt_bundle_attach",
+    "mbedtls_ctr_drbg_free",
+    "mbedtls_ctr_drbg_init",
+    "mbedtls_ctr_drbg_random",
+    "mbedtls_ctr_drbg_seed",
+    "mbedtls_entropy_free",
+    "mbedtls_entropy_func",
+    "mbedtls_entropy_init",
+    "mbedtls_net_free",
+    "mbedtls_net_init",
+    "mbedtls_net_recv",
+    "mbedtls_net_send",
+    "mbedtls_ssl_conf_authmode",
+    "mbedtls_ssl_conf_rng",
+    "mbedtls_ssl_config_defaults",
+    "mbedtls_ssl_config_free",
+    "mbedtls_ssl_config_init",
+    "mbedtls_ssl_free",
+    "mbedtls_ssl_handshake",
+    "mbedtls_ssl_init",
+    "mbedtls_ssl_read",
+    "mbedtls_ssl_set_bio",
+    "mbedtls_ssl_set_hostname",
+    "mbedtls_ssl_setup",
+    "mbedtls_ssl_write"
+  ],
+  "note": "No lower transport or platform object replaced. Local HTTPS overlay, not vendor-identical rebuild."
+}

@@ -1,5 +1,6 @@
 """Host-only checks for the portable gate runner; no compiler/device required."""
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -42,6 +43,23 @@ class PortablePoliciesTest(unittest.TestCase):
                 checkers[name].assert_called_once_with(self.context)
                 for other in names - {name}:
                     checkers[other].assert_not_called()
+
+    def test_dependency_update_check_defaults_off_and_preserves_explicit_choice(self):
+        source = (Path(__file__).resolve().parents[1] / "CMakeLists.txt").read_text(encoding="utf-8")
+        prefix = source.split('include($ENV{IDF_PATH}/tools/cmake/project.cmake)', 1)[0]
+        self.assertNotIn("IDF_COMPONENT_MANAGER", prefix)
+        script = self.root / "dependency policy.cmake"
+        script.write_text(prefix + '\nif(NOT "$ENV{IDF_COMPONENT_CHECK_NEW_VERSION}" STREQUAL "${EXPECTED}")\n'
+                          '    message(FATAL_ERROR "Unexpected dependency update policy")\nendif()\n',
+                          encoding="utf-8")
+        for value in (None, "0", "1"):
+            with self.subTest(value=value):
+                env = os.environ.copy()
+                env.pop("IDF_COMPONENT_CHECK_NEW_VERSION", None)
+                if value is not None:
+                    env["IDF_COMPONENT_CHECK_NEW_VERSION"] = value
+                subprocess.run(["cmake", "-DEXPECTED=" + (value or "0"), "-P", str(script)],
+                               env=env, check=True, capture_output=True, text=True)
 
     def test_utf8_bom_crlf_and_non_ascii_paths(self):
         (self.root / "source.c").write_bytes("\ufeff第一行\r\n第二行\r\n".encode("utf-8"))

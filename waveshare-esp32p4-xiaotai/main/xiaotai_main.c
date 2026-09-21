@@ -43,6 +43,7 @@
 
 /* 联调阶段先使用已验证的 HTTP 平台服务发现；HTTPS 留到功能验收后启用。 */
 #define DISCOVERY_URL CONFIG_XIAOTAI_DISCOVERY_URL
+#define TIRTC_SERVICE_ENDPOINT CONFIG_XIAOTAI_TIRTC_SERVICE_ENDPOINT
 #define START_RETRY_DELAY_MS 5000U
 #define STARTER_TASK_STACK_BYTES 13312U
 #define PLATFORM_REQUEST_TASK_STACK_BYTES 13312U
@@ -426,6 +427,7 @@ static void starter_start_task(void *argument)
                 .device_id = s_tirtc_config.device_id,
                 .device_secret = s_tirtc_config.device_secret,
                 .client_id = s_tirtc_config.client_id,
+                .service_endpoint = TIRTC_SERVICE_ENDPOINT,
                 /* 与 TiRTC ESP32 参考工程一致。1 MiB 会在 HTTPS、MQTT、
                  * audio/I2S 已就绪后放大启动期内存压力。 */
 #if CONFIG_IDF_TARGET_ESP32P4

@@ -1,0 +1,143 @@
+diff --git a/client/webrtc/tgtrp-media-transport/src/tgtrp/tgtrp_sender.c b/client/webrtc/tgtrp-media-transport/src/tgtrp/tgtrp_sender.c
+index 621a0569..a6efd836 100644
+--- a/client/webrtc/tgtrp-media-transport/src/tgtrp/tgtrp_sender.c
++++ b/client/webrtc/tgtrp-media-transport/src/tgtrp/tgtrp_sender.c
+@@ -2974,13 +2974,83 @@ static int process_stream_bwe_feedback(
+     return r;
+ }
+ 
++/* Keep ACK/NACK decode storage off the synchronous BWE callback stack. */
++#if defined(_MSC_VER)
++#define TGTRP_FEEDBACK_NOINLINE __declspec(noinline)
++#elif defined(__GNUC__) || defined(__clang__)
++#define TGTRP_FEEDBACK_NOINLINE __attribute__((noinline))
++#else
++#define TGTRP_FEEDBACK_NOINLINE
++#endif
++
++static TGTRP_FEEDBACK_NOINLINE int sender_input_frame_ack(tgtrp_sender_t* sender,
++                                                         const uint8_t* data,
++                                                         size_t size,
++                                                         uint32_t now_ms)
++{
++    tgtrp_protocol_frame_ack_t frame_ack;
++    int r;
++
++    if (size < TGTRP_PROTOCOL_FRAME_ACK_HEADER_SIZE) {
++        APP_LOG_ERROR("tgtrp recv-ack bad-size size=%zu min_header=%u",
++                      size,
++                      (unsigned)TGTRP_PROTOCOL_FRAME_ACK_HEADER_SIZE);
++        return TGTRP_OK;
++    }
++    r = tgtrp_protocol_decode_frame_ack(data, size, &frame_ack);
++    if (r != TGTRP_OK) {
++        APP_LOG_ERROR("tgtrp recv-ack invalid size=%zu r=%d", size, r);
++        return TGTRP_OK;
++    }
++    sender->feedback_ack_packets_received++;
++    APP_LOG_INFO("tgtrp recv-ack feedback_seq=%u kind=%u stream=%u frame_id=%u "
++                   "ack_delay_ms=%u item_count=%u sample_count=%u now_ms=%u",
++                   (unsigned)frame_ack.feedback_seq, (unsigned)frame_ack.kind,
++                   (unsigned)frame_ack.stream_id, (unsigned)frame_ack.frame_id,
++                   (unsigned)frame_ack.ack_delay_ms,
++                   (unsigned)frame_ack.item_count,
++                   (unsigned)frame_ack.sample_count,
++                   (unsigned)now_ms);
++    return process_frame_ack(sender, &frame_ack, now_ms);
++}
++
++static TGTRP_FEEDBACK_NOINLINE int sender_input_frame_nack(tgtrp_sender_t* sender,
++                                                          const uint8_t* data,
++                                                          size_t size,
++                                                          uint32_t now_ms)
++{
++    tgtrp_protocol_frame_nack_t frame_nack;
++    int r;
++
++    if (size < TGTRP_PROTOCOL_FRAME_NACK_HEADER_SIZE) {
++        APP_LOG_ERROR("tgtrp recv-nack bad-size size=%zu min_header=%u",
++                      size,
++                      (unsigned)TGTRP_PROTOCOL_FRAME_NACK_HEADER_SIZE);
++        return TGTRP_OK;
++    }
++    r = tgtrp_protocol_decode_frame_nack(data, size, &frame_nack);
++    if (r != TGTRP_OK) {
++        APP_LOG_ERROR("tgtrp recv-nack invalid size=%zu r=%d", size, r);
++        return TGTRP_OK;
++    }
++    sender->feedback_nack_packets_received++;
++    APP_LOG_INFO("tgtrp recv-nack feedback_seq=%u kind=%u stream=%u "
++                   "item_count=%u min_recv_frame_id=%u now_ms=%u",
++                   (unsigned)frame_nack.feedback_seq, (unsigned)frame_nack.kind,
++                   (unsigned)frame_nack.stream_id,
++                   (unsigned)frame_nack.item_count,
++                   (unsigned)frame_nack.min_receivable_frame_id,
++                   (unsigned)now_ms);
++    return process_frame_nack(sender, &frame_nack, now_ms);
++}
++
++#undef TGTRP_FEEDBACK_NOINLINE
++
+ int tgtrp_sender_input_feedback(tgtrp_sender_t* sender,
+                                  const uint8_t* data,
+                                  size_t size,
+                                  uint32_t now_ms)
+ {
+-    tgtrp_protocol_frame_ack_t frame_ack;
+-    tgtrp_protocol_frame_nack_t frame_nack;
+     tgtrp_stream_bwe_feedback_t stream_bwe_feedback;
+     size_t min_feedback_size = TGTRP_PACKET_MAGIC_SIZE + 2u;
+     uint16_t packet_magic;
+@@ -3025,50 +3095,11 @@ int tgtrp_sender_input_feedback(tgtrp_sender_t* sender,
+     }
+ 
+     if (data[3] == TGTRP_PACKET_TYPE_FRAME_ACK) {
+-        if (size < TGTRP_PROTOCOL_FRAME_ACK_HEADER_SIZE) {
+-            APP_LOG_ERROR("tgtrp recv-ack bad-size size=%zu min_header=%u",
+-                          size,
+-                          (unsigned)TGTRP_PROTOCOL_FRAME_ACK_HEADER_SIZE);
+-            return TGTRP_OK;
+-        }
+-        r = tgtrp_protocol_decode_frame_ack(data, size, &frame_ack);
+-        if (r != TGTRP_OK) {
+-            APP_LOG_ERROR("tgtrp recv-ack invalid size=%zu r=%d", size, r);
+-            return TGTRP_OK;
+-        }
+-        sender->feedback_ack_packets_received++;
+-        APP_LOG_INFO("tgtrp recv-ack feedback_seq=%u kind=%u stream=%u frame_id=%u "
+-                       "ack_delay_ms=%u item_count=%u sample_count=%u now_ms=%u",
+-                       (unsigned)frame_ack.feedback_seq, (unsigned)frame_ack.kind,
+-                       (unsigned)frame_ack.stream_id, (unsigned)frame_ack.frame_id,
+-                       (unsigned)frame_ack.ack_delay_ms,
+-                       (unsigned)frame_ack.item_count,
+-                       (unsigned)frame_ack.sample_count,
+-                       (unsigned)now_ms);
+-        return process_frame_ack(sender, &frame_ack, now_ms);
++        return sender_input_frame_ack(sender, data, size, now_ms);
+     }
+ 
+     if (data[3] == TGTRP_PACKET_TYPE_FRAME_NACK) {
+-        if (size < TGTRP_PROTOCOL_FRAME_NACK_HEADER_SIZE) {
+-            APP_LOG_ERROR("tgtrp recv-nack bad-size size=%zu min_header=%u",
+-                          size,
+-                          (unsigned)TGTRP_PROTOCOL_FRAME_NACK_HEADER_SIZE);
+-            return TGTRP_OK;
+-        }
+-        r = tgtrp_protocol_decode_frame_nack(data, size, &frame_nack);
+-        if (r != TGTRP_OK) {
+-            APP_LOG_ERROR("tgtrp recv-nack invalid size=%zu r=%d", size, r);
+-            return TGTRP_OK;
+-        }
+-        sender->feedback_nack_packets_received++;
+-        APP_LOG_INFO("tgtrp recv-nack feedback_seq=%u kind=%u stream=%u "
+-                       "item_count=%u min_recv_frame_id=%u now_ms=%u",
+-                       (unsigned)frame_nack.feedback_seq, (unsigned)frame_nack.kind,
+-                       (unsigned)frame_nack.stream_id,
+-                       (unsigned)frame_nack.item_count,
+-                       (unsigned)frame_nack.min_receivable_frame_id,
+-                       (unsigned)now_ms);
+-        return process_frame_nack(sender, &frame_nack, now_ms);
++        return sender_input_frame_nack(sender, data, size, now_ms);
+     }
+ 
+     if (data[3] == TGTRP_PACKET_TYPE_STREAM_BWE_FEEDBACK) {

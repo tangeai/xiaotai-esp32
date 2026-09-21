@@ -903,8 +903,9 @@ static void request_device_profile(void)
         return;
     }
     /* One immutable, complete snapshot per scenario. These are product paths,
-     * not the SDK's codec list: all audio is A-law/8k/mono; P4 H5 receives no
-     * video, CALL accepts H264 and VOIP accepts MJPEG (p4_video_submit).
+     * not the SDK's codec list: all audio is A-law/8k/mono; P4 H5 and CALL
+     * receive H264, while VOIP receives MJPEG (p4_video_submit).
+     * Stream IDs are device-relative: up=send 10/11, down=receive 14/15.
      * Constants stay in rodata; the existing PSRAM HTTP pool copies the body. */
 #if CONFIG_IDF_TARGET_ESP32P4
     /* H5 already encodes portrait 960x1280; CALL encodes landscape 384x256.
@@ -915,7 +916,9 @@ static void request_device_profile(void)
     static const char profile[] =
         "{\"profiles\":{"
         "\"stream\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
-        "\"up_video_mt\":[\"h264\"],\"down_video_mt\":[],"
+        "\"up_audio_streamid\":10,\"up_video_streamid\":11,"
+        "\"down_audio_streamid\":14,\"down_video_streamid\":15,"
+        "\"up_video_mt\":[\"h264\"],\"down_video_mt\":[\"h264\"],"
         "\"camera_rotation\":0,\"aspect_ratio\":0.75,"
         "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
         "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false},"
@@ -935,6 +938,8 @@ static void request_device_profile(void)
     static const char profile[] =
         "{\"profiles\":{"
         "\"stream\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"up_audio_streamid\":10,\"up_video_streamid\":11,"
+        "\"down_audio_streamid\":14,\"down_video_streamid\":15,"
         "\"up_video_mt\":[],\"down_video_mt\":[],"
         "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":true},"
         "\"call\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
@@ -1920,6 +1925,15 @@ static void handle_connection(const runtime_event_t *event)
         atomic_store_explicit(&s_last_error, 0, memory_order_release);
         if (starter_media_start(STARTER_TIRTC_H5, event->generation) != ESP_OK) {
             finish_session(ESP_ERR_INVALID_STATE);
+            return;
+        }
+        /* Playback is ready before asking the peer to send talkback. This
+         * subscribes the peer's stream 14; it never enables our stream 10 TX.
+         * Run on the session owner, not inside an SDK connection callback. */
+        int subscribe_ret = starter_tirtc_subscribe_h5_audio(event->generation);
+        if (subscribe_ret < 0) {
+            ESP_LOGW(TAG, "H5 talkback subscribe failed: ret=%d", subscribe_ret);
+            finish_session(subscribe_ret);
             return;
         }
         publish_state(STARTER_RUNTIME_H5_ACTIVE);

@@ -171,7 +171,7 @@ extern "C" {
 #endif
 
 #define TIRTC_VERSION_MAJOR     2
-#define TIRTC_VERSION_MINOR     3
+#define TIRTC_VERSION_MINOR     5
 #define TIRTC_VERSION_PATCH     0
 /* -------------------------------------------------------------------------
  * 错误码
@@ -366,10 +366,29 @@ typedef enum {
     TIRTC_EVENT_ACCESS_HIJACKING,  ///< HTTP 请求被重定向（可能遭受中间人攻击）
 } TIRTCSYSEVENT;
 
+
+#define TIRTC_SLEEP_WAKEUP_MAX_SERVER_COUNT 3 ///< 休眠服务器地址最大个数
+
+/** 服务器地址 */
+typedef struct TIRTC_SLEEP_WAKEUP_SERVER {
+    char host[128];  ///< 服务器，可能IPv4、IPv6地址或域名
+    uint16_t port;   ///< 端口号
+} TIRTC_SLEEP_WAKEUP_SERVER;
+
+/** 休眠心跳信息 */
+typedef struct TIRTC_SLEEP_WAKEUP_INFO {
+    uint32_t login_data_len;  ///< 登录数据长度. 不超过 64 字节
+    uint8_t  login_data[64];  ///< 登录数据，用于验证设备身份，休眠模块与休眠保活服务器建立 TCP 连接后，应立即发送该数据。
+
+    uint32_t server_count;  ///< 有效休眠服务器个数
+    TIRTC_SLEEP_WAKEUP_SERVER servers[TIRTC_SLEEP_WAKEUP_MAX_SERVER_COUNT]; ///< 休眠服务器数组
+} TIRTC_SLEEP_WAKEUP_INFO;
+
+
 /** SDK 回调函数集合，传入 TiRtcStart()。
  *
  * \warning 结构体指针不能指向临时变量，其生命周期须覆盖整个 SDK 运行期间。
- * \warning 所有回调均在 SDK 内部线程中调用，禁止在回调中执行阻塞或耗时操作。
+ * \warning 如果没有特殊说明，回调均在 SDK 内部线程中调用，禁止在回调中执行阻塞或耗时操作。
  */
 typedef struct TIRTCCALLBACKS {
     /** SDK 内部事件回调。
@@ -475,6 +494,12 @@ typedef struct TIRTCCALLBACKS {
     void (*on_update_bitrate)(tirtc_conn_t hconn,
                                         uint8_t stream_id,
                                         uint32_t target_bitrate_bps);
+
+    /** 休眠服务器配置信息, 由用户保存到后面使用.
+     * \param info 指向配置信息。用户要复制出来。
+     * \note 该回调在 TiRtcStart() 内部、调用者线程上同步触发，且仅在服务器下发了休眠信息时触发一次。
+     */
+    void (*on_sleep_wakeup_info)(const TIRTC_SLEEP_WAKEUP_INFO *info);
 } TIRTCCALLBACKS;
 
 /** TiRtcConnect() 的结果回调。
@@ -822,15 +847,6 @@ TiRTC_EXPORT int TiRtcUnsubscribeAudio(tirtc_conn_t hconn, uint8_t stream_id);
  * \addtogroup tirtc_log
  * @{
  */
-
-/** 配置 SDK 内置文件日志（仅 Linux 平台有效）。
- *
- * \param bOutputToConsole 非 0 时同时将日志输出到 stdout
- * \param path 日志文件路径；建议设在 tmpfs 中以减少 Flash 写入。传 NULL 不输出到文件。
- * \param size 日志文件最大字节数，超出后滚动覆盖
- */
-TiRTC_EXPORT void TiRtcLogConfig(int bOutputToConsole, const char *path, uint32_t size);
-
 /** 设置日志详细程度。
  *
  * \param level 日志等级. 1~5 对应 error/warn/ok/info/verbose. 大于10会开启WebRTC底层的日志(很多输出，影响性能)。
@@ -889,7 +905,7 @@ TiRTC_EXPORT int TiRtcWhipAccept(const char *offer, int offer_len,
         TIRTCWHIPSERVERONSDPREADYCB whip_sdp_cb,
         TIRTCCONNECTCALLBACK cb, void *user);
 
-/** WHIP 客户端接口：通过平台信令向目标设备发起连接。
+/** WHIP 客户端接口：通过平台信令向目标服务发起连接。
  *
  * \param service_desc 服务描述符（非设备 id）
  * \param token        (开发者自己的)平台颁发的连接授权凭证（Bearer token）

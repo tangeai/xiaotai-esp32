@@ -11,4 +11,4 @@ uint32_t p4_video_sent(void);
 void p4_video_submit(uint32_t generation, const starter_tirtc_frame_t *frame, const void *data);
 /* Called only on the LVGL task. Owns a copied canvas, not a borrowed frame. */
 void p4_video_ui_reset(void);
-void p4_video_ui_tick(lv_obj_t *screen, bool call_page);
+void p4_video_ui_tick(lv_obj_t *screen, bool video_visible);

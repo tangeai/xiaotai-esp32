@@ -1,6 +1,6 @@
 # S3 开发指南
 
-本指南适用于小钛 S3 1.2.0。按顺序完成编译烧录、热点配网和平台绑定，再体验 AI、设备呼叫、多人对讲、微信和 H5。
+本指南适用于小钛 S3 1.4.0。按顺序完成编译烧录、热点配网和平台绑定，再体验 AI、设备呼叫、多人对讲、微信和 H5。
 
 ## 准备源码与硬件
 
@@ -19,7 +19,7 @@ idf.py --version
 xtensa-esp32s3-elf-gcc --version
 ```
 
-预期 IDF 为 **5.5.4**，Xtensa GCC 为 **14.2.0 / esp-14.2.0_20260121**。本工程使用 TiRTC 2.3.0、LVGL 8.3.11 和 ESP-SR 2.4.7，其他依赖以锁文件为准。
+预期 IDF 为 **5.5.4**，Xtensa GCC 为 **14.2.0 / esp-14.2.0_20260121**。本工程使用 TiRTC 2.5.0、LVGL 8.3.11 和 ESP-SR 2.4.7，其他依赖以锁文件为准。
 
 ### 2. 编译
 
@@ -40,6 +40,11 @@ idf.py build
 
 日常修改只需 `idf.py build`。修改配置使用 `idf.py menuconfig`；已有 `sdkconfig` 优先于 defaults。Windows 构建后检查使用 Python，无需 Bash。Windows 与 WSL 切换时重新生成构建缓存，不共用旧 `build/`。
 
+日常构建按依赖锁执行，默认关闭组件管理器的额外新版提示查询，保留依赖解析、下载与
+校验。主动升级依赖时运行 `idf.py update-dependencies`，审阅锁文件变化后重新验证。
+需要新版提示时，可显式设置环境变量 `IDF_COMPONENT_CHECK_NEW_VERSION=1`；组件管理器
+2.4.9 的该查询可能误报未使用的 LVGL 9 配置缺失，本工程使用锁定的 LVGL 8.3.11。
+
 ### 3. 烧录并查看启动
 
 连接 S3 下载/调试接口，列出串口：
@@ -57,7 +62,7 @@ idf.py -p PORT flash monitor
 
 先确认芯片是 ESP32-S3，再执行烧录。下载失败时，按住 BOOT、按一下复位、松开 BOOT，再重试。退出监视器使用 `Ctrl+]`。
 
-**预期结果：**启动日志显示 `lckfb_szpi_esp32s3_tirtc`、版本 `1.2.0` 和本次 ELF 摘要，屏幕进入配网、绑定或首页。
+**预期结果：**启动日志显示 `lckfb_szpi_esp32s3_tirtc`、版本 `1.4.0` 和本次 ELF 摘要，屏幕进入配网、绑定或首页。
 
 完整烧录使用 IDF 生成的参数。**单独的应用 BIN 不能写到 `0x0`**，当前应用地址为 `0x10000`。相同分区布局下正常烧录会保留 Wi-Fi 和绑定信息；迁入其他固件前先比较[分区表](../partitions.csv)，不要直接整片擦除。
 
@@ -82,6 +87,10 @@ idf.py -p PORT flash monitor
 3. 等待设备收到绑定确认。
 
 **预期结果：**平台列表出现在线设备，设备进入首页。验证码填写在平台，设备端无需输入。
+
+绑定页会显示平台网址，默认 `https://xiaotai.chat/`。自建部署在
+`menuconfig → XiaoTai application → Device binding portal URL` 修改该引导地址，
+它只影响屏幕和日志提示，不改变服务发现或 API 地址。
 
 验证码失败或过期时，点击绑定页右上角重试，使用新验证码。保留 NVS 的已绑定设备会恢复原配置，无需重复绑定，也无需把设备密钥写入源码。
 
@@ -157,7 +166,7 @@ idf.py -p PORT flash monitor
 | 配置 | 用途 |
 | --- | --- |
 | `CONFIG_XIAOTAI_DISCOVERY_URL` | 默认 `http://ep-open.tangeopen.com/services`，获取 API、MQTT 和 TiRTC 地址 |
-| `CONFIG_XIAOTAI_PORTAL_URL` | 默认 `https://xiaotai.chat/`，只改变屏幕显示的绑定网址 |
+| `CONFIG_XIAOTAI_PORTAL_URL` | 默认 `https://xiaotai.chat/`，只改变屏幕和日志中的绑定网址 |
 | `CONFIG_XIAOTAI_DEVELOPMENT_CONSOLE` | 串口开发控制台，默认关闭，正常体验无需开启 |
 
 默认方案用于受控网络评估。生产部署前检查[网络与凭据风险](../KNOWN_LIMITATIONS.md#网络与凭据)，仅改变绑定网址不会改变业务服务地址。

@@ -16,6 +16,7 @@ body = r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdatomic.h>
 typedef enum {STARTER_TIRTC_H5, STARTER_TIRTC_AI, STARTER_TIRTC_CALL, STARTER_TIRTC_VOIP} starter_tirtc_mode_t;
 #define taskENTER_CRITICAL(x) ((void)(x))
@@ -45,7 +46,9 @@ static bool ready;
 static starter_tirtc_mode_t mode;
 static atomic_int s_mode;
 static atomic_bool s_video_subscribed;
+static atomic_uint s_h5_video_rx_generation;
 #define CONFIG_IDF_TARGET_ESP32P4 1
+#define ESP_LOGI(...) ((void)0)
 static bool connection_matches(tirtc_conn_t conn) {return conn == (void*)1;}
 static void on_request_key_frame(tirtc_conn_t conn, uint8_t stream) {
     assert(conn == (void*)1 && stream == 11);
@@ -56,6 +59,7 @@ static uint32_t s_subscribed_generation;
 static int64_t s_last_subscribe_us;
 static atomic_bool s_need_idr;
 static unsigned subscribe_calls;
+static uint8_t last_subscribe_stream;
 static int subscribe_result = 8;
 static unsigned video_request_calls;
 static int video_request_result = 8;
@@ -69,23 +73,29 @@ static uint32_t starter_tirtc_generation(void) { return current_generation; }
 static int64_t esp_timer_get_time(void) { return clock_us; }
 static starter_tirtc_mode_t starter_tirtc_mode(void) { return mode; }
 static bool starter_tirtc_video_ready(void) { return ready; }
-#define H5_VIDEO_STREAM 11
+#define STARTER_H5_UP_VIDEO_STREAM_ID 11
+#define STARTER_H5_DOWN_VIDEO_STREAM_ID 15
+#define H5_VIDEO_STREAM STARTER_H5_UP_VIDEO_STREAM_ID
+#define H5_TALKBACK_VIDEO_STREAM STARTER_H5_DOWN_VIDEO_STREAM_ID
 #define TIRTC_VIDEO_H264 2
 #define TIRTC_FRAME_FLAG_KEY_FRAME 1
 #define TIRTC_E_INVALID_PARAMETER -1
+#define TIRTC_E_INVALID_HANDLE -3
 typedef struct {uint8_t stream_id, media, flags; uint32_t ts, length;} TIRTCFRAMEINFO;
 static TIRTCFRAMEINFO sent;
 static int TiRtcSendVideoStream(tirtc_conn_t c, const TIRTCFRAMEINFO *f, const void *data) {
     assert(c && data); sent = *f; return 7;
 }
 static int TiRtcSubscribeVideo(tirtc_conn_t c, uint8_t stream) {
-    assert(c && stream == 11); ++subscribe_calls; return subscribe_result;
+    assert(c && (stream == 11 || stream == 15));
+    last_subscribe_stream = stream; ++subscribe_calls; return subscribe_result;
 }
 '''
 body += function(video, "void p4_video_set_session(")
 body += function(video, "esp_err_t p4_video_set_camera_enabled(")
 body += function(video, "static void maintain_camera(")
 body += function(sdk, "int starter_tirtc_send_h264(")
+body += function(sdk, "int starter_tirtc_subscribe_h5_video(")
 body += function(sdk, "int starter_tirtc_subscribe_call_video(")
 body += function(sdk, "static int on_subscribe_video(")
 body += function(video, "static void maintain_subscription(")
@@ -125,6 +135,13 @@ int main(void) {
     video_request_result = -1;
     assert(starter_tirtc_subscribe_call_video() == -1);
     video_request_result = 8;
+    mode = STARTER_TIRTC_H5;
+    current_generation = 7;
+    subscribe_calls = 0;
+    assert(starter_tirtc_subscribe_h5_video(7) == 8);
+    assert(last_subscribe_stream == 15 && s_h5_video_rx_generation == 7);
+    assert(starter_tirtc_subscribe_h5_video(7) == 0 && subscribe_calls == 1);
+    s_h5_video_rx_generation = 0;
     /* Transient subscription failure is retried by the owner, at most once/s. */
     subscribe_calls = 0;
     mode = STARTER_TIRTC_CALL;
@@ -151,9 +168,18 @@ int main(void) {
     mode = STARTER_TIRTC_VOIP;
     maintain_subscription();
     assert(subscribe_calls == 3 && s_subscribed_generation == 10 && !s_need_idr);
+    current_generation = 11;
+    atomic_store(&s_live_generation, 11);
+    mode = STARTER_TIRTC_H5;
+    s_subscribed_generation = 0;
+    s_h5_video_rx_generation = 0;
+    clock_us += 2000000;
+    maintain_subscription();
+    assert(subscribe_calls == 4 && last_subscribe_stream == 15 &&
+           s_subscribed_generation == 11 && s_need_idr);
     atomic_store(&s_live_generation, 0);
     maintain_subscription();
-    assert(subscribe_calls == 3);
+    assert(subscribe_calls == 4);
     /* Camera off preserves the live receive session; reopen requests IDR. */
     p4_video_set_session(STARTER_TIRTC_CALL, 20, true);
     atomic_store(&s_live_generation, 20);
@@ -198,6 +224,7 @@ with tempfile.TemporaryDirectory(prefix="xiaotai-p4-video-") as directory:
 callback = function(video, "void p4_video_submit(")
 assert "xQueueSend(s_pending, &slot, 0)" in callback
 assert "memcpy(" in callback
+assert "STARTER_H5_DOWN_VIDEO_STREAM_ID" in callback
 assert "call_video_renderer_submit" not in callback
 assert "vTaskDelay" not in callback and "TiRtc" not in callback
 print("PASS: video generation/stop/idempotence, SDK metadata and nonblocking ingress")

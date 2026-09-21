@@ -4,7 +4,7 @@
 
 | 资产 | 当前来源入口 | 保留要求 |
 | --- | --- | --- |
-| P4 TiRTC SDK | [SDK VERSION](components/tirtc_sdk/VERSION.md) | 2.5.0 供应商包；保留随包说明、构建契约和哈希，未本地重编译或 strip |
+| P4 TiRTC SDK | [SDK VERSION](components/tirtc_sdk/VERSION.md) | 当前库及配套头文件来自 2.5.0 供应商包，未本地重编译或 strip；保留随包 README、构建契约和哈希，不沿用旧 2.3.0 补丁说明 |
 | Voicute 处理代码 | [来源记录](components/starter_voice/vendor/UPSTREAM.md) | 保留来源和代码中的版权 |
 | jsmn 房间快照解析器 | [来源记录](components/starter_runtime/src/vendor/README.md) | MIT；保留头文件中的版权与许可 |
 | 配网页 Lucide 图标 | [图标许可](components/wifi_manager/web/ICONS_LICENSE.txt) | ISC / 部分源自 Feather 的 MIT；页面内嵌，无 CDN 依赖 |

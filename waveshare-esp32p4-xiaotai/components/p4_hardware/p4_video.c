@@ -97,7 +97,7 @@ static void maintain_bitrate(void)
 static void video_health(void)
 {
     uint32_t generation = atomic_load(&s_live_generation);
-    if (!generation || starter_tirtc_mode() == STARTER_TIRTC_H5) return;
+    if (!generation) return;
     int64_t now = esp_timer_get_time();
     if (now < s_health_due_us) return;
     s_health_due_us = now + 5000000;
@@ -158,14 +158,18 @@ static void maintain_subscription(void)
     uint32_t generation = atomic_load(&s_live_generation);
     starter_tirtc_mode_t mode = starter_tirtc_mode();
     if (!generation || generation != starter_tirtc_generation() ||
-        (mode != STARTER_TIRTC_CALL && mode != STARTER_TIRTC_VOIP) ||
-        s_subscribed_generation == generation) return;
+        (mode != STARTER_TIRTC_H5 && mode != STARTER_TIRTC_CALL &&
+         mode != STARTER_TIRTC_VOIP) || s_subscribed_generation == generation) return;
     int64_t now = esp_timer_get_time();
     if (s_last_subscribe_us && now - s_last_subscribe_us < 1000000) return;
     s_last_subscribe_us = now;
-    if (starter_tirtc_subscribe_call_video() >= 0) {
+    int ret = mode == STARTER_TIRTC_H5
+                  ? starter_tirtc_subscribe_h5_video(generation)
+                  : starter_tirtc_subscribe_call_video();
+    if (ret >= 0) {
         s_subscribed_generation = generation;
-        atomic_store(&s_need_idr, mode == STARTER_TIRTC_CALL);
+        atomic_store(&s_need_idr, mode == STARTER_TIRTC_H5 ||
+                                  mode == STARTER_TIRTC_CALL);
     }
 }
 
@@ -177,16 +181,20 @@ static void drain_video(void)
         const starter_tirtc_frame_t *f = &s_ingress[slot].frame;
         if (s_ingress[slot].generation == atomic_load(&s_live_generation)) {
             esp_err_t ret = ESP_ERR_INVALID_STATE;
-            if (starter_tirtc_mode() == STARTER_TIRTC_CALL && f->media == TIRTC_VIDEO_H264)
+            starter_tirtc_mode_t mode = starter_tirtc_mode();
+            if ((mode == STARTER_TIRTC_H5 || mode == STARTER_TIRTC_CALL) &&
+                f->media == TIRTC_VIDEO_H264)
                 ret = call_video_renderer_submit_h264(s_ingress[slot].data, f->length,
                     (f->flags & TIRTC_FRAME_FLAG_KEY_FRAME) != 0, f->timestamp_ms);
-            else if (starter_tirtc_mode() == STARTER_TIRTC_VOIP && f->media == TIRTC_VIDEO_JPEG)
+            else if (mode == STARTER_TIRTC_VOIP && f->media == TIRTC_VIDEO_JPEG)
                 ret = call_video_renderer_submit_mjpeg(s_ingress[slot].data, f->length, f->timestamp_ms);
             if (ret != ESP_OK && f->media == TIRTC_VIDEO_H264) atomic_store(&s_need_idr, true);
         }
         (void)xQueueSend(s_free, &slot, 0);
     }
-    if (atomic_load(&s_live_generation) && starter_tirtc_mode() == STARTER_TIRTC_CALL &&
+    starter_tirtc_mode_t mode = starter_tirtc_mode();
+    if (atomic_load(&s_live_generation) &&
+        (mode == STARTER_TIRTC_H5 || mode == STARTER_TIRTC_CALL) &&
         (atomic_load(&s_need_idr) || call_video_renderer_requires_key_frame()) &&
         esp_timer_get_time() - s_last_idr_us > 1000000) {
         s_last_idr_us = esp_timer_get_time();
@@ -318,7 +326,7 @@ void p4_video_poll(void)
              * before the new worker attempts to acquire that workspace. */
             camera_pipeline_on_rtc_video_config_changed();
         }
-        if (ret == ESP_OK && mode != STARTER_TIRTC_H5)
+        if (ret == ESP_OK)
             ret = call_video_renderer_start_for_codec(mode == STARTER_TIRTC_VOIP
                 ? CALL_VIDEO_CODEC_MJPEG : CALL_VIDEO_CODEC_H264);
         if (ret == ESP_OK) {
@@ -362,11 +370,13 @@ void p4_video_submit(uint32_t generation, const starter_tirtc_frame_t *frame, co
     }
     if (!generation || generation != atomic_load(&s_live_generation) ||
         frame == NULL || data == NULL) return;
-    /* The subscribe/uplink stream ID is not a downlink ID contract: WeChat
-     * delivers JPEG on stream 1. The SDK validates the active connection;
-     * admit by session codec, as device-monitor does, not by stream 11. */
+    /* H5 uses the advertised device-relative downlink stream. Legacy call and
+     * WeChat paths retain their negotiated stream semantics and validate codec. */
     starter_tirtc_mode_t mode = starter_tirtc_mode();
-    if (!((mode == STARTER_TIRTC_VOIP && frame->media == TIRTC_VIDEO_JPEG) ||
+    if (!((mode == STARTER_TIRTC_H5 &&
+           frame->stream_id == STARTER_H5_DOWN_VIDEO_STREAM_ID &&
+           frame->media == TIRTC_VIDEO_H264) ||
+          (mode == STARTER_TIRTC_VOIP && frame->media == TIRTC_VIDEO_JPEG) ||
           (mode == STARTER_TIRTC_CALL && frame->media == TIRTC_VIDEO_H264))) {
         atomic_fetch_add(&s_rx_dropped, 1);
         return;
@@ -394,9 +404,9 @@ void p4_video_submit(uint32_t generation, const starter_tirtc_frame_t *frame, co
 
 void p4_video_ui_reset(void) { s_image = NULL; }
 
-void p4_video_ui_tick(lv_obj_t *screen, bool call_page)
+void p4_video_ui_tick(lv_obj_t *screen, bool video_visible)
 {
-    if (!call_page || !atomic_load(&s_live_generation)) {
+    if (!video_visible || !atomic_load(&s_live_generation)) {
         if (s_image) lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
         return;
     }

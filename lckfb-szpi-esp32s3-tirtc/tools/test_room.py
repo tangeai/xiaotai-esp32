@@ -111,6 +111,7 @@ code += function(media, "uplink_session_current")
 code += function(media, "starter_media_room_ptt")
 code += function(runtime, "copy_json_string")
 code += (ROOT / "components/starter_runtime/src/starter_room.inc").read_text()
+code += function("components/starter_product/src/starter_product_s3_room.inc", "s3_room_state_text")
 code += r'''
 static void finish_session(int error) {
     room_detach(error);s_active=false;s_connection_generation=0;
@@ -164,7 +165,19 @@ int main(void) {
         assert(json_live==0);}
     fail_at=0;
     room_tick(clock_ms);assert(s_room.pending==ROOM_SYNC);
+    response("{\"code\":40300}");
+    assert(s_room.access_denied && s_room.error==40300 && !s_room.pending && !s_active);
+    unsigned denied_requests=requests;
+    for(unsigned i=0;i<12;i++){clock_ms+=5000;room_tick(clock_ms);}
+    assert(requests==denied_requests && s_room.retries==1 && !s_room.generation);
+    starter_room_view_t denied_view;
+    assert(starter_runtime_room_read(0,&denied_view) && denied_view.phase==STARTER_ROOM_ERROR);
+    assert(!strcmp(s3_room_state_text(&denied_view),"请检查设备绑定"));
+    response(assignment);assert(s_room.access_denied && !s_room.assigned);
+    assert(starter_runtime_room_refresh()==0);room_intent(&queued);release_event(&queued);
+    room_tick(clock_ms);assert(s_room.pending==ROOM_SYNC && requests==denied_requests+1);
     response("{\"code\":200,\"data\":{\"desired_state\":\"\",\"assignment_version\":0}}");
+    assert(!s_room.access_denied && !s_room.error && !s_room.retries);
     assert(!s_room.assigned && s_room.phase==STARTER_ROOM_EMPTY);
     assert(starter_runtime_room_join("001234","")==0);room_intent(&queued);release_event(&queued);
     assert(strstr(last_path,"/join") && strstr(last_body,"001234"));
@@ -327,8 +340,40 @@ int main(void) {
     room_apply_app_request();closed_requests=requests;room_intent(&queued);
     assert(requests==closed_requests);release_event(&queued);
     starter_runtime_room_set_open(false);room_tick(clock_ms);
+    starter_runtime_room_set_open(true);room_tick(clock_ms);response(assignment);
+    room_tick(clock_ms);assert(s_room.pending==ROOM_TOKEN);
+    response("{\"code\":40300}");
+    assert(s_room.access_denied && s_room.assigned && !s_active && !room_owns_media());
+    denied_requests=requests;
+    for(unsigned i=0;i<12;i++){clock_ms+=5000;room_tick(clock_ms);}
+    assert(requests==denied_requests && s_room.error==40300);
+    assert(starter_runtime_room_refresh()==0);room_intent(&queued);release_event(&queued);
+    room_tick(clock_ms);response(assignment);
+    assert(!s_room.error && !s_room.access_denied);join();
+    generation=s_room.generation;assert(starter_runtime_room_ptt(generation,true)==0);
+    s_room.heartbeat_due=clock_ms;room_tick(clock_ms);assert(s_room.pending==ROOM_PRESENCE);
+    response("{\"code\":40300}");
+    assert(s_room.access_denied && s_room.assigned && !s_active && !s_room.generation);
+    assert(!uplink_session_current(STARTER_TIRTC_ROOM,generation));
+    denied_requests=requests;closed_disconnects=disconnects;
+    publish_state(STARTER_RUNTIME_AI_ACTIVE);s_active=true;
+    for(unsigned i=0;i<12;i++){clock_ms+=5000;room_tick(clock_ms);}
+    assert(requests==denied_requests && disconnects==closed_disconnects);
+    assert(s_public_state==STARTER_RUNTIME_AI_ACTIVE && s_active);
+    s_active=false;publish_state(STARTER_RUNTIME_WAITING);
+    room_invalidate_assignment();room_tick(clock_ms);assert(s_room.pending==ROOM_SYNC);
+    response("{\"code\":40300}");
+    starter_runtime_room_set_open(false);starter_runtime_room_set_open(true);
+    room_tick(clock_ms);assert(s_room.pending==ROOM_SYNC && !s_room.access_denied);
+    response("{\"code\":40300}");
+    wifi=false;room_tick(clock_ms);wifi=true;room_tick(clock_ms);
+    assert(s_room.pending==ROOM_SYNC && !s_room.access_denied);
+    response("{\"code\":40300}");
+    epoch++;room_tick(clock_ms);assert(s_room.pending==ROOM_SYNC && !s_room.access_denied);
+    response(assignment);join();
+    starter_runtime_room_set_open(false);room_tick(clock_ms);
     assert(json_live==0);assert(disconnects>=4);
-    printf("PASS: Room owner, optional self name, foreground open/close, no background polls, stale-page intents, CRUD, PTT, lease, other-owner isolation\n");
+    printf("PASS: Room owner, optional self name, foreground open/close, no background polls, stale-page intents, CRUD, PTT, lease, other-owner isolation, denial and recovery\n");
     return 0;
 }
 '''

@@ -20,9 +20,15 @@
 extern "C" {
 #endif
 
+/* H5 real-time stream IDs from this device's perspective. */
+#define STARTER_H5_UP_AUDIO_STREAM_ID 10
+#define STARTER_H5_UP_VIDEO_STREAM_ID 11
+#define STARTER_H5_DOWN_AUDIO_STREAM_ID 14
+#define STARTER_H5_DOWN_VIDEO_STREAM_ID 15
+
 typedef enum {
     STARTER_TIRTC_NONE = 0, /**< 当前没有连接。 */
-    STARTER_TIRTC_H5,      /**< H5 入站查看/对讲连接；S3 仅音频。 */
+    STARTER_TIRTC_H5,      /**< H5 入站查看/对讲连接。 */
     STARTER_TIRTC_AI,      /**< AI WHIP 外连，只有音频。 */
     STARTER_TIRTC_VOIP,    /**< 微信 VoIP WHIP 语音连接。 */
     STARTER_TIRTC_CALL,    /**< 设备互呼 P2P 语音连接。 */
@@ -87,6 +93,7 @@ typedef struct {
     const char *device_id;       /**< 已绑定设备 ID，调用 start 时必须有效。 */
     const char *device_secret;   /**< 设备密钥；模块不会打印其内容。 */
     const char *client_id;       /**< TiRTC 客户端 ID。 */
+    const char *service_endpoint; /**< 服务入口地址，NULL/空使用 SDK 默认入口。https 需 SDK 支持。 */
     uint32_t max_send_buffer_bytes; /**< SDK 最大发送缓冲，0 使用 SDK 默认值。 */
     int log_level;               /**< TiRTC 日志级别，非正数使用 3。 */
 } starter_tirtc_config_t;
@@ -147,6 +154,15 @@ int starter_tirtc_send_command(uint32_t command,
 /** 设备身份调用 TiRTC 服务接口；用于微信语音来电拒接。 */
 int starter_tirtc_service_request(const char *path, const char *json_body);
 
+/** H5 接收路径就绪后订阅对端音频 14；不改变本机 10/11 发送许可。
+ * generation 必须匹配当前 H5 连接。返回 >=0 表示 SDK 接受请求，不代表已收到媒体。
+ */
+int starter_tirtc_subscribe_h5_audio(uint32_t generation);
+#if CONFIG_IDF_TARGET_ESP32P4
+/** H5 H264 解码路径就绪后订阅对端视频 15，生命周期约束同音频订阅。 */
+int starter_tirtc_subscribe_h5_video(uint32_t generation);
+#endif
+
 /**
  * 发送 G.711 A-law、8 kHz、16 bit、单声道音频。
  * H5/设备呼叫/微信使用 stream 10，AI/多人对讲使用 stream 1。
@@ -172,7 +188,9 @@ bool starter_tirtc_audio_ready(void);
 #if CONFIG_IDF_TARGET_ESP32P4
 bool starter_tirtc_video_ready(void);
 int starter_tirtc_send_h264(uint32_t timestamp_ms, const void *data, uint32_t length, bool key);
+/** Device/WeChat call subscription keeps its negotiated legacy stream; H5 uses stream 15 above. */
 int starter_tirtc_subscribe_call_video(void);
+/** Requests a key frame on H5 downlink 15 or the active legacy call stream. */
 int starter_tirtc_request_remote_key_frame(void);
 /** P4 video owner registers bounds, then consumes coalesced SDK feedback.
  * Neither the SDK callback nor this adapter reconfigures the encoder. */

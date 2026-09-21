@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 
-#define TGTRP_INTERFACE_VERSION "tagv1.5.11"
+#define TGTRP_INTERFACE_VERSION "tag.v1.5.18"
 
 #define MAX_TGTRP_ADDR_INFO_SIZE 40
 
@@ -17,6 +17,12 @@ typedef void (*tgtrp_log_cb_t)(const char* fmt, va_list args);
  * @brief 监听器句柄，用于服务端监听连接请求
  */
 typedef void* tgtrp_listener;
+
+/**
+ * @brief 监听器Access Token失效回调
+ * @note 回调运行在信令线程，不能阻塞。
+ */
+typedef void (*tgtrp_listener_token_invalid_cb_t)(tgtrp_listener listener, void* context);
 
 /**
  * @brief 连接句柄，代表一个P2P连接
@@ -328,6 +334,7 @@ typedef struct tgtrp_connection_time_stats {
  * @note 异步调用: 非阻塞
  *
  * @param max_snd_buff_size 最大发送缓冲区大小 (字节)。示例: 1024 * 1024 (1MB)
+ * @note TGTRP模式下音频使用高于video/data的拒绝水位，达到后同样停止入队。
  */
 void tgtrp_init(size_t max_snd_buff_size);
 
@@ -376,12 +383,23 @@ tgtrp_listener tgtrp_listener_new(int max_conn_num);
 void tgtrp_listener_set_opt(tgtrp_listener listener, enum TGTRP_LISTENER_OPTION opt, int value);
 
 /**
+ * @brief 设置监听器Access Token失效回调
+ * @details 多个信令服务器同时报告同一Token失效时，同一Token在60秒内只回调一次。
+ * @note 必须在 tgtrp_listen() 前调用；回调运行在信令线程，不能阻塞。
+ *
+ * @param listener 监听器句柄。示例: 由 tgtrp_listener_new 返回的指针
+ * @param cb Token失效回调，传NULL表示不注册回调
+ * @param context 用户自定义上下文指针，将传递给回调函数
+ */
+void tgtrp_listener_set_on_token_invalid(tgtrp_listener listener, tgtrp_listener_token_invalid_cb_t cb, void* context);
+
+/**
  * @brief 绑定监听器参数并设置新连接回调
  * @note 异步调用: 非阻塞
  *
  * @param listener 监听器句柄。示例: 由 tgtrp_listener_new 返回的指针
  * @param config_str 配置字符串。示例: "w9bl84KRoLbI1bOi0sD05LDQ4u2FlLi2x9b88YeSrL7A0eI="
- * @param token_str 鉴权Token字符串。示例: "eyJh..."
+ * @param token_str 鉴权Token字符串；允许传空字符串，并通过Token失效回调刷新。示例: "eyJh..."
  * @param device_id 本地设备ID(控制在32字符以内)。示例: "YT4F77V532RR"
  * @param newconn_cb 新连接建立时的回调函数。此回调函数不能阻塞，否则会卡住P2P线程.
  *        - context: 用户传入的上下文
@@ -389,6 +407,18 @@ void tgtrp_listener_set_opt(tgtrp_listener listener, enum TGTRP_LISTENER_OPTION 
  * @param context 用户自定义上下文指针，将传递给回调函数。
  */
 int tgtrp_listener_bind(tgtrp_listener listener, const char* config_str, const char* token_str, const char* device_id, void (*newconn_cb)(void* context, tgtrp_connection pconn), void* context);
+
+/**
+ * @brief 刷新监听器使用的Access Token
+ * @details bind后、listen前调用会更新初始Token；listen后调用会异步更新所有信令连接，
+ *          新Token将在下一次正常心跳中发送，不会强制立即发送心跳。
+ * @note 可以在Token失效回调中调用。关闭监听器开始后不能再调用。
+ *
+ * @param listener 监听器句柄。示例: 由 tgtrp_listener_new 返回的指针
+ * @param token_str 新的非空Access Token，长度不能超过500字节
+ * @return int 0代表已接受，-1代表参数、状态或内存分配失败
+ */
+int tgtrp_listener_refresh_token(tgtrp_listener listener, const char* token_str);
 
 /**
  * @brief 开始监听
@@ -664,7 +694,8 @@ int tgtrp_channel_set_video_bitrate_config(
  * TGTRP模式：
  * - -1：参数非法、Channel/连接状态无效、stream_id冲突、视频frame_type非法或通用失败。
  * - -2：内存分配失败。
- * - -3：发送缓冲区达到上限，当前帧未入队；调用方应稍后重试或执行应用层流控。
+ * - -3：video/data达到普通发送缓冲区拒绝水位，或音频达到更高的拒绝水位，
+ *   当前帧未入队；调用方应稍后重试或执行应用层流控。
  * - -4：TGTRP数据包非法。
  * - -5：当前操作或能力不支持。
  * - -6：TGTRP会话状态不允许当前操作。

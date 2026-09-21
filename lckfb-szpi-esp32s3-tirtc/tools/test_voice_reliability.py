@@ -648,7 +648,10 @@ static bool s_call_waiting_confirm, s_call_outgoing=true;
 static bool s_call_p2p_connected, s_call_wechat;
 static char s_call_room_id[32];
 static unsigned finished, resumed, media_started, ai_sent;
+static unsigned h5_subscriptions;
+static int h5_subscribe_result;
 static bool binding_ready=true;
+static bool s_voip_profile_ready=true;
 static unsigned rejected_connection;
 static bool platform_client_ready(void) { return binding_ready; }
 uint32_t starter_tirtc_generation(void) {return 23;}
@@ -661,6 +664,10 @@ static void send_ai_start(void) { ++ai_sent; }
 static void publish_state(starter_runtime_state_t state) { atomic_store(&s_public_state,state); }
 static esp_err_t starter_media_start(starter_tirtc_mode_t mode,uint32_t gen) {
     (void)mode; (void)gen; ++media_started; return ESP_OK;
+}
+int starter_tirtc_subscribe_h5_audio(uint32_t gen) {
+    assert(gen == s_connection_generation && media_started > 0);
+    ++h5_subscriptions; return h5_subscribe_result;
 }
 int starter_tirtc_send_command(uint32_t command,const void *data,uint32_t length) {
     (void)command;(void)data;(void)length;return 0;
@@ -706,7 +713,7 @@ int main(void) {
     atomic_store(&s_public_state,STARTER_RUNTIME_WAITING);
     e=(runtime_event_t){.mode=STARTER_TIRTC_H5,.generation=22,.flag=true};
     handle_connection(&e);
-    assert(media_started==1 && s_connection_generation==22);
+    assert(media_started==1 && s_connection_generation==22 && h5_subscriptions==1);
     e.flag=false; handle_connection(&e); assert(finished==1);
     binding_ready=false;e.flag=true;e.generation=23;
     handle_connection(&e);assert(rejected_connection==1 && media_started==1);
@@ -717,6 +724,16 @@ int main(void) {
     handle_connection(&e);
     assert(s_call_waiting_confirm && media_started==1 && ai_sent==1);
     /* WeChat must still wait for its separate 0x2000 business confirmation. */
+    assert(h5_subscriptions==1); /* Other protocols must not subscribe H5 IDs. */
+    atomic_store(&s_public_state,STARTER_RUNTIME_WAITING);
+    e=(runtime_event_t){.mode=STARTER_TIRTC_H5,.generation=25,.flag=true};
+    h5_subscribe_result=-7;
+    handle_connection(&e);
+    assert(h5_subscriptions==2 && media_started==2 && finished==2);
+    assert(atomic_load(&s_public_state)==STARTER_RUNTIME_WAITING);
+    s_voip_profile_ready=false;
+    handle_connection(&e);
+    assert(h5_subscriptions==2 && media_started==2 && finished==3);
     return 0;
 }
 '''
@@ -777,6 +794,7 @@ static bool s_call_wechat, s_call_outgoing, s_call_waiting_confirm, s_voip_conne
 static bool s_call_peer_answered, s_call_p2p_connected;
 static atomic_int s_last_error;
 static bool pending=true, connected=false, platform_ready=true, h5_allowed;
+static bool s_voip_profile_ready=true;
 static bool platform_client_ready(void) {return platform_ready;}
 static unsigned disconnects;
 static void room_detach(int error) {(void)error;}
@@ -804,6 +822,8 @@ int main(void) {
     assert(!pending && disconnects==2 && h5_allowed);
     platform_ready=false;finish_session(0);
     assert(disconnects==3 && !h5_allowed);
+    platform_ready=true;s_voip_profile_ready=false;finish_session(0);
+    assert(disconnects==4 && !h5_allowed);
     return 0;
 }
 '''

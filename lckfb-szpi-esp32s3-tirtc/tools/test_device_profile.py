@@ -8,6 +8,11 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 source = (root / "components/starter_runtime/src/starter_runtime.c").read_text(encoding="utf-8")
+contract = (root / "components/starter_tirtc/include/starter_tirtc.h").read_text(encoding="utf-8")
+stream_ids = {name.lower() + "_streamid": int(value) for name, value in
+              re.findall(r"#define STARTER_H5_(UP_AUDIO|UP_VIDEO|DOWN_AUDIO|DOWN_VIDEO)_STREAM_ID (\d+)", contract)}
+assert stream_ids == {"up_audio_streamid": 10, "up_video_streamid": 11,
+                      "down_audio_streamid": 14, "down_video_streamid": 15}
 platform = (root / "components/platform_client/src/platform_client.c").read_text(encoding="utf-8")
 body_limit = int(re.search(r"#define PLATFORM_REQUEST_BODY_MAX\s+(\d+)", platform)[1])
 match = re.search(r"static void request_voip_profile\(void\)\s*\{.*?\n\}", source, re.S)
@@ -77,7 +82,12 @@ with tempfile.TemporaryDirectory(prefix="s3-profile-") as tmp:
                      "down_audio_mt", "down_video_rotation", "video_res_mode", "calling_timeout_sec"}
     assert len(stream_call) == 12 and len(voip) == 16
     for name, profile in profiles.items():
-        assert set(profile) == (voip if name == "voip" else stream_call)
+        fields = voip if name == "voip" else stream_call
+        if name == "stream":
+            fields = fields | set(stream_ids)
+            for key, value in stream_ids.items():
+                assert type(profile[key]) is int and profile[key] == value
+        assert set(profile) == fields
         assert all(value is not None for value in profile.values())
         for field in ("audio_rate", "audio_channels", "camera_rotation"):
             assert type(profile[field]) is int
@@ -103,5 +113,5 @@ with tempfile.TemporaryDirectory(prefix="s3-profile-") as tmp:
     assert profiles["voip"]["down_video_rotation"] == 0
     assert profiles["voip"]["video_res_mode"] == "auto"
     assert profiles["voip"]["calling_timeout_sec"] == 30
-print(f"PASS: device profile 12/12/16 fields, types, {payload_bytes}/{body_limit} bytes, "
+print(f"PASS: device profile 16/12/16 fields, stream IDs, types, {payload_bytes}/{body_limit} bytes, "
       "codec contract, online/inflight gate, retry snapshot")

@@ -12,6 +12,8 @@
 components/tirtc_sdk/include/** -text -whitespace
 components/tirtc_sdk/VERSION.md -text -whitespace
 components/tirtc_sdk/SHA256SUMS.txt -text -whitespace
+components/tirtc_sdk/BUILD_EVIDENCE.md -text -whitespace
+components/tirtc_sdk/manifest/** -text -whitespace
 
 # Preserve third-party source as delivered while keeping whitespace checks strict
 # for application code and release documentation.

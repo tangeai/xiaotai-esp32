@@ -18,6 +18,10 @@ common_fields = {
     "vert_mirror", "no_video", "aspect_ratio", "object_fit",
 }
 codec_fields = {"up_audio_mt", "down_audio_mt", "up_video_mt", "down_video_mt"}
+stream_ids = {
+    "up_audio_streamid": 10, "up_video_streamid": 11,
+    "down_audio_streamid": 14, "down_video_streamid": 15,
+}
 voip_fields = (common_fields | codec_fields | {
     "down_video_rotation", "screen_width", "screen_height",
     "video_res_mode", "calling_timeout_sec",
@@ -33,15 +37,17 @@ for snapshot in snapshots:
         assert (profile["audio_rate"], profile["audio_channels"]) == (8000, 1)
         assert isinstance(profile["up_video_mt"], list)
         assert isinstance(profile["down_video_mt"], list)
-        assert set(profile) <= common_fields | codec_fields
+        allowed = common_fields | codec_fields | (set(stream_ids) if scene == "stream" else set())
+        assert set(profile) <= allowed
+        if scene == "stream":
+            assert {key: profile[key] for key in stream_ids} == stream_ids
     assert set(snapshot["profiles"]["voip"]) <= voip_fields
-    assert snapshot["profiles"]["stream"]["down_video_mt"] == []
 
 p4_scenes, voice_scenes = (item["profiles"] for item in snapshots)
-assert p4_scenes["stream"]["up_video_mt"] == ["h264"]
+assert p4_scenes["stream"]["up_video_mt"] == p4_scenes["stream"]["down_video_mt"] == ["h264"]
 assert p4_scenes["call"]["up_video_mt"] == p4_scenes["call"]["down_video_mt"] == ["h264"]
 for scene in ("stream", "call"):
-    assert set(p4_scenes[scene]) == common_fields | codec_fields
+    assert set(p4_scenes[scene]) == common_fields | codec_fields | (set(stream_ids) if scene == "stream" else set())
     assert p4_scenes[scene]["camera_rotation"] == 0
     assert p4_scenes[scene]["hor_mirror"] is False
     assert p4_scenes[scene]["vert_mirror"] is False
@@ -79,7 +85,21 @@ assert 'PLATFORM_SERVICE_DEVICE, "/v1/device/profile", profile' in source
 assert "/v1/voip/device/profile" not in source
 assert "EVENT_VOIP_PROFILE" not in source
 assert "event.platform_epoch != platform_client_epoch()" in source
+header = (root / "components/starter_tirtc/include/starter_tirtc.h").read_text(encoding="utf-8")
+for field, constant in (("up_audio_streamid", "STARTER_H5_UP_AUDIO_STREAM_ID"),
+                        ("up_video_streamid", "STARTER_H5_UP_VIDEO_STREAM_ID"),
+                        ("down_audio_streamid", "STARTER_H5_DOWN_AUDIO_STREAM_ID"),
+                        ("down_video_streamid", "STARTER_H5_DOWN_VIDEO_STREAM_ID")):
+    value = re.search(r"^#define\s+" + constant + r"\s+(\d+)U?\s*$", header, re.M)
+    assert value and int(value.group(1)) == stream_ids[field]
+connection = source[source.index("static void handle_connection("):]
+connection = connection[:connection.index("\n}")]
+assert connection.index("starter_media_start(STARTER_TIRTC_H5") < connection.index("starter_tirtc_subscribe_h5_audio(")
+assert connection.index("starter_tirtc_subscribe_h5_audio(") < connection.index("publish_state(STARTER_RUNTIME_H5_ACTIVE)")
+p4_video = (root / "components/p4_hardware/p4_video.c").read_text(encoding="utf-8")
+assert "starter_tirtc_subscribe_h5_video(generation)" in p4_video
+assert "mode == STARTER_TIRTC_H5 || mode == STARTER_TIRTC_CALL" in p4_video
 renderer = (root / "main/services/call_video_renderer.c").read_text(encoding="utf-8")
 assert re.search(r"video_frame_rotation_t display_rotation\s*=\s*VIDEO_FRAME_ROTATION_CLOCKWISE_90;", renderer)
 assert "rotation=cw90 source_rotation=not-signaled" in renderer
-print("PASS: complete stream/call/voip fields; geometry matches encoder profiles; WeChat defaults preserved")
+print("PASS: complete stream/call/voip fields; H5 stream IDs and subscribe order; geometry and WeChat defaults preserved")

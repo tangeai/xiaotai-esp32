@@ -1,12 +1,12 @@
 # 版本与依赖
 
-本页用于核对编译环境、配置和随附资源。首次使用见[开发指南](GETTING_STARTED_CN.md)，本版功能见[变更记录](../CHANGELOG.md)。
+本页用于核对编译环境、配置和随附资源。首次使用见[开发指南](GETTING_STARTED_CN.md)，本版功能见[版本记录](../RELEASE_NOTES.md)。
 
 ## 版本要求
 
 | 项目 | 版本或位置 |
 | --- | --- |
-| 应用 | `1.3.0`，项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
+| 应用 | `1.4.0`，项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
 | 开发板 | Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash |
 | 芯片修订 | 默认镜像接受 P4 rev 1.0–1.99；其他修订需另行适配 |
 | 开发环境 | ESP-IDF 5.5.4，riscv32-esp-elf 14.2.0_20260121 |

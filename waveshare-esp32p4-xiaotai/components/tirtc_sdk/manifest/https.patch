@@ -1,0 +1,85 @@
+diff --git a/TiCommon/httpclt/httpclt.c b/TiCommon/httpclt/httpclt.c
+index 300e1f4..7fa15e3 100644
+--- a/TiCommon/httpclt/httpclt.c
++++ b/TiCommon/httpclt/httpclt.c
+@@ -33,6 +33,12 @@ static SSL_CTX* ssl_ctx;
+ #include <mbedtls/entropy.h>
+ #include <mbedtls/ctr_drbg.h>
+ #include <mbedtls/debug.h>
++#if defined(__ESP32S3__) || defined(__ESP32P4__)
++#include "esp_crt_bundle.h"
++#if !CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
++#error "TiRTC HTTPS requires the ESP-IDF certificate bundle"
++#endif
++#endif
+ 
+ typedef struct _tagMBedTlsSession {
+     mbedtls_ssl_config conf;
+@@ -631,9 +637,16 @@ int MbedTlsConnInit(TCPCONN *conn, int sock, const char *host)
+     if(!tls)   /* 分配失败：后续解引用即崩溃，须失败关闭 */
+     {
+         _err("MbedTlsSession alloc failed\n");
++#if defined(__ESP32S3__) || defined(__ESP32P4__)
++        SA_SocketClose(sock);
++#endif
+         return -1;
+     }
+     mbedtls_net_init( &tls->net_ctx);
++#if defined(__ESP32S3__) || defined(__ESP32P4__)
++    /* The TLS context owns the socket, including every handshake failure. */
++    tls->net_ctx.fd = sock;
++#endif
+     mbedtls_ssl_init( &tls->ssl );
+     mbedtls_ssl_config_init( &tls->conf );
+     mbedtls_ctr_drbg_init( &tls->ctr_drbg );
+@@ -657,7 +670,17 @@ int MbedTlsConnInit(TCPCONN *conn, int sock, const char *host)
+         _err(" failed ! mbedtls_ssl_config_defaults returned %d\n\n", err);
+         goto failed_out;
+     }
++#if defined(__ESP32S3__) || defined(__ESP32P4__)
++    mbedtls_ssl_conf_authmode( &tls->conf, MBEDTLS_SSL_VERIFY_REQUIRED );
++    if ((err = esp_crt_bundle_attach(&tls->conf)) != 0)
++    {
++        _err("esp_crt_bundle_attach failed: %d\n", err);
++        ret = CONN_E_SSL;
++        goto failed_out;
++    }
++#else
+     mbedtls_ssl_conf_authmode( &tls->conf, MBEDTLS_SSL_VERIFY_NONE );
++#endif
+     mbedtls_ssl_conf_rng( &tls->conf, mbedtls_ctr_drbg_random, &tls->ctr_drbg );
+ #ifndef __NO_FS__
+     mbedtls_ssl_conf_dbg( &tls->conf, my_debug, stdout );
+@@ -681,7 +704,16 @@ int MbedTlsConnInit(TCPCONN *conn, int sock, const char *host)
+         _err(" failed ! mbedtls_ssl_setup returned %d\n\n", err );
+         goto failed_out;
+     }
++#if defined(__ESP32S3__) || defined(__ESP32P4__)
++    if (!host || !*host || (err = mbedtls_ssl_set_hostname(&tls->ssl, host)) != 0)
++    {
++        _err("TLS hostname setup failed\n");
++        ret = CONN_E_SSL;
++        goto failed_out;
++    }
++#else
+     mbedtls_ssl_set_hostname( &tls->ssl, host); //host can be NULL for TLS Server 1
++#endif
+     mbedtls_ssl_set_bio( &tls->ssl, &tls->net_ctx, mbedtls_net_send, mbedtls_net_recv, NULL );
+ 
+     while( ( err = mbedtls_ssl_handshake( &tls->ssl ) ) != 0 )
+@@ -730,6 +762,10 @@ void TcpConnClose(TCPCONN *conn)
+             mbedtls_ctr_drbg_free( &tls->ctr_drbg );
+             mbedtls_entropy_free( &tls->entropy );
+             mbedtls_net_free( &tls->net_ctx);
++#if defined(__ESP32S3__) || defined(__ESP32P4__)
++            /* mbedtls_net_free already closed this descriptor. */
++            conn->sock = SA_INVALID_SOCKET;
++#endif
+             mbedtls_ssl_free( &tls->ssl );
+             My_free(tls);
+             conn->ssl_session = NULL;
+@@ -2342,4 +2378,3 @@ char* http_util_bin2hex(const unsigned char *bin, int len, char *hex, int is_cap
+     *h++ = '\0';
+     return hex;
+ }
+-

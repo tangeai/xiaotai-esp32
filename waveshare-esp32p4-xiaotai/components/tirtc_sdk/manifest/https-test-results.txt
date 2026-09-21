@@ -1,0 +1,2 @@
+PASS: TLS allocation/seed/config/CA/setup/hostname/handshake failure cleanup; verified-auth setup; single socket close; plain HTTP close
+PASS: P4 IDF5.5.4 / 1000Hz / trace-off / StaticSemaphore_t=84; HTTP connection layout rebuilt for SSL

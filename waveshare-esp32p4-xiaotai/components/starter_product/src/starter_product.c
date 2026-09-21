@@ -1218,6 +1218,7 @@ static void render_call(lv_obj_t *screen)
 #if CONFIG_IDF_TARGET_ESP32P4
     s_call_camera_button = make_button(screen, "关摄像头", 116, 184, 88, 42,
                                        ACTION_CALL_CAMERA);
+    lv_obj_set_style_radius(s_call_camera_button, LV_RADIUS_CIRCLE, 0);
 #endif
     refresh_call_controls(runtime, &product);
 }
@@ -1488,8 +1489,11 @@ static void product_video_tick(lv_timer_t *timer)
 {
     (void)timer;
     /* Keep presentation on the LVGL thread, independent of the 100 ms
-     * business refresh. No new task/stack and no work when video is idle. */
-    p4_video_ui_tick(lv_scr_act(), s_page == PAGE_CALL);
+     * business refresh. H5 downlink is rendered behind the current page while
+     * the call page uses the same canvas for device/WeChat video. */
+    starter_runtime_status_t runtime = starter_runtime_status();
+    p4_video_ui_tick(lv_scr_act(), s_page == PAGE_CALL ||
+                                   runtime.state == STARTER_RUNTIME_H5_ACTIVE);
 }
 #endif
 

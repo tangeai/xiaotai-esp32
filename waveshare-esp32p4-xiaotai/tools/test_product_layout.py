@@ -115,7 +115,8 @@ with tempfile.TemporaryDirectory(prefix="p4-layout-") as directory:
 assert '"视频通话", 330' not in source
 assert "lv_obj_set_pos(s_wifi_signal, LCD_H_RES" not in source
 video_tick = source[source.index("static void product_video_tick("):source.index("static void product_tick(")]
-assert "p4_video_ui_tick(lv_scr_act(), s_page == PAGE_CALL)" in video_tick
+assert "s_page == PAGE_CALL ||" in video_tick
+assert "runtime.state == STARTER_RUNTIME_H5_ACTIVE" in video_tick
 assert source.count("p4_video_ui_tick(") == 1
 assert "lv_timer_create(product_tick, 100, NULL)" in source
 assert "lv_timer_create(product_video_tick, 10, NULL)" in source
@@ -180,7 +181,7 @@ video_page = video_page[:video_page.index('\n}\n')]
 assert 's3_render_call(screen);' in video_page
 assert 'ACTION_CALL_CAMERA' in video_page
 assert 'refresh_call_controls(runtime, &product);' in video_page
-assert 'p4_video_ui_tick(lv_scr_act(), s_page == PAGE_CALL);' in source
+assert 'runtime.state == STARTER_RUNTIME_H5_ACTIVE' in source
 assert 'append_ai_history' not in source
 assert 'MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT' in background
 assert 'if (s_p4_home_background.pixels == NULL)' in background

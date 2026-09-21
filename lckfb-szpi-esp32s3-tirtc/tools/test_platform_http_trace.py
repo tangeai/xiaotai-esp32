@@ -128,6 +128,18 @@ int main(void) {
     assert(strcmp(http_api_name("/v1/call/room/secret"), "other") == 0);
     assert(strcmp(http_api_name("http://host?token=secret"), "unknown") == 0);
     assert(strcmp(http_api_name(NULL), "unknown") == 0);
+    const char *room_paths[] = {
+        "/v1/call/group/device/assignment", "/v1/call/group/device/create",
+        "/v1/call/group/device/join", "/v1/call/group/device/leave",
+        "/v1/call/group/device/connect-token", "/v1/call/group/device/presence",
+    };
+    for (size_t i = 0; i < sizeof(room_paths) / sizeof(room_paths[0]); ++i) {
+        char url[160];
+        snprintf(url, sizeof(url), "http://user:secret@host%s?token=secret#private", room_paths[i]);
+        assert(strcmp(http_api_name(url), room_paths[i]) == 0);
+        snprintf(url, sizeof(url), "%s/secret", room_paths[i]);
+        assert(strcmp(http_api_name(url), "other") == 0);
+    }
     puts("HTTP trace: scope, pass-through, failure, timing, wrap and redaction passed");
 }
 '''
@@ -150,6 +162,8 @@ assert event.index('HTTP_EVENT_ON_CONNECTED') < event.index('TCP_NODELAY')
 perform = function(platform, 'static esp_err_t http_request_perform(')
 assert perform.index('platform_http_trace_begin') < perform.index('esp_http_client_perform')
 assert perform.index('esp_http_client_perform') < perform.index('platform_http_trace_end')
+log_result = function(platform, 'static void http_log_result(')
+assert 'strcmp(path, "/v1/call/group/device/assignment") != 0' in log_result.split('return;')[0]
 runtime = (root / 'components/starter_runtime/src/starter_runtime.c').read_text(encoding='utf-8')
 assert 'AI_START_SETTLE_MS' not in runtime
 assert '.received_at_ms = (uint32_t)now_ms()' in runtime

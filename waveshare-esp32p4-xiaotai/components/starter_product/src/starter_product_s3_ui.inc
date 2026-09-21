@@ -556,7 +556,7 @@ static void s3_network_text(void)
             platform_client_mqtt_connected() ? "已连接" : "未连接");
     } else if (wifi_manager_provisioning()) {
         (void)snprintf(details, sizeof(details),
-            "热点配网\n\n1. 手机连接热点\n%s（无需密码）\n\n2. 打开配网页\n%s\n\n%s",
+            "热点配网\n\n1. 手机连接热点\n%s（无需密码）\n\n2. 用手机端打开并连接\n%s\n\n%s",
             wifi_manager_provisioning_ssid(), wifi_manager_provisioning_url(),
             wifi_manager_provisioning_status());
     } else if (wifi_manager_manually_disconnected()) {
@@ -604,8 +604,11 @@ static void s3_render_binding(lv_obj_t *screen)
     s3_ui.binding_code = code;
     lv_obj_set_style_text_font(code, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_align(code, LV_TEXT_ALIGN_CENTER, 0);
-    (void)make_label(screen, "在体验平台输入上方 6 位验证码", 16, 166, 288, lv_color_hex(S3_TEXT));
-    s3_ui.binding_hint = make_label(screen, "正在获取验证码…", 16, 202, 288, lv_color_hex(S3_MUTED));
+    (void)make_label(screen, "打开下方网址，输入上方验证码", 16, 150, 288, lv_color_hex(S3_TEXT));
+    lv_obj_t *website = make_label(screen, "https://xiaotai.chat/",
+                                   16, 176, 288, lv_color_hex(S3_ACCENT));
+    lv_obj_set_style_text_align(website, LV_TEXT_ALIGN_CENTER, 0);
+    s3_ui.binding_hint = make_label(screen, "正在获取验证码…", 16, 210, 288, lv_color_hex(S3_MUTED));
     s3_ui.binding_retry = s3_icon(screen, LV_SYMBOL_REFRESH, 268, 44, 44,
                                 (product_action_t)S3_ACTION_BINDING_RETRY);
     lv_obj_add_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
