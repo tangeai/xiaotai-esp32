@@ -978,25 +978,28 @@ static esp_err_t wifi_apply_fallback_dns(esp_netif_t *station)
     /* Only the fallback slot is ours; never replace DHCP's main/backup.
      * Install before publishing connected so first SNTP/HTTP sees a resolver. */
     err = esp_netif_set_dns_info(station, ESP_NETIF_DNS_FALLBACK, &dns);
-    if (err == ESP_OK) ESP_LOGI(TAG, "Wi-Fi DNS fallback configured: %s", address);
     return err;
 }
 
 static void wifi_log_dns_servers(esp_netif_t *station, const char *stage)
 {
+    char address[ESP_NETIF_DNS_MAX][IPADDR_STRLEN_MAX] = {{0}};
     for (unsigned i = ESP_NETIF_DNS_MAIN; i < ESP_NETIF_DNS_MAX; ++i) {
         esp_netif_dns_info_t dns = {0};
         esp_err_t err = esp_netif_get_dns_info(station, (esp_netif_dns_type_t)i, &dns);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Wi-Fi DNS: stage=%s slot=%u error=%s", stage, i, esp_err_to_name(err));
+            (void)snprintf(address[i], sizeof(address[i]), "err:%d", (int)err);
         } else if (dns.ip.type == ESP_IPADDR_TYPE_V6) {
-            ESP_LOGI(TAG, "Wi-Fi DNS: stage=%s slot=%u addr=" IPV6STR,
-                     stage, i, IPV62STR(dns.ip.u_addr.ip6));
+            (void)snprintf(address[i], sizeof(address[i]), IPV6STR,
+                           IPV62STR(dns.ip.u_addr.ip6));
         } else {
-            ESP_LOGI(TAG, "Wi-Fi DNS: stage=%s slot=%u addr=" IPSTR,
-                     stage, i, IP2STR(&dns.ip.u_addr.ip4));
+            (void)snprintf(address[i], sizeof(address[i]), IPSTR,
+                           IP2STR(&dns.ip.u_addr.ip4));
         }
     }
+    ESP_LOGI(TAG, "NET dns %s 0/1/2=%s/%s/%s", stage,
+             address[ESP_NETIF_DNS_MAIN], address[ESP_NETIF_DNS_BACKUP],
+             address[ESP_NETIF_DNS_FALLBACK]);
 }
 
 static void wifi_event(void *argument,

@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_VER "1.4.1")
+# Dependencies are pinned. The optional update probe in Component Manager 2.4.9
+# misreads LVGL 8 optional Kconfig symbols on a normal Windows reconfigure.
+# Keep dependency resolution enabled; skip only that probe for this project.
+if(NOT DEFINED ENV{IDF_COMPONENT_CHECK_NEW_VERSION})
+    set(ENV{IDF_COMPONENT_CHECK_NEW_VERSION} "0")
+endif()
+
+set(PROJECT_VER "1.5.0")
 # This Kconfig is loaded through starter_voice's rsource. Track it explicitly
 # so incremental Ninja builds regenerate sdkconfig.h when its options change.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -18,11 +25,22 @@ xiaotai_prepare_dependency_lock("${CMAKE_CURRENT_LIST_DIR}" "${CMAKE_BINARY_DIR}
 idf_build_set_property(DEPENDENCIES_LOCK "${CMAKE_BINARY_DIR}/dependencies.lock")
 project(xiaotai_esp32p4)
 
-include(${CMAKE_CURRENT_LIST_DIR}/components/starter_voice/conv_channels.cmake)
-idf_component_get_property(tflm_lib espressif__esp-tflite-micro COMPONENT_LIB)
-idf_component_get_property(tflm_dir espressif__esp-tflite-micro COMPONENT_DIR)
-xiaotai_fix_conv_channels(${tflm_lib} "${tflm_dir}"
-    "${CMAKE_BINARY_DIR}/p4_tflm")
+# This branch produces firmware for v3.x silicon only. Never reuse a cached
+# rev1 sdkconfig or flash its output to a rev1 board.
+if(CONFIG_ESP32P4_SELECTS_REV_LESS_V3 OR
+   NOT CONFIG_ESP32P4_REV_MIN_FULL EQUAL 301 OR
+   NOT CONFIG_ESP32P4_REV_MAX_FULL EQUAL 399 OR
+   NOT CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ EQUAL 400 OR
+   CONFIG_HAL_WDT_USE_ROM_IMPL)
+    message(FATAL_ERROR
+        "P4 rev3.2 validation requires rev3.1-3.99, 400 MHz and non-ROM WDT. "
+        "Current sdkconfig: min=${CONFIG_ESP32P4_REV_MIN_FULL}, "
+        "max=${CONFIG_ESP32P4_REV_MAX_FULL}, "
+        "cpu=${CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ}, "
+        "rom_wdt=${CONFIG_HAL_WDT_USE_ROM_IMPL}. "
+        "A previous branch's ignored sdkconfig/build cache cannot be reused; "
+        "preserve it separately and regenerate this branch's configuration.")
+endif()
 
 # This Hosted port selects SDR flags. IDF 5.5.4 reserves 50000 for DDR50 and
 # rejects it before probing the C6. Check the effective config, not defaults.

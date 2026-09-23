@@ -78,6 +78,7 @@ static atomic_uint s_h5_audio_rx_generation;
 #if CONFIG_IDF_TARGET_ESP32P4
 static atomic_uint s_h5_video_rx_generation;
 static atomic_bool s_video_subscribed;
+static atomic_uint s_h5_video_rejected;
 static portMUX_TYPE s_bitrate_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_bitrate_generation;
 static uint32_t s_bitrate_target;
@@ -109,6 +110,7 @@ static void clear_subscriptions(void)
 #if CONFIG_IDF_TARGET_ESP32P4
     atomic_store_explicit(&s_h5_video_rx_generation, 0, memory_order_release);
     atomic_store_explicit(&s_video_subscribed, false, memory_order_release);
+    atomic_store_explicit(&s_h5_video_rejected, 0, memory_order_release);
     taskENTER_CRITICAL(&s_bitrate_lock);
     s_bitrate_generation = 0;
     s_bitrate_target = 0;
@@ -512,6 +514,15 @@ static void on_video(tirtc_conn_t connection,
          frame->media != TIRTC_VIDEO_H264 || generation == 0U ||
          generation != atomic_load_explicit(&s_h5_video_rx_generation,
                                              memory_order_acquire))) {
+        unsigned rejected = atomic_fetch_add_explicit(&s_h5_video_rejected, 1,
+                                                       memory_order_relaxed) + 1U;
+        if (rejected <= 3U || rejected % 300U == 0U) {
+            ESP_LOGW(TAG, "H5 video rejected: gen=%lu stream=%u media=%u len=%lu armed=%lu count=%u",
+                     (unsigned long)generation, (unsigned)frame->stream_id,
+                     (unsigned)frame->media, (unsigned long)frame->length,
+                     (unsigned long)atomic_load_explicit(&s_h5_video_rx_generation,
+                                                         memory_order_relaxed), rejected);
+        }
         return;
     }
     starter_tirtc_frame_t copy = {

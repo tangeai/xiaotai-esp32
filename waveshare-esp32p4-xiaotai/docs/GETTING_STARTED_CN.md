@@ -1,12 +1,12 @@
 # P4 开发指南
 
-本指南适用于小钛 P4 1.4.1。首次体验直接下载 [16 MB 完整包](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.4.1)，按[网页烧录说明](../../README.md#用浏览器烧录)写入，再完成配网和绑定。完整包会清除设备配置，请先备份；需要修改代码时，再看下方编译步骤。
+本指南适用于小钛 P4 `1.5.0`，芯片要求为 **ESP32-P4 rev3.2 及以上**。首次体验直接下载[完整 16 MB 烧录包](../README.md#开始使用)；需要修改代码时，再按下面的步骤编译。
 
 ## 准备源码与硬件
 
 准备完整的 `waveshare-esp32p4-xiaotai/` 目录，以及：
 
-- 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash，P4 芯片 rev 1.0–1.99。
+- 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 开发板，P4 rev3.2 及以上，16MB Flash。
 - 配套屏幕、触摸、麦克风、扬声器和 OV5647 摄像头。
 - USB 数据线、可联网的 Wi-Fi、手机及[小钛平台](https://xiaotai.chat/)账号。
 
@@ -44,7 +44,7 @@ idf.py build
 | `build/xiaotai_esp32p4.elf` | 调试和回溯定位 |
 | `build/flasher_args.json` | 本次完整烧录参数 |
 
-SDK、产品链接符号和 I2C 驱动检查也应通过。链接后由 CMake 自动执行 `tools/check_firmware.cmake`，无需额外运行检查脚本。
+SDK、产品链接符号和 I2C 驱动检查也应通过。Windows 构建后处理使用 Python，无需 Bash。
 
 若配置阶段报 `LV_USE_LIBJPEG_TURBO`、`LV_USE_LIBPNG` 或 `LV_USE_LZ4` 缺失，先按[组件版本检查误报](TESTING.md#组件版本检查误报)核对组件管理器版本，不要为此添加虚假的配置项。
 
@@ -66,7 +66,7 @@ Windows 通常为 `COM数字`，Linux 通常为 `/dev/ttyACM数字` 或 `/dev/tt
 python -m esptool --port PORT chip_id
 ```
 
-确认是 ESP32-P4，芯片修订在当前默认镜像接受的 rev 1.0–1.99 范围内。若显示 ESP32-C6，重新选择接口；其他 P4 修订需先适配配置与依赖，不能强制烧录。板卡 PCB 版本与芯片修订是不同的编号。
+确认是 ESP32-P4 rev3.2 及以上。若显示 ESP32-C6，重新选择接口；烧录工具提示不兼容时，停止操作，不要跳过校验。
 
 ### 4. 烧录并查看启动
 
@@ -76,7 +76,7 @@ idf.py -p PORT flash monitor
 
 IDF 按生成的参数写入 bootloader、分区表和应用。下载模式未自动进入时，按板卡 BOOT/RESET 步骤重试。退出日志监视使用 `Ctrl+]`。
 
-启动日志应显示 `xiaotai_esp32p4`、版本 `1.4.1` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
+启动日志应显示 `xiaotai_esp32p4`、版本 `1.5.0` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
 
 **单独的应用 BIN 不能写到 0x0。** 日常使用上述完整烧录命令，保留 NVS 中的 Wi-Fi 和绑定信息。若旧固件分区不同，先比较[分区表](../partitions.csv)，不要直接整片擦除。
 

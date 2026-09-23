@@ -51,6 +51,7 @@
 #include "mbedtls/md.h"
 #include "mbedtls/platform_util.h"
 #include "mqtt_client.h"
+#include "wifi_manager.h"
 
 #define PLATFORM_HTTP_BODY_MAX 8192
 #define PLATFORM_REQUEST_QUEUE_DEPTH 4
@@ -156,6 +157,8 @@ static EXT_RAM_BSS_ATTR int s_response_status;
 static atomic_bool s_binding_retry;
 static volatile bool s_request_worker_ready;
 static atomic_bool s_mqtt_connected;
+static atomic_bool s_net_fault_latched;
+static atomic_bool s_net_snapshot_pending;
 static platform_online_callback_t s_online_callback;
 static void *s_online_user_data;
 static volatile bool s_provisioning;
@@ -193,8 +196,35 @@ static const char *http_api_name(const char *url_or_path)
     return "other";
 }
 
+/* Read cached Wi-Fi state and the netif configuration outside MQTT callbacks.
+ * This is a snapshot, not a connectivity probe or proof of upstream reachability. */
+static void log_network_snapshot(void)
+{
+    esp_netif_t *station = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    esp_netif_ip_info_t ip = {0};
+    esp_err_t ip_err = station ? esp_netif_get_ip_info(station, &ip) : ESP_ERR_NOT_FOUND;
+    esp_ip4_addr_t dns4[ESP_NETIF_DNS_MAX] = {0};
+    esp_err_t dns_err[ESP_NETIF_DNS_MAX] = {0};
+    for (unsigned i = ESP_NETIF_DNS_MAIN; i < ESP_NETIF_DNS_MAX; ++i) {
+        esp_netif_dns_info_t dns = {0};
+        dns_err[i] = station ? esp_netif_get_dns_info(station, (esp_netif_dns_type_t)i, &dns)
+                             : ESP_ERR_NOT_FOUND;
+        if (dns_err[i] == ESP_OK && dns.ip.type == ESP_IPADDR_TYPE_V4)
+            dns4[i] = dns.ip.u_addr.ip4;
+    }
+    int8_t rssi = 0;
+    bool have_rssi = wifi_manager_signal_dbm(&rssi);
+    ESP_LOGW(TAG, "NET snap wifi=%u rssi=%d/%u ip=" IPSTR " dns=" IPSTR "/" IPSTR "/" IPSTR " rc=%d/%d/%d/%d",
+             (unsigned)wifi_manager_connected(), (int)rssi, (unsigned)have_rssi,
+             IP2STR(&ip.ip), IP2STR(&dns4[ESP_NETIF_DNS_MAIN]),
+             IP2STR(&dns4[ESP_NETIF_DNS_BACKUP]),
+             IP2STR(&dns4[ESP_NETIF_DNS_FALLBACK]), (int)ip_err,
+             (int)dns_err[ESP_NETIF_DNS_MAIN], (int)dns_err[ESP_NETIF_DNS_BACKUP],
+             (int)dns_err[ESP_NETIF_DNS_FALLBACK]);
+}
+
 static void http_log_result(const char *url, bool post, uint32_t started_ms,
-                            uint32_t queue_ms, uint32_t prep_ms, uint32_t io_ms,
+                            uint32_t queue_ms, uint32_t prep_ms,
                             esp_err_t err, int status, const platform_http_trace_t *trace,
                             bool redirected, uint32_t stale_retry_ms)
 {
@@ -212,18 +242,19 @@ static void http_log_result(const char *url, bool post, uint32_t started_ms,
     long link_ms = trace->enabled && trace->connect_ms >= trace->dns_ms
                        ? (long)(trace->connect_ms - trace->dns_ms) : -1;
     ESP_LOGI(TAG,
-             "HTTP t=%lu api=%s m=%s q=%lu prep=%lu dns=%ld/%lu drc=%d link=%ld sock=%lu tcp_wait=%lu/%d wait=%ld io=%lu total=%lu conn=%lu redir=%d fresh_retry=%lu tx=%lu rx=%lu rc=%d status=%d",
-             (unsigned long)started_ms, api, post ? "POST" : "GET",
+             "NET H api=%s m=%c ms=%lu q/p=%lu/%lu dns=%ld/%lu/%d link=%ld sock=%lu tcp=%lu/%d wait=%ld tx/rx=%lu/%lu conn=%lu redir/retry=%d/%lu rc=%d h=%d",
+             api, post ? 'P' : 'G', (unsigned long)total_ms,
              (unsigned long)queue_ms, (unsigned long)prep_ms,
              trace->enabled ? (long)trace->dns_ms : -1,
              (unsigned long)trace->dns_calls, trace->dns_rc, link_ms,
-             (unsigned long)trace->socket_ms, (unsigned long)trace->tcp_wait_ms,
-             trace->tcp_wait_rc, wait_ms,
-             (unsigned long)io_ms, (unsigned long)total_ms,
+             (unsigned long)trace->socket_ms,
+             (unsigned long)trace->tcp_wait_ms, trace->tcp_wait_rc, wait_ms,
+             (unsigned long)trace->tx_bytes, (unsigned long)trace->rx_bytes,
              (unsigned long)trace->connect_calls, (int)redirected,
              (unsigned long)stale_retry_ms,
-             (unsigned long)trace->tx_bytes, (unsigned long)trace->rx_bytes,
              (int)err, status);
+    if (err != ESP_OK &&
+        !atomic_exchange(&s_net_fault_latched, true)) log_network_snapshot();
 }
 
 static char *http_response_alloc(void)
@@ -451,7 +482,7 @@ done:
     if (!trace.enabled) prep_ms = (uint32_t)(esp_timer_get_time() / 1000) - started_ms - io_ms;
     if (status != NULL) *status = response_status;
     http_log_result(url, json_body != NULL, started_ms, queue_ms, prep_ms,
-                    io_ms, err, response_status, &trace, output.redirected,
+                    err, response_status, &trace, output.redirected,
                     stale_retry_ms);
     return err;
 }
@@ -825,6 +856,7 @@ static void request_loop(void)
     int64_t next_heartbeat_ms = esp_timer_get_time() / 1000 + 30000;
     for (;;) {
         if (atomic_load(&s_rebind_quiesced)) return;
+        if (atomic_exchange(&s_net_snapshot_pending, false)) log_network_snapshot();
         http_reuse_expire();
         uint8_t slot = 0;
         if (xQueueReceive(s_request_ready_queue,
@@ -884,11 +916,16 @@ static void mqtt_event(void *handler_args,
         (void)esp_mqtt_client_subscribe(event->client, command_topic, 1);
         (void)esp_mqtt_client_subscribe(event->client, notify_topic, 1);
         s_mqtt_connected = true;
-        ESP_LOGI(TAG, "MQTT connected and device topics subscribed");
+        atomic_store(&s_net_fault_latched, false);
+        atomic_store(&s_net_snapshot_pending, false);
+        ESP_LOGI(TAG, "NET MQ up sub_req=2");
         notify_platform_online();
     } else if (event_id == MQTT_EVENT_DISCONNECTED) {
+        bool was_connected = s_mqtt_connected;
         s_mqtt_connected = false;
-        ESP_LOGW(TAG, "MQTT disconnected; client will reconnect");
+        if (was_connected) ESP_LOGW(TAG, "NET MQ down");
+        if (!atomic_exchange(&s_net_fault_latched, true))
+            atomic_store(&s_net_snapshot_pending, true);
     } else if (event_id == MQTT_EVENT_DATA) {
         if (event->current_data_offset == 0) {
             s_mqtt_message_size = 0;
@@ -935,13 +972,18 @@ static void mqtt_event(void *handler_args,
         }
     } else if (event_id == MQTT_EVENT_ERROR) {
         const esp_mqtt_error_codes_t *error = event->error_handle;
-        ESP_LOGW(TAG, "MQTT error: type=%d tls=0x%x stack=0x%x errno=%d internal=%u largest=%u",
+        int8_t rssi = 0;
+        bool have_rssi = wifi_manager_signal_dbm(&rssi);
+        ESP_LOGW(TAG, "NET MQ err type=%d tls=0x%x stack=0x%x errno=%d wifi=%u rssi=%d/%u free/large=%u/%u",
                  error ? (int)error->error_type : -1,
                  error ? error->esp_tls_last_esp_err : 0,
                  error ? error->esp_tls_stack_err : 0,
                  error ? error->esp_transport_sock_errno : 0,
+                 (unsigned)wifi_manager_connected(), (int)rssi, (unsigned)have_rssi,
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        if (!atomic_exchange(&s_net_fault_latched, true))
+            atomic_store(&s_net_snapshot_pending, true);
     }
 }
 
@@ -2226,12 +2268,15 @@ esp_err_t platform_client_request_timeout(platform_service_t service,
     if (json_body != NULL) {
         (void)snprintf(request->body, sizeof(request->body), "%s", json_body);
     }
-    /* AI token is a direct foreground interaction. Put it ahead of queued
-     * profile/contact refreshes, while keeping the single HTTP/TLS owner and
-     * its fixed memory footprint. An already-running request is not preempted. */
+    /* Foreground token and call teardown outrank background refreshes. An
+     * already-running HTTP request still owns the connection until it ends. */
     bool foreground_ai = service == PLATFORM_SERVICE_AI &&
                          strcmp(path, "/v1/ai/token") == 0;
-    BaseType_t queued = foreground_ai
+    bool foreground_release = service == PLATFORM_SERVICE_CALL &&
+                              (strcmp(path, "/v1/call/hangup") == 0 ||
+                               strcmp(path, "/v1/call/cancel") == 0 ||
+                               strcmp(path, "/v1/call/reject") == 0);
+    BaseType_t queued = (foreground_ai || foreground_release)
         ? xQueueSendToFront(s_request_ready_queue, &slot, 0)
         : xQueueSend(s_request_ready_queue, &slot, 0);
     if (queued == pdTRUE) {

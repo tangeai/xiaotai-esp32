@@ -39,6 +39,11 @@ static uint32_t s_subscribed_generation;
 static atomic_uint s_sent;
 static atomic_uint s_rx_seen, s_rx_dropped, s_rx_last_media, s_rx_last_stream;
 static int64_t s_health_due_us;
+static int64_t s_health_last_log_us;
+static uint32_t s_health_logged_generation, s_health_last_rx, s_health_last_drop;
+static uint32_t s_health_last_decode_fail;
+static uint32_t s_health_last_conversion_fail, s_health_last_overflow, s_health_last_discontinuities;
+static bool s_health_last_subscribed;
 static uint32_t s_bitrate_registered_generation;
 static int64_t s_bitrate_step_us;
 
@@ -58,6 +63,17 @@ static void configure_bitrate(uint32_t generation)
         ESP_LOGI("p4_video", "bitrate ready: gen=%lu min=%lu start=%lu max=%lu",
                  (unsigned long)generation, (unsigned long)range.min_bitrate_bps,
                  (unsigned long)range.start_bitrate_bps, (unsigned long)range.max_bitrate_bps);
+        /* The SDK starts at start_bitrate_bps. Keep the encoder in the same
+         * range before the first frame instead of waiting for feedback. */
+        bool changed = false;
+        esp_err_t apply_ret = media_governor_apply_transport_bitrate_target(
+            range.start_bitrate_bps, &changed);
+        if (apply_ret != ESP_OK) {
+            ESP_LOGW("p4_video", "initial bitrate apply failed: %s",
+                     esp_err_to_name(apply_ret));
+        } else if (changed) {
+            camera_pipeline_on_rtc_video_config_changed();
+        }
     } else {
         /* KCP/WHIP peers may not support the TGTRP-only API. Keep their normal
          * profile, report the rejection once, and never pretend feedback works. */
@@ -103,14 +119,38 @@ static void video_health(void)
     s_health_due_us = now + 5000000;
     call_video_renderer_stats_t stats = {0};
     call_video_renderer_get_stats(&stats);
-    ESP_LOGI("p4_video", "downlink generation=%lu mode=%d subscribed=%d rx=%u drop=%u "
-             "stream=%u media=%u decoded=%lu converted=%lu presented=%lu decode-fail=%lu",
-             (unsigned long)generation, (int)starter_tirtc_mode(),
-             s_subscribed_generation == generation, atomic_load(&s_rx_seen),
-             atomic_load(&s_rx_dropped), atomic_load(&s_rx_last_stream),
-             atomic_load(&s_rx_last_media), (unsigned long)stats.decoded_frames,
-             (unsigned long)stats.converted_frames, (unsigned long)stats.presented_frames,
-             (unsigned long)stats.decode_failures);
+    uint32_t rx = atomic_load(&s_rx_seen);
+    uint32_t drop = atomic_load(&s_rx_dropped);
+    bool subscribed = s_subscribed_generation == generation;
+    bool changed = s_health_logged_generation != generation ||
+                   s_health_last_subscribed != subscribed ||
+                   (s_health_last_rx == 0 && rx != 0) ||
+                   s_health_last_drop != drop ||
+                   s_health_last_decode_fail != stats.decode_failures ||
+                   s_health_last_conversion_fail != stats.conversion_failures ||
+                   s_health_last_overflow != stats.input_overflows ||
+                   s_health_last_discontinuities != stats.discontinuities;
+    int64_t interval_us = rx == 0 ? 30000000 : 15000000;
+    if (!changed && now - s_health_last_log_us < interval_us) return;
+    s_health_last_log_us = now;
+    s_health_logged_generation = generation;
+    s_health_last_rx = rx;
+    s_health_last_drop = drop;
+    s_health_last_decode_fail = stats.decode_failures;
+    s_health_last_conversion_fail = stats.conversion_failures;
+    s_health_last_overflow = stats.input_overflows;
+    s_health_last_discontinuities = stats.discontinuities;
+    s_health_last_subscribed = subscribed;
+    ESP_LOGI("p4_video", "VID g=%lu m=%d sub=%u rx/drop=%lu/%lu dec/conv/show=%lu/%lu/%lu fail=%lu/%lu ov/dis=%lu/%lu q=%lu/%lu stream/media=%lu/%lu",
+             (unsigned long)generation, (int)starter_tirtc_mode(), (unsigned)subscribed,
+             (unsigned long)rx, (unsigned long)drop,
+             (unsigned long)stats.decoded_frames, (unsigned long)stats.converted_frames,
+             (unsigned long)stats.presented_frames, (unsigned long)stats.decode_failures,
+             (unsigned long)stats.conversion_failures,
+             (unsigned long)stats.input_overflows, (unsigned long)stats.discontinuities,
+             (unsigned long)stats.queue_depth, (unsigned long)stats.conversion_queue_depth,
+             (unsigned long)atomic_load(&s_rx_last_stream),
+             (unsigned long)atomic_load(&s_rx_last_media));
 }
 static atomic_bool s_camera_enabled = true;
 static atomic_bool s_tx_enabled;
@@ -412,6 +452,7 @@ void p4_video_ui_tick(lv_obj_t *screen, bool video_visible)
     }
     if (!s_canvas) s_canvas = heap_caps_malloc(480 * 320 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_canvas) return;
+    int64_t present_started_us = esp_timer_get_time();
     const uint16_t *pixels = NULL;
     size_t count = 0;
     if (call_video_renderer_present_next_rgb565(&pixels, &count, NULL, NULL) != ESP_OK) return;
@@ -429,4 +470,11 @@ void p4_video_ui_tick(lv_obj_t *screen, bool video_visible)
         lv_obj_invalidate(s_image);
     }
     call_video_renderer_release_presented_rgb565();
+    static int64_t last_slow_present_log_us;
+    int64_t elapsed_us = esp_timer_get_time() - present_started_us;
+    if (elapsed_us > 45000 &&
+        present_started_us - last_slow_present_log_us >= 10000000) {
+        last_slow_present_log_us = present_started_us;
+        ESP_LOGW("p4_video", "UIP present=%lldus", (long long)elapsed_us);
+    }
 }

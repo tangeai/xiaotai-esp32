@@ -221,13 +221,38 @@ IRAM_ATTR bool lvgl_port_task_notify(uint32_t value)
 static void lvgl_port_task(void *arg)
 {
     uint32_t task_delay_ms = lvgl_port_ctx.task_max_sleep_ms;
+    int64_t health_at_us = esp_timer_get_time();
+    uint32_t max_lock_us = 0;
+    uint32_t max_handler_us = 0;
+    uint32_t slow_handlers = 0;
 
     ESP_LOGI(TAG, "Starting LVGL task");
     lvgl_port_ctx.running = true;
     while (lvgl_port_ctx.running) {
-        if (lvgl_port_lock(1000)) {
+        int64_t lock_at_us = esp_timer_get_time();
+        bool locked = lvgl_port_lock(1000);
+        uint32_t lock_us = (uint32_t)(esp_timer_get_time() - lock_at_us);
+        if (lock_us > max_lock_us) max_lock_us = lock_us;
+        if (locked) {
+            int64_t handler_at_us = esp_timer_get_time();
             task_delay_ms = lv_timer_handler();
+            uint32_t handler_us = (uint32_t)(esp_timer_get_time() - handler_at_us);
+            if (handler_us > max_handler_us) max_handler_us = handler_us;
+            if (handler_us > 45000U) slow_handlers++;
             lvgl_port_unlock();
+        }
+        int64_t now_us = esp_timer_get_time();
+        if (now_us - health_at_us >= 10000000LL) {
+            if (max_lock_us > 45000U || max_handler_us > 45000U) {
+                ESP_LOGW(TAG, "UIH lock_max=%luus handler_max=%luus slow=%lu",
+                         (unsigned long)max_lock_us,
+                         (unsigned long)max_handler_us,
+                         (unsigned long)slow_handlers);
+            }
+            health_at_us = now_us;
+            max_lock_us = 0;
+            max_handler_us = 0;
+            slow_handlers = 0;
         }
         if (task_delay_ms > lvgl_port_ctx.task_max_sleep_ms) {
             task_delay_ms = lvgl_port_ctx.task_max_sleep_ms;

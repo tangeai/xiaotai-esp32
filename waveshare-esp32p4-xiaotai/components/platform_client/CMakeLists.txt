@@ -3,7 +3,7 @@ idf_component_register(
       "${CMAKE_CURRENT_LIST_DIR}/src/platform_http_trace.c"
  INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include"
  REQUIRES esp_http_client esp_netif mqtt mbedtls json
- PRIV_REQUIRES esp-tls esp_timer tcp_transport lwip http_parser
+ PRIV_REQUIRES esp-tls esp_timer tcp_transport lwip http_parser wifi_manager
 )
 
 if(CMAKE_BUILD_EARLY_EXPANSION)

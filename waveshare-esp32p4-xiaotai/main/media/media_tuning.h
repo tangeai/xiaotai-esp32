@@ -39,15 +39,15 @@
 #define APP_MEDIA_CALL_VIDEO_MIN_QP                     34U
 #define APP_MEDIA_CALL_VIDEO_MAX_QP                     51U
 
-/* XiaoTai phone/browser uplink: user-selected full-frame 4:3. Remote hardware/software
- * decodes this stream; P4-to-P4's software decoder budget is a separate policy.
- * 15 fps / 2 Mbps is the initial product target, not a hardware ceiling. */
+/* Phone/browser uplink is separate from P4-to-P4's software decode budget.
+ * Preserve the 15 fps capture cadence while allowing more detail per frame.
+ * Transport feedback can reduce bitrate where that SDK path is supported. */
 /* Full sensor frame after board mounting correction (counterclockwise 90). */
 #define APP_MEDIA_WECHAT_VIDEO_WIDTH                    960U
 #define APP_MEDIA_WECHAT_VIDEO_HEIGHT                   1280U
 #define APP_MEDIA_WECHAT_VIDEO_FPS                      15U
-#define APP_MEDIA_WECHAT_VIDEO_BITRATE_BPS              2000000U
-#define APP_MEDIA_WECHAT_VIDEO_MIN_QP                   30U
+#define APP_MEDIA_WECHAT_VIDEO_BITRATE_BPS              3000000U
+#define APP_MEDIA_WECHAT_VIDEO_MIN_QP                   26U
 #define APP_MEDIA_WECHAT_VIDEO_MAX_QP                   46U
 /* H264 encoder and transport protection. */
 /*

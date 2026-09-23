@@ -578,7 +578,7 @@ static void get_sensor_state(esp_video_isp_t *isp, int index)
     ret = ioctl(isp->cam_fd, VIDIOC_G_FMT, &format);
     if (ret == 0) {
         isp->sensor.width = format.fmt.pix.width;
-        isp->sensor.height = format.fmt.pix.width;
+        isp->sensor.height = format.fmt.pix.height;
     }
 
     if (isp->sensor_attr.stats) {
@@ -846,6 +846,12 @@ esp_err_t esp_video_isp_pipeline_init(const esp_video_isp_config_t *config)
         ESP_LOGE(TAG, "failed to check ISP configuration");
         return ESP_ERR_INVALID_ARG;
     }
+
+    const esp_ipa_agc_config_t *agc = config->ipa_config->agc;
+    ESP_LOGI(TAG, "ISP IPA AGC=%s anti_flicker=%d ac_hz=%u",
+             agc == NULL ? "absent" : "configured",
+             agc == NULL ? -1 : (int)agc->anti_flicker_mode,
+             agc == NULL ? 0U : (unsigned)agc->ac_freq);
 
     isp = calloc(1, sizeof(esp_video_isp_t));
     ESP_RETURN_ON_FALSE(isp, ESP_ERR_NO_MEM, TAG, "failed to malloc isp");

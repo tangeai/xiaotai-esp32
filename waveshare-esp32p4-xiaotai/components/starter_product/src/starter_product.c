@@ -194,6 +194,9 @@ static esp_lcd_panel_handle_t s_lcd_panel;
 static esp_lcd_touch_handle_t s_touch;
 #endif
 static lv_disp_t *s_display;
+#if CONFIG_IDF_TARGET_ESP32P4
+static lv_indev_t *s_touch_indev;
+#endif
 static product_page_t s_page = PAGE_HOME_FACE;
 static product_preferences_t s_preferences = {.volume = 7, .sleep_index = 1};
 static int64_t s_last_interaction_ms;
@@ -798,10 +801,18 @@ static void handle_voice_result(const starter_voice_result_t *result,
 
 static void on_action(lv_event_t *event)
 {
+    int64_t action_started_us = esp_timer_get_time();
     product_action_t action = (product_action_t)(uintptr_t)lv_event_get_user_data(event);
     product_page_t previous_page = s_page;
     note_interaction();
-    if (s3_handle_action(action)) return;
+    if (s3_handle_action(action)) {
+        int64_t elapsed_us = esp_timer_get_time() - action_started_us;
+        if (elapsed_us > 50000) {
+            ESP_LOGW(TAG, "UI action slow: action=%u page=%u elapsed=%lldus",
+                     (unsigned)action, (unsigned)previous_page, (long long)elapsed_us);
+        }
+        return;
+    }
     if (action == ACTION_AI) {
         starter_runtime_status_t status = starter_runtime_status();
         if (status.state != STARTER_RUNTIME_AI_ACTIVE &&
@@ -914,6 +925,11 @@ static void on_action(lv_event_t *event)
         starter_runtime_product_snapshot_t product =
             starter_runtime_product_snapshot();
         refresh_call_controls(starter_runtime_status(), &product);
+    }
+    int64_t elapsed_us = esp_timer_get_time() - action_started_us;
+    if (elapsed_us > 50000) {
+        ESP_LOGW(TAG, "UI action slow: action=%u page=%u elapsed=%lldus",
+                 (unsigned)action, (unsigned)previous_page, (long long)elapsed_us);
     }
 }
 
@@ -1049,7 +1065,17 @@ static void call_ring_task(void *argument)
             (const int16_t *)(start + WAV_PCM_OFFSET),
             (bytes - WAV_PCM_OFFSET) / sizeof(int16_t));
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "call ringtone playback failed: %s", esp_err_to_name(err));
+            starter_runtime_state_t state = starter_runtime_status().state;
+            bool audio_owner_changed = state == STARTER_RUNTIME_CALL_ACTIVE ||
+                                       state == STARTER_RUNTIME_AI_ACTIVE ||
+                                       state == STARTER_RUNTIME_H5_ACTIVE;
+            bool prompt_cancelled = ring_kind == CALL_RING_AI_ACK
+                ? ack.playback_epoch != starter_media_playback_epoch()
+                : (call_ring_kind_t)atomic_load(&s_call_ring_kind) != ring_kind;
+            if (err != ESP_ERR_INVALID_STATE ||
+                (!audio_owner_changed && !prompt_cancelled)) {
+                ESP_LOGW(TAG, "call ringtone playback failed: %s", esp_err_to_name(err));
+            }
             vTaskDelay(pdMS_TO_TICKS(100));
         }
         /* One-shot acknowledgement was consumed before playback. Cancellation,
@@ -1879,6 +1905,7 @@ static esp_err_t display_hardware_init(void)
     display_driver_handles_t handles = {0};
     esp_err_t ret = display_driver_init(&handles);
     s_display = handles.display;
+    s_touch_indev = handles.touch_indev;
     return ret;
 #else
     const gpio_config_t backlight = {
@@ -2009,6 +2036,11 @@ static esp_err_t lvgl_init(void)
     if (lv_timer_create(product_video_tick, 10, NULL) == NULL) {
         lvgl_port_unlock();
         return ESP_ERR_NO_MEM;
+    }
+    /* LVGL runs newer timers first. Keep touch ahead of the full-frame video
+     * timer so a pending press is read before video presentation work. */
+    if (s_touch_indev != NULL) {
+        lv_indev_drv_update(s_touch_indev, s_touch_indev->driver);
     }
 #endif
     if (s_call_ring_task == NULL) {

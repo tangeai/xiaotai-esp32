@@ -21,19 +21,13 @@
 
 特征提取保留 P4 ANSI FFT 路径。初始化、FFT 或位反转失败时不继续消费错误结果。
 
-当前锁定 TFLM 1.3.5 / ESP-NN 1.3.2。上游 `conv.cc` 在 Prepare 和 Eval 两处将 filter channels 填为 0；模型首个普通卷积实际为 32 通道、3×1 卷积核，P4 因通道不匹配回退到 ANSI C。
+当前锁定 TFLM 1.4.1 官方 Git Tag 对应提交 `7b82a0d27416f3ebb080c39b61e0d961cad2127d`，ESP-NN 仍为 1.3.2。TFLM 上游 `conv.cc` 已在 Prepare 和 Eval 两处使用 filter 张量的实际通道数，因此移除了旧版构建期源码替换。唤醒模型、阈值和音频前处理没有随依赖升级改变。
 
-[conv_channels.cmake](conv_channels.cmake)执行以下处理：
-
-1. 校验上游文件 SHA-256。
-2. 将两处参数替换为 filter 张量的实际通道数。
-3. 生成 `build/p4_tflm/conv.cc`，替换原 TFLM target 中的该源文件。
-
-下载缓存、模型和依赖版本保持不变。上游文件变化时配置会停止，需重新审阅适配；不要绕过哈希检查。升级 TFLM/ESP-NN 时，也应确认上游是否已修正、能否移除本地替换。
+ESP-NN 1.4.0 已发布，但当前 IDF 组件管理器使用的镜像尚未提供该版本；尝试并行指定 Git 来源时，依赖解析仍选中镜像中的 1.3.2。此项升级留待能生成一致锁文件并完成构建、真机唤醒回归时再做。
 
 ## 检查方法
 
-构建配置阶段会校验上游卷积源码摘要并生成适配后的 `build/p4_tflm/conv.cc`；摘要或替换点不匹配时直接停止配置。链接后的固件门禁还会检查产品入口和驱动所有权。
+配置完成后检查 `managed_components/espressif__esp-tflite-micro/tensorflow/lite/micro/kernels/esp_nn/conv.cc` 的 Prepare 和 Eval 是否均使用 `filter->dims->data[3]`。链接后的固件门禁还会检查产品入口和驱动所有权。
 
 模型更换后，先核对模型与分类头摘要，再完成一次干净构建。设备启动时应出现 `KWS nhwc-20260915` 和 `wake self-test=ESP_OK`；随后分别测试快、正常、慢语速，记录命中次数与推理耗时。静态检查和构建均不能代替实际唤醒率验证。
 

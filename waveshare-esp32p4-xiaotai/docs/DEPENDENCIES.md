@@ -6,11 +6,11 @@
 
 | 项目 | 版本或位置 |
 | --- | --- |
-| 应用 | `1.4.1`，项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
+| 应用 | `1.5.0`；项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
 | 开发板 | Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash |
-| 芯片修订 | 默认镜像接受 P4 rev 1.0–1.99；其他修订需另行适配 |
+| 芯片要求 | ESP32-P4 rev3.2 及以上；[构建配置](P4_REV3_VALIDATION.md) |
 | 开发环境 | ESP-IDF 5.5.4，riscv32-esp-elf 14.2.0_20260121 |
-| TiRTC SDK | 2.5.0 P4 补丁批次 `20260922-p4-fixes2`，库内标识 `v2.5.0-9088239c-https1`，详情见 [SDK VERSION](../components/tirtc_sdk/VERSION.md) |
+| TiRTC SDK | 2.5.0 P4 包，库内标识 `v2.5.0-9088239c-https1`，详情见 [SDK VERSION](../components/tirtc_sdk/VERSION.md) |
 | Wi-Fi | C6 + ESP-Hosted 1.4.7 主机补丁组件；从机单独核验，见 [C6 指南](C6_PREPARATION.md) |
 
 SDK 的版本号相同不代表二进制相同。保留附带库和头文件，按 [SHA256SUMS](../components/tirtc_sdk/SHA256SUMS.txt) 核对；Hosted 修改见 [LOCAL_CHANGES](../components/espressif__esp_hosted/LOCAL_CHANGES.md)。
@@ -25,7 +25,7 @@ SDK 的版本号相同不代表二进制相同。保留附带库和头文件，�
 | `components/` | 平台接入、业务、UI、音视频、唤醒、板级和 SDK |
 | `components/starter_product/` | 字体、表情、图标和提示音 |
 | `components/starter_voice/` | 唤醒代码、特征提取和模型 |
-| `tools/` | 构建检查与依赖锁处理 |
+| `tools/` | 构建检查与主机测试 |
 | `docs/` | 使用、开发和排障说明 |
 | `sdkconfig.defaults` | 全新源码的默认配置 |
 | `partitions.csv` | Flash 分区 |
@@ -55,7 +55,7 @@ SDK 的版本号相同不代表二进制相同。保留附带库和头文件，�
 | `components/starter_voice/model/head.h` | `cc0364fa603a43c90d9de0b0fc39587c7c4d3350c3d1537b7018cf3a923d1a1e` |
 | `components/starter_voice/model/nihaoxiaotai.tflite` | `1dcfe29a10733ec272854bfbafb8a231f10bf3b0399cf6192cc08b38006fac78` |
 
-当前使用 P4 ANSI FFT。TFLM 1.3.5 的卷积通道修正由 [conv_channels.cmake](../components/starter_voice/conv_channels.cmake)生成到 `build/p4_tflm/conv.cc`，不修改下载缓存。升级依赖前阅读[唤醒组件说明](../components/starter_voice/README.md)。
+当前使用 P4 ANSI FFT。TFLM 锁定官方 v1.4.1 Tag 对应提交，已自带卷积通道修正；ESP-NN 仍锁定 1.3.2。升级依赖前阅读[唤醒组件说明](../components/starter_voice/README.md)。
 
 ## 来源与许可
 

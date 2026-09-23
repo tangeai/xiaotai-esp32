@@ -79,6 +79,8 @@ esp_err_t display_driver_init(display_driver_handles_t *handles)
 	cfg.lvgl_port_cfg.task_priority = DISPLAY_DRIVER_LVGL_TASK_PRIORITY;
 	cfg.lvgl_port_cfg.task_affinity = APP_TASK_CORE_UI;
 	cfg.lvgl_port_cfg.task_stack_caps = APP_TASK_STACK_CAPS_INTERNAL;
+	/* Match the BSP's bounded UI loop even when no animation timer is active. */
+	cfg.lvgl_port_cfg.task_max_sleep_ms = 20;
 
 	s_display = bsp_display_start_with_config(&cfg);
 	ESP_RETURN_ON_FALSE(s_display != NULL, ESP_FAIL, TAG, "bsp display start failed");

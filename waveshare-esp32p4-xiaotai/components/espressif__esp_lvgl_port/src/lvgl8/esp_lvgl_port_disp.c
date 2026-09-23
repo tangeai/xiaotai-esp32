@@ -10,6 +10,7 @@
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_idf_version.h"
+#include "esp_timer.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lvgl_port.h"
@@ -470,6 +471,8 @@ static bool lvgl_port_flush_rgb_vsync_ready_callback(esp_lcd_panel_handle_t pane
 
 static void lvgl_port_flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
+    int64_t flush_started_us = esp_timer_get_time();
+    static int64_t last_slow_flush_log_us;
     assert(drv != NULL);
     lvgl_port_display_ctx_t *disp_ctx = (lvgl_port_display_ctx_t *)drv->user_data;
     assert(disp_ctx != NULL);
@@ -482,7 +485,7 @@ static void lvgl_port_flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, 
     int y_start_tmp;
     int y_end_tmp;
 
-    int trans_count;
+    int trans_count = 1;
     int trans_line;
     int max_line;
 
@@ -588,6 +591,14 @@ static void lvgl_port_flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, 
         if (disp_ctx->sync_flush || !flush_ok) {
             lv_disp_flush_ready(drv);
         }
+    }
+    int64_t elapsed_us = esp_timer_get_time() - flush_started_us;
+    if (elapsed_us > 45000 &&
+        flush_started_us - last_slow_flush_log_us >= 10000000) {
+        last_slow_flush_log_us = flush_started_us;
+        ESP_LOGW(TAG, "UFL area=%dx%d chunks=%d elapsed=%lldus",
+                 width, height, disp_ctx->trans_size ? trans_count : 1,
+                 (long long)elapsed_us);
     }
 }
 

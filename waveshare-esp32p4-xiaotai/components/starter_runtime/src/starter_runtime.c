@@ -1395,9 +1395,9 @@ static void reject_or_hangup_call(bool reject)
         state != STARTER_RUNTIME_CALL_ACTIVE) {
         return;
     }
-    if (starter_tirtc_connected()) {
-        (void)starter_tirtc_send_command(CALL_COMMAND_HANGUP, NULL, 0);
-    }
+    int command_ret = starter_tirtc_connected()
+                          ? starter_tirtc_send_command(CALL_COMMAND_HANGUP, NULL, 0)
+                          : ESP_ERR_INVALID_STATE;
     char body[1200];
     if (s_call_wechat) {
         if (reject && !s_call_outgoing) {
@@ -1419,7 +1419,14 @@ static void reject_or_hangup_call(bool reject)
                            : "{\"room_id\":\"%s\",\"reason\":\"%s\"}",
                        s_call_room_id,
                        reject ? "decline" : "hangup");
-        (void)platform_client_request(PLATFORM_SERVICE_CALL, path, body, NULL, NULL);
+        esp_err_t request_ret = platform_client_request(PLATFORM_SERVICE_CALL,
+                                                        path, body, NULL, NULL);
+        ESP_LOGI(TAG, "call release: state=%s command=%d http=%s queued=%s",
+                 starter_runtime_state_name(state), command_ret, path,
+                 esp_err_to_name(request_ret));
+    } else {
+        ESP_LOGI(TAG, "call release: state=%s command=%d wechat=%u",
+                 starter_runtime_state_name(state), command_ret, s_call_wechat);
     }
     finish_session(0);
 }
@@ -1437,10 +1444,30 @@ static void begin_ai_session(uint32_t wake_token)
      */
     starter_runtime_state_t state = (starter_runtime_state_t)atomic_load_explicit(
         &s_public_state, memory_order_acquire);
-    if ((state != STARTER_RUNTIME_WAITING && !room_owns_media()) ||
-        !ai_network_ready() || !platform_client_ready() || !starter_tirtc_started() ||
-        starter_media_status().microphone_muted) {
-        ESP_LOGW(TAG, "AI start ignored: network, platform or TiRTC is not ready");
+    if (state != STARTER_RUNTIME_WAITING && !room_owns_media()) {
+        static starter_runtime_state_t logged_state = STARTER_RUNTIME_WAITING;
+        static uint32_t logged_generation;
+        static int64_t logged_at_ms;
+        int64_t now_ms = esp_timer_get_time() / 1000;
+        if (state != logged_state || s_session_generation != logged_generation ||
+            now_ms - logged_at_ms >= 30000) {
+            ESP_LOGI(TAG, "AI start deferred: owner=%s session=%lu",
+                     starter_runtime_state_name(state),
+                     (unsigned long)s_session_generation);
+            logged_state = state;
+            logged_generation = s_session_generation;
+            logged_at_ms = now_ms;
+        }
+        starter_media_cancel_ai_preroll(wake_token);
+        return;
+    }
+    bool wifi_ready = ai_network_ready();
+    bool platform_ready = platform_client_ready();
+    bool rtc_ready = starter_tirtc_started();
+    bool mic_muted = starter_media_status().microphone_muted;
+    if (!wifi_ready || !platform_ready || !rtc_ready || mic_muted) {
+        ESP_LOGW(TAG, "AI start unavailable: wifi=%u platform=%u rtc=%u mic_muted=%u",
+                 wifi_ready, platform_ready, rtc_ready, mic_muted);
         starter_media_cancel_ai_preroll(wake_token);
         return;
     }
