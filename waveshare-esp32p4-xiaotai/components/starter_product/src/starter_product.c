@@ -125,6 +125,7 @@ typedef enum {
     PAGE_SETTINGS,
     PAGE_NETWORK,
     PAGE_BINDING,
+    PAGE_INITIALIZING,
     PAGE_CALL,
     PAGE_CALL_RESULT,
     PAGE_DIAGNOSTICS,
@@ -184,6 +185,7 @@ static atomic_int s_preferences_error;
 
 static const char *TAG = "starter_product";
 static EXT_RAM_BSS_ATTR atomic_int s_binding_ui_state;
+static EXT_RAM_BSS_ATTR atomic_int s_initialization_ui_state;
 static bool s_started;
 static QueueHandle_t s_voice_queue;
 #if !CONFIG_IDF_TARGET_ESP32P4
@@ -315,6 +317,11 @@ static const char *const s_emoji_keys[] = {
 void starter_product_set_binding_state(starter_product_binding_state_t state)
 {
     atomic_store_explicit(&s_binding_ui_state, state, memory_order_release);
+}
+
+void starter_product_set_initialization_state(starter_product_initialization_state_t state)
+{
+    atomic_store_explicit(&s_initialization_ui_state, state, memory_order_release);
 }
 
 static int64_t monotonic_ms(void)
@@ -1540,7 +1547,10 @@ static void product_tick(lv_timer_t *timer)
      * setup navigation and portal/code updates alive even on lock contention. */
     s3_update_setup(now, wifi_connected, session_idle, platform_client_provisioning(),
                     platform_client_verification_code());
-    if (s3_ui.setup_active) s_call_ring_kind = CALL_RING_NONE;
+    if (s3_ui.setup_active) {
+        s_call_ring_kind = CALL_RING_NONE;
+        return;
+    }
     starter_runtime_product_snapshot_t product;
     /* Never spend an LVGL frame waiting for HTTP/contact/caption publication.
      * Keep the currently rendered content on contention, not an empty snapshot. */

@@ -1,16 +1,16 @@
 # 版本与依赖
 
-本页用于核对编译环境、配置和随附资源。首次使用见[开发指南](GETTING_STARTED_CN.md)，本版功能见[版本记录](../RELEASE_NOTES.md)。
+本页用于核对编译环境、配置和随附资源。首次使用见[开发指南](GETTING_STARTED_CN.md)，本版功能见[版本记录](../CHANGELOG.md)。
 
 ## 版本要求
 
 | 项目 | 版本或位置 |
 | --- | --- |
-| 应用 | `1.4.0`，项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
+| 应用 | `1.4.1`，项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
 | 开发板 | Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash |
 | 芯片修订 | 默认镜像接受 P4 rev 1.0–1.99；其他修订需另行适配 |
 | 开发环境 | ESP-IDF 5.5.4，riscv32-esp-elf 14.2.0_20260121 |
-| TiRTC SDK | 2.5.0 P4 包，库内标识 `v2.5.0-9088239c`，详情见 [SDK VERSION](../components/tirtc_sdk/VERSION.md) |
+| TiRTC SDK | 2.5.0 P4 补丁批次 `20260922-p4-fixes2`，库内标识 `v2.5.0-9088239c-https1`，详情见 [SDK VERSION](../components/tirtc_sdk/VERSION.md) |
 | Wi-Fi | C6 + ESP-Hosted 1.4.7 主机补丁组件；从机单独核验，见 [C6 指南](C6_PREPARATION.md) |
 
 SDK 的版本号相同不代表二进制相同。保留附带库和头文件，按 [SHA256SUMS](../components/tirtc_sdk/SHA256SUMS.txt) 核对；Hosted 修改见 [LOCAL_CHANGES](../components/espressif__esp_hosted/LOCAL_CHANGES.md)。
@@ -25,7 +25,7 @@ SDK 的版本号相同不代表二进制相同。保留附带库和头文件，�
 | `components/` | 平台接入、业务、UI、音视频、唤醒、板级和 SDK |
 | `components/starter_product/` | 字体、表情、图标和提示音 |
 | `components/starter_voice/` | 唤醒代码、特征提取和模型 |
-| `tools/` | 构建检查与主机测试 |
+| `tools/` | 构建检查与依赖锁处理 |
 | `docs/` | 使用、开发和排障说明 |
 | `sdkconfig.defaults` | 全新源码的默认配置 |
 | `partitions.csv` | Flash 分区 |
@@ -48,7 +48,7 @@ SDK 的版本号相同不代表二进制相同。保留附带库和头文件，�
 
 模型来自 `nihaoxiaotai_v9.3_20260915_nhwc_tflite.zip`，模型文件与分类头必须成对替换，不能混用不同批次。当前输入为 INT8 `[1,98,32]`，输出为 INT8 `[1,256]`；NHWC 转换已在模型内部完成。
 
-默认唤醒阈值为 0.9，对应 `CONFIG_XIAOTAI_WAKE_THRESHOLD_MILLI=900`。已有本机配置优先于默认值；调整阈值不需要替换模型。
+唤醒阈值固定为 0.95，定义在 `components/starter_voice/src/starter_voice.c` 的 `WAKE_THRESHOLD_MILLI`。调整阈值不需要替换模型；开发控制台的临时覆盖不会改写源码。
 
 | 文件 | SHA-256 |
 | --- | --- |

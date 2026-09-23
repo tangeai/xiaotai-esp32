@@ -19,9 +19,21 @@ typedef enum {
     STARTER_BINDING_FAILED,
 } starter_product_binding_state_t;
 
+typedef enum {
+    STARTER_INITIALIZATION_PREPARING = 0,
+    STARTER_INITIALIZATION_TIRTC,
+    STARTER_INITIALIZATION_PLATFORM,
+    STARTER_INITIALIZATION_READY,
+    STARTER_INITIALIZATION_FAILED,
+} starter_product_initialization_state_t;
+
 /** Startup owns credential validation; this nonblocking UI notification never
  * reads NVS or creates LVGL objects on the caller's task. */
 void starter_product_set_binding_state(starter_product_binding_state_t state);
+
+/** Startup publishes its current readiness stage without touching LVGL.
+ * Business pages remain hidden until TiRTC and platform signaling are ready. */
+void starter_product_set_initialization_state(starter_product_initialization_state_t state);
 
 /**
  * 非阻塞投递已经识别出的本地语音意图；UI 与产品状态只在 LVGL 任务内修改。

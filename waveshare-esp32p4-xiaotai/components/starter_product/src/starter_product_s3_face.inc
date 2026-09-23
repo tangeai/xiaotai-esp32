@@ -222,7 +222,7 @@ typedef struct {
     s3_face_bounds_t damage[3];
     lv_color_t palette[17];
     int64_t cue_at[S3_FACE_POSE_VALUES - FACE_TEARS];
-    int64_t transition_at, motion_at, blink_at, gaze_at, gaze_next, last_frame_at, slow_log_at;
+    int64_t transition_at, motion_at, blink_at, gaze_at, gaze_next, last_frame_at;
     int32_t gaze_from_x, gaze_from_y, gaze_to_x, gaze_to_y, activity;
     uint32_t random, frames, late_frames, max_draw_us, colour;
     uint16_t transition_ms, pose, motion_pose;
@@ -927,10 +927,6 @@ static void s3_face_frame(lv_timer_t *timer)
     ++s3_face.frames;
     uint32_t elapsed = (uint32_t)(esp_timer_get_time() - started);
     if (elapsed > s3_face.max_draw_us) s3_face.max_draw_us = elapsed;
-    if (elapsed > 8000U && now - s3_face.slow_log_at > 5000) {
-        s3_face.slow_log_at = now;
-        ESP_LOGW(TAG, "face draw slow: us=%u late=%u", (unsigned)elapsed, (unsigned)s3_face.late_frames);
-    }
 }
 static void s3_face_visibility_changed(bool awake)
 {

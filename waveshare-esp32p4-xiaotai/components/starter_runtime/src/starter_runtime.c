@@ -1,13 +1,13 @@
 /*
  * H5/AI 会话状态机。
  *
- *                 H5 入站
- *   WAITING ----------------------> H5_ACTIVE
- *      ^                               |
- *      | 断连/AI 结束/失败             | AI start 抢占
- *      |                               v
- *      +------ AI_ACTIVE <------ AI_CONNECTING
- *                    start_session 成功
+ *   WAITING ------> AI_CONNECTING ------> AI_ACTIVE
+ *      |             建连/握手完成            |
+ *      | H5 入站                         | H5 入站抢占
+ *      v                                v
+ *      +--------------------------> H5_ACTIVE
+ *
+ * 设备通话和微信通话可从 WAITING、AI 或 H5 状态抢占成为唯一前台 owner。
  *
  * s_task 是状态机唯一写入者。TiRTC、MQTT 和 HTTP 回调只把有界事件投递到
  * s_queue；这样连接互斥、超时、资源释放和迟到回调过滤都在一个任务内顺序执行。
@@ -543,16 +543,8 @@ esp_err_t starter_runtime_arm_external_connect_reserve(void)
     return ESP_OK;
 }
 
-static void finish_session(int error)
+static void reset_session_bookkeeping(int error)
 {
-    room_before_finish(error);
-    diagnostic_event("session end/error", error);
-    /* 所有退出路径汇聚到这里，确保媒体、连接、超时和 H5 门禁一起复位。 */
-    starter_media_stop();
-    /* Also invalidates pending external requests / inbound call expectations.
-     * No established handle is normal while cancelling a connecting session. */
-    (void)starter_tirtc_disconnect();
-    starter_tirtc_accept_h5(platform_client_ready());
     s_connection_generation = 0;
     s_deadline_ms = 0;
     s_ai_role_id[0] = '\0';
@@ -581,8 +573,38 @@ static void finish_session(int error)
     atomic_store_explicit(&s_last_error, error, memory_order_release);
     product_snapshot_reset();
     product_set_call(false, false, "", false);
-    publish_state(STARTER_RUNTIME_WAITING);
     restore_external_connect_reserve();
+}
+
+static void finish_session_with_h5_gate(int error, bool accept_h5)
+{
+    room_before_finish(error);
+    diagnostic_event("session end/error", error);
+    /* 所有退出路径汇聚到这里，确保媒体、连接、超时和 H5 门禁一起复位。 */
+    starter_media_stop();
+    /* Also invalidates pending external requests / inbound call expectations.
+     * No established handle is normal while cancelling a connecting session. */
+    (void)starter_tirtc_disconnect();
+    starter_tirtc_accept_h5(accept_h5 && platform_client_ready());
+    reset_session_bookkeeping(error);
+    publish_state(STARTER_RUNTIME_WAITING);
+}
+
+static void finish_session(int error)
+{
+    finish_session_with_h5_gate(error, true);
+}
+
+static void send_ai_end_best_effort(void)
+{
+    starter_runtime_state_t state = (starter_runtime_state_t)atomic_load_explicit(
+        &s_public_state, memory_order_acquire);
+    if ((state == STARTER_RUNTIME_AI_CONNECTING ||
+         state == STARTER_RUNTIME_AI_ACTIVE) &&
+        starter_tirtc_connected() && starter_tirtc_mode() == STARTER_TIRTC_AI) {
+        const char end[] = "{\"jsonrpc\":\"2.0\",\"method\":\"end_session\"}";
+        (void)starter_tirtc_send_command(AI_COMMAND, end, sizeof(end) - 1U);
+    }
 }
 
 static void finish_call_session(int error, const char *result)
@@ -919,16 +941,16 @@ static void request_device_profile(void)
         "\"up_audio_streamid\":10,\"up_video_streamid\":11,"
         "\"down_audio_streamid\":14,\"down_video_streamid\":15,"
         "\"up_video_mt\":[\"h264\"],\"down_video_mt\":[\"h264\"],"
-        "\"camera_rotation\":0,\"aspect_ratio\":0.75,"
+        "\"camera_rotation\":0,\"aspect_ratio\":\"3:4\","
         "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
         "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false},"
         "\"call\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
         "\"up_video_mt\":[\"h264\"],\"down_video_mt\":[\"h264\"],"
-        "\"camera_rotation\":0,\"aspect_ratio\":1.5,"
+        "\"camera_rotation\":0,\"aspect_ratio\":\"3:2\","
         "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
         "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false},"
         "\"voip\":{\"screen_width\":480,\"screen_height\":320,"
-        "\"camera_rotation\":270,\"aspect_ratio\":0.75,"
+        "\"camera_rotation\":270,\"aspect_ratio\":\"3:4\","
         "\"down_video_rotation\":0,\"video_res_mode\":\"auto\","
         "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
         "\"audio_rate\":8000,\"audio_channels\":1,"
@@ -1078,18 +1100,30 @@ static bool preempt_for_call(bool incoming)
 {
     starter_runtime_state_t state = (starter_runtime_state_t)atomic_load_explicit(
         &s_public_state, memory_order_acquire);
+    bool h5_callback_race = state == STARTER_RUNTIME_WAITING &&
+        (starter_tirtc_connected() || starter_tirtc_h5_takeover_pending());
     /* Calls are the foreground owner: a locally initiated call preempts AI
      * and H5 just as an incoming call already does below. */
     if (state == STARTER_RUNTIME_AI_CONNECTING ||
         state == STARTER_RUNTIME_AI_ACTIVE ||
-        state == STARTER_RUNTIME_H5_ACTIVE || room_owns_media()) {
+        state == STARTER_RUNTIME_H5_ACTIVE || room_owns_media() ||
+        h5_callback_race) {
         ESP_LOGI(TAG, "call preempts foreground owner=%s",
                  starter_runtime_state_name(state));
         diagnostic_event(incoming ? "incoming preempts" : "outgoing preempts", state);
-        finish_session(0);
+        /* Keep the gate closed throughout teardown. A transient reopen here
+         * would let an SDK callback race with the new call owner. */
+        starter_tirtc_accept_h5(false);
+        send_ai_end_best_effort();
+        finish_session_with_h5_gate(0, false);
         state = STARTER_RUNTIME_WAITING;
     }
-    return state == STARTER_RUNTIME_WAITING;
+    if (state != STARTER_RUNTIME_WAITING) return false;
+    /* The call owner closes the H5 gate before changing public state. This
+     * also covers the idle path and removes the small callback race between
+     * preemption approval and begin_call_common()/incoming-call setup. */
+    starter_tirtc_accept_h5(false);
+    return true;
 }
 
 static bool begin_call_common(const starter_product_contact_t *contact)
@@ -1398,13 +1432,12 @@ static bool ai_network_ready(void)
 static void begin_ai_session(uint32_t wake_token)
 {
     /*
-     * AI 优先于 H5：先关闭 H5 入站门禁并结束当前媒体/连接，再开启新会话代次。
-     * HTTP 响应携带该代次，迟到响应不能推动后续新会话。
+     * H5 高于 AI：AI 只从空闲（或显式退出多人房间后）启动，不能反向抢占
+     * 已建立的远程查看。AI 期间继续接收入站 H5，由 runtime 串行完成接管。
      */
     starter_runtime_state_t state = (starter_runtime_state_t)atomic_load_explicit(
         &s_public_state, memory_order_acquire);
-    if ((state != STARTER_RUNTIME_WAITING &&
-         state != STARTER_RUNTIME_H5_ACTIVE && !room_owns_media()) ||
+    if ((state != STARTER_RUNTIME_WAITING && !room_owns_media()) ||
         !ai_network_ready() || !platform_client_ready() || !starter_tirtc_started() ||
         starter_media_status().microphone_muted) {
         ESP_LOGW(TAG, "AI start ignored: network, platform or TiRTC is not ready");
@@ -1413,7 +1446,7 @@ static void begin_ai_session(uint32_t wake_token)
     }
 
     if (room_owns_media()) finish_session(0);
-    starter_tirtc_accept_h5(false);
+    starter_tirtc_accept_h5(true);
     starter_media_set_wake_allowed(false);
     if (starter_media_stop_for_ai(wake_token) != ESP_OK) {
         ESP_LOGW(TAG, "AI start ignored: wake audio expired or cancelled");
@@ -1421,6 +1454,12 @@ static void begin_ai_session(uint32_t wake_token)
         return;
     }
     if (starter_tirtc_connected()) {
+        if (starter_tirtc_mode() == STARTER_TIRTC_H5) {
+            /* H5 may be accepted after the WAITING snapshot but before this
+             * owner handles its queued event. Do not let AI erase the winner. */
+            ESP_LOGI(TAG, "AI start yielded to concurrent H5 connection");
+            return;
+        }
         (void)starter_tirtc_disconnect();
     }
     s_connection_generation = 0;
@@ -1518,6 +1557,13 @@ static void handle_ai_token(const runtime_event_t *event)
     free(credentials);
     if (rc != 0) {
         restore_external_connect_reserve();
+        if (starter_tirtc_connected() &&
+            starter_tirtc_mode() == STARTER_TIRTC_H5) {
+            /* H5 arrived between token handling and WHIP submission. Its
+             * queued connection event completes the AI -> H5 handoff. */
+            ESP_LOGI(TAG, "AI connect submission yielded to concurrent H5 connection");
+            return;
+        }
         ESP_LOGE(TAG, "AI connection submission failed rc=%d", rc);
         finish_session(rc);
         return;
@@ -1827,6 +1873,57 @@ static void maybe_activate_outgoing_device_call(const char *source)
     publish_state(STARTER_RUNTIME_CALL_ACTIVE);
 }
 
+static bool start_h5_media(uint32_t generation)
+{
+    s_connection_generation = generation;
+    s_session_generation++;
+    if (s_session_generation == 0U) s_session_generation = 1U;
+    atomic_store_explicit(&s_last_error, 0, memory_order_release);
+    if (starter_media_start(STARTER_TIRTC_H5, generation) != ESP_OK) {
+        finish_session(ESP_ERR_INVALID_STATE);
+        return false;
+    }
+#if CONFIG_IDF_TARGET_ESP32P4
+    /* A subscription accepted during AI handover may have requested its IDR
+     * before the new media generation existed. Request it after media start. */
+    starter_media_request_key_frame(generation);
+#endif
+    /* Playback is ready before asking the peer to send talkback. This
+     * subscribes the peer's stream 14; it never enables our stream 10 TX. */
+    int subscribe_ret = starter_tirtc_subscribe_h5_audio(generation);
+    if (subscribe_ret < 0) {
+        ESP_LOGW(TAG, "H5 talkback subscribe failed: ret=%d", subscribe_ret);
+        finish_session(subscribe_ret);
+        return false;
+    }
+    publish_state(STARTER_RUNTIME_H5_ACTIVE);
+    return true;
+}
+
+static void preempt_ai_for_h5(const runtime_event_t *event)
+{
+    uint32_t generation = event->generation;
+    if (generation == 0U) {
+        if (!starter_tirtc_h5_takeover_pending()) return;
+        send_ai_end_best_effort();
+        starter_media_stop();
+        int ret = starter_tirtc_promote_pending_h5(&generation);
+        if (ret < 0) {
+            ESP_LOGW(TAG, "H5 takeover failed: ret=%d", ret);
+            finish_session(ret);
+            return;
+        }
+    } else {
+        /* H5 won while the asynchronous AI connect had no active handle yet. */
+        starter_media_stop();
+    }
+    diagnostic_event("H5 preempts AI", 0);
+    reset_session_bookkeeping(0);
+    starter_tirtc_accept_h5(true);
+    ESP_LOGI(TAG, "H5 preempts AI generation=%lu", (unsigned long)generation);
+    (void)start_h5_media(generation);
+}
+
 static void handle_connection(const runtime_event_t *event)
 {
     if (event->mode == STARTER_TIRTC_ROOM) { room_connection(event); return; }
@@ -1847,9 +1944,15 @@ static void handle_connection(const runtime_event_t *event)
     bool call = state == STARTER_RUNTIME_CALL_CONNECTING || state == STARTER_RUNTIME_CALL_ACTIVE;
     bool current = false;
     if (event->mode == STARTER_TIRTC_H5) {
-        current = event->generation != 0 &&
-            (event->flag ? state == STARTER_RUNTIME_WAITING :
-             (state == STARTER_RUNTIME_H5_ACTIVE && event->generation == s_connection_generation));
+        current = event->flag
+                      ? ((event->generation != 0U &&
+                          (state == STARTER_RUNTIME_WAITING ||
+                           state == STARTER_RUNTIME_AI_CONNECTING)) ||
+                         (event->generation == 0U && ai &&
+                          starter_tirtc_h5_takeover_pending()))
+                      : (event->generation != 0U &&
+                         state == STARTER_RUNTIME_H5_ACTIVE &&
+                         event->generation == s_connection_generation);
     } else if ((ai && event->mode == STARTER_TIRTC_AI) ||
                (call && event->mode == (s_call_wechat ? STARTER_TIRTC_VOIP : STARTER_TIRTC_CALL))) {
         if (event->flag) {
@@ -1875,6 +1978,19 @@ static void handle_connection(const runtime_event_t *event)
         restore_external_connect_reserve();
     }
     if (!event->flag) {
+        if (event->mode == STARTER_TIRTC_AI && ai &&
+            starter_tirtc_h5_takeover_pending()) {
+            /* The old AI may close while an already accepted H5 waits in the
+             * same event queue. Preserve the higher-priority connection. */
+            runtime_event_t takeover = *event;
+            takeover.mode = STARTER_TIRTC_H5;
+            takeover.generation = 0;
+            takeover.request_tag = 0;
+            takeover.flag = true;
+            takeover.error = 0;
+            preempt_ai_for_h5(&takeover);
+            return;
+        }
         /* AI 意图转呼叫时 finish_session() 会主动断开旧 AI 连接。该断开
          * 回调可能晚于新呼叫的 HTTP 房间创建；它属于旧媒体所有者，绝不能
          * 终止正在等待被叫接入的 CALL/VOIP 会话。 */
@@ -1915,28 +2031,13 @@ static void handle_connection(const runtime_event_t *event)
         return;
     }
 
+    if (event->mode == STARTER_TIRTC_H5 && ai) {
+        preempt_ai_for_h5(event);
+        return;
+    }
     if (event->mode == STARTER_TIRTC_H5 && state == STARTER_RUNTIME_WAITING) {
         /* H5 建连即允许媒体模块启动；实际发送还要等待远端订阅。 */
-        s_connection_generation = event->generation;
-        s_session_generation++;
-        if (s_session_generation == 0U) {
-            s_session_generation = 1U;
-        }
-        atomic_store_explicit(&s_last_error, 0, memory_order_release);
-        if (starter_media_start(STARTER_TIRTC_H5, event->generation) != ESP_OK) {
-            finish_session(ESP_ERR_INVALID_STATE);
-            return;
-        }
-        /* Playback is ready before asking the peer to send talkback. This
-         * subscribes the peer's stream 14; it never enables our stream 10 TX.
-         * Run on the session owner, not inside an SDK connection callback. */
-        int subscribe_ret = starter_tirtc_subscribe_h5_audio(event->generation);
-        if (subscribe_ret < 0) {
-            ESP_LOGW(TAG, "H5 talkback subscribe failed: ret=%d", subscribe_ret);
-            finish_session(subscribe_ret);
-            return;
-        }
-        publish_state(STARTER_RUNTIME_H5_ACTIVE);
+        (void)start_h5_media(event->generation);
         return;
     }
     if (event->mode == STARTER_TIRTC_AI &&
@@ -2492,10 +2593,7 @@ static void end_ai_session(void)
         state != STARTER_RUNTIME_AI_ACTIVE) {
         return;
     }
-    if (starter_tirtc_connected()) {
-        const char end[] = "{\"jsonrpc\":\"2.0\",\"method\":\"end_session\"}";
-        (void)starter_tirtc_send_command(AI_COMMAND, end, sizeof(end) - 1U);
-    }
+    send_ai_end_best_effort();
     finish_session(0);
 }
 

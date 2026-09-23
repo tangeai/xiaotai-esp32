@@ -1,0 +1,60 @@
+diff --git a/client/sdk/libice/src/turn-agent.c b/client/sdk/libice/src/turn-agent.c
+index 7637c310..618b2b0d 100644
+--- a/client/sdk/libice/src/turn-agent.c
++++ b/client/sdk/libice/src/turn-agent.c
+@@ -30,32 +30,39 @@ static int turn_allocation_compare_by_relay(const struct turn_allocation_t** pa,
+ }
+  
+ 
+-struct turn_allocation_t* turn_agent_allocation_find_by_relay(stun_agent_t* stun, const struct sockaddr* relayed)
++/* Search keys borrow addresses only for the synchronous binary search. */
++struct turn_allocation_address_key
+ {
+-	struct turn_allocation_t key;
+-	struct turn_allocation_t* pkey = &key;
+-	struct turn_allocation_t** result;
++	const struct sockaddr* host;
++	const struct sockaddr* peer;
++};
+ 
++static int turn_allocation_compare_relay_key(const void* entry, const void* key)
++{
++	const struct turn_allocation_t* allocation = *(const struct turn_allocation_t* const*)entry;
++	return socket_addr_compare((const struct sockaddr*)&allocation->addr.relay, (const struct sockaddr*)key);
++}
+ 
+-	memcpy(&key.addr.relay, relayed, sizeof(struct sockaddr));
+-
++static int turn_allocation_compare_address_key(const void* entry, const void* key)
++{
++	const struct turn_allocation_t* allocation = *(const struct turn_allocation_t* const*)entry;
++	const struct turn_allocation_address_key* address = (const struct turn_allocation_address_key*)key;
++	int cmp = socket_addr_compare((const struct sockaddr*)&allocation->addr.host, address->host);
++	return cmp != 0 ? cmp : socket_addr_compare((const struct sockaddr*)&allocation->addr.peer, address->peer);
++}
+ 
+-	result = (struct turn_allocation_t**)darray_binary_search(&stun->turnclients_by_relay, &pkey, NULL, (darray_compare)turn_allocation_compare_by_relay);
++struct turn_allocation_t* turn_agent_allocation_find_by_relay(stun_agent_t* stun, const struct sockaddr* relayed)
++{
++	struct turn_allocation_t** result;
++	result = (struct turn_allocation_t**)darray_binary_search(&stun->turnclients_by_relay, relayed, NULL, turn_allocation_compare_relay_key);
+ 	return result ? *result : NULL;
+ }
+ 
+ struct turn_allocation_t* turn_agent_allocation_find_by_address(stun_agent_t* stun, const struct sockaddr* host, const struct sockaddr* peer)
+ {
+-	struct turn_allocation_t key;
+-	struct turn_allocation_t* pkey = &key;
++	struct turn_allocation_address_key key = { host, peer };
+ 	struct turn_allocation_t** result;
+-
+-
+-	memcpy(&key.addr.host, host, sizeof(struct sockaddr));
+-	memcpy(&key.addr.peer, peer, sizeof(struct sockaddr));
+-
+-
+-	result = (struct turn_allocation_t**)darray_binary_search(&stun->turnclients_by_address, &pkey, NULL, (darray_compare)turn_allocation_compare_by_address);
++	result = (struct turn_allocation_t**)darray_binary_search(&stun->turnclients_by_address, &key, NULL, turn_allocation_compare_address_key);
+ 	return result ? *result : NULL;
+ }
+ 

@@ -2,7 +2,7 @@
 
 /* 63-tap Blackman-windowed sinc, cutoff 4 kHz at 16 kHz, padded to two
  * equal polyphases. Each phase sums to one: no volume/EQ gain. Coefficients
- * and the vendor kernel are checked by test_playback_resampler.py.
+ * are fixed inputs and the target implementation is verified on the device.
  * Group delay: 31 / 16000 = 1.9375 ms, independent of packet boundaries. */
 static const float s_coefficients[P4_PLAYBACK_FIR_TAPS] = {
     0.0f, 0.0f, 0.00008235793522f, 0.0f,

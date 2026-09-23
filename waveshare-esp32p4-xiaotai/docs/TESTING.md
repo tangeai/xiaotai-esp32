@@ -8,7 +8,7 @@
 | --- | --- |
 | 模型、源码或检查脚本缺失 | 核对完整 P4 目录；旧缓存引用其他工程时运行 `idf.py reconfigure`，再构建 |
 | 组件下载失败 | IDF 5.5.4 环境、组件仓库访问和依赖锁；保留本地补丁组件 |
-| Windows 链接后报 Bash 或旧路径错误 | 确认使用当前源码与缓存；当前后处理使用 Python |
+| Windows 链接后报 Bash 或旧路径错误 | 确认使用当前源码与缓存；当前后处理使用 CMake |
 | SDK ABI、trace 或 tick 检查失败 | 对照附带 SDK 的版本说明和有效配置，保留第一条错误 |
 | 芯片或 Flash 不匹配 | 串口、P4 修订、16MB 配置及分区；确认后再烧录 |
 | Hosted/SDIO 初始化失败 | C6 固件、供电、板型和 SDIO 配置，见 [C6 指南](C6_PREPARATION.md) |
@@ -59,9 +59,9 @@ IDF_COMPONENT_CHECK_NEW_VERSION=0 idf.py reconfigure build
 
 ### 获得 IP 后校时超时
 
-`network clock unavailable` 表示本轮等待没有获得有效同步结果，后续绑定和 TiRTC 初始化仍未放行。当前依次使用 `ntp.aliyun.com`、`pool.ntp.org`，请求走 UDP 123；45 秒是应用等待窗口，不代表 Wi-Fi 建连用了 45 秒。
+`network clock unavailable` 表示本轮等待没有获得有效同步结果，后续绑定和 TiRTC 初始化仍未放行。启动会解析 `ntp.aliyun.com`、`pool.ntp.org`，随后几乎同时通过 UDP 123 发出请求；首个有效响应后最多再等 500 ms 收集另一份结果，两份结果相差超过 2 秒时拒绝放行。3 秒内都无有效响应才进入 ESP-IDF SNTP 串行兜底；兜底 45 秒是校时等待窗口，不代表 Wi-Fi 建连用了 45 秒。
 
-失败后保留同一轮的 `network clock snapshot / DNS / peer` 日志：
+并行阶段先看 `network clock peer ready / reply / parallel synchronized`；日志包含每个域名的解析耗时、目标地址、往返耗时、有效回复数和时间偏差。进入串行兜底或最终失败后，再看同一轮的 `network clock snapshot / DNS / peer` 日志：
 
 - `active=0`：校时服务未运行，先检查初始化或停止路径。
 - `DNS slot`：当前解析服务器配置；有地址不代表该 DNS 可达。
@@ -70,7 +70,7 @@ IDF_COMPONENT_CHECK_NEW_VERSION=0 idf.py reconfigure build
 
 `UI intent rejected: action=1` 对应启动 AI。校时/绑定完成前，业务队列尚未创建，此时返回 `ESP_ERR_INVALID_STATE` 并提示稍候；就绪后队列满返回 `ESP_ERR_TIMEOUT`。按状态区分未就绪和排队失败，不把错误名称直接当作 UI 阻塞时长。
 
-新增快照只在失败时读取现有网络状态，不新增任务、不主动发送探测包、不更改校时超时、服务器或鉴权顺序。排查时不要用伪造日期或跳过校时来制造上线成功。
+并行校时不新增任务，只在启动工作任务中临时使用两个 UDP socket，完成后立即关闭；失败快照仍只读取现有状态。排查时不要用伪造日期或跳过校时来制造上线成功。
 
 若三个 DNS 均为 `0.0.0.0`，当前 IDF 的解析器会直接返回错误，未缓存的域名无法发起 DNS 查询。这已经足以解释校时无法推进，但不能证明 DHCP 服务端没有下发 DNS。网络管理层在 GOT_IP 时保留 `Wi-Fi DNS: stage=got-ip` 快照，再向空备用槽配置 `CONFIG_XIAOTAI_FALLBACK_DNS_IPV4`（默认 `223.5.5.5`），最后记录 `stage=after-portal-stop`。主、备 DNS 和已存在的备用地址均不覆盖。
 
@@ -80,7 +80,9 @@ IDF_COMPONENT_CHECK_NEW_VERSION=0 idf.py reconfigure build
 
 画面能动但功能未就绪时，依次对齐获得 IP、`network clock synchronized`、`SDK started`、`device token obtained`、主页状态、MQTT 连接及资料上报。主页出现后实际发起 AI，确认 `ai-active` 与首个上下行音频包，不能只把页面切换视为全功能就绪。
 
-慢 HTTP 日志中，`dns` 为解析，`link` 为扣除解析的连接耗时，`sock` 为 socket connect 调用耗时，`tcp_wait` 为非阻塞 TCP 建连的首次等待；`wait` 为最后一次写入到首次收到响应的间隔，`q` 为业务排队。`conn=0` 表示复用了连接。`HTTP t` 与日志前缀可能使用不同时间基准，只在同一基准内相减。
+慢 HTTP 日志中，`dns` 为解析，`link` 为扣除解析的连接耗时，`sock` 为 socket connect 调用耗时，`tcp_wait` 为非阻塞 TCP 建连的首次等待；`wait` 为最后一次写入到首次收到响应的间隔，`q` 为业务排队。`conn=0` 表示复用了连接；`fresh_retry` 非零表示复用连接已被服务端关闭，设备在该毫秒数后用新连接重试了一次幂等 GET。`HTTP t` 与日志前缀可能使用不同时间基准，只在同一基准内相减。
+
+平台 HTTP 只保留一个工作任务，避免并发 TLS 抬高内部 RAM 峰值。交互触发的 `/v1/ai/token` 会排到尚未执行的后台联系人和能力上报之前，但不会强行中止已经发出的请求。服务端关闭空闲长连接后，只允许 GET 在原超时预算内重建连接一次；POST 不自动重放，避免服务端已经执行后产生重复副作用。
 
 校时等候与 HTTP 建连分别定位。没有收到 NTP 应答，不能直接认定服务器、热点或设备丢包；需要请求/响应及路径对照证据。复用连接的回归应覆盖签名登录、Bearer 请求、POST 后 GET、空闲释放、跨站、服务器主动关闭、解绑及失败后手动重试。
 
@@ -122,67 +124,11 @@ IDF_COMPONENT_CHECK_NEW_VERSION=0 idf.py reconfigure build
 
 先在普通路由器建立基线，再对照电脑热点和受控弱网。记录发送时间、SDK 到包、PCM 消费和 I2S 写入四段；仅在接收端注入丢包不能代表完整的双向弱网。
 
-## 主机检查
+## 代码与构建检查
 
-在 P4 根目录运行脚本。首次体验无需先运行全部测试；修改哪个模块，就先检查该模块及相邻路径。
+工程不维护额外的 Python 测试脚手架。修改完成后先审阅相关 C/CMake 差异，再执行一次干净构建。链接完成后，根 `CMakeLists.txt` 会调用 `tools/check_firmware.cmake`，核对产品入口、主要业务符号和 I2C 驱动所有权。
 
-| 修改范围 | 脚本入口 | 目标板还需检查 |
-| --- | --- | --- |
-| 配网与绑定页面生命周期 | `tools/test_setup_lifecycle.py` | 无 Wi-Fi 启动先显示配网，热点就绪后更新名称/网址；首次绑定显示和更新六位码，不等播报结束；重试、绑定成功、解绑及通话中断网的页面顺序 |
-| 启动校时 | `tools/test_startup_clock.py` | 已绑定/首次绑定、冷启动/保留日期复位；阻断 SNTP 后恢复，确认同步日志先于 SDK 初始化及平台请求 |
-| Wi-Fi DNS 策略 | `tools/test_wifi_dns.py` | DHCP 有/无 DNS、备用地址不可达、断网重连与 AP 退出前后快照；校时和后续业务实际上线 |
-| AI 握手和 HTTP | `tools/test_ai_start_contract.py`、`tools/test_platform_http_requests.py`、`tools/test_platform_http_trace.py`、`tools/test_platform_http_reuse.py` | 重复建连、完整应答后开放音频、DNS/连接/响应等待时序、复用和空闲释放 |
-| NVS 与建连资源 | `tools/test_nvs_store.py`、`tools/test_runtime_resources.py` | 快速改设置后复位、配网/绑定保存、连续呼叫时 MQTT 在线及内存水位 |
-| 多人房间与 UI 快照 | `tools/test_room_release.py`、`tools/test_room_navigation.py` | 创建/加入/退出、返回断连再进入、PTT 松手停止、AI 切换、断网释放后重连、断电后的租约恢复 |
-| 任务内存与热点生命周期 | `tools/test_memory_placement.py` | 热点反复启停、DNS/页面访问、配网保存重启、提示音及铃声；记录内部/PSRAM 最大连续块和栈余量 |
-| 音量控制 | `tools/test_speaker_controls.py`、`tools/test_playback_ownership.py` | 验证码/铃声播放期间连续调音量、静音与恢复；检查请求值、硬件已应用值、NVS 读回及 UI 耗时 |
-| 采集与高通 | `tools/test_audio_pipeline.py`、`tools/test_capture_highpass.py` | 录音、连续性、处理耗时 |
-| 播放缓冲与变速 | `tools/test_audio_playout.py`、`tools/test_playback_ownership.py` | 欠载、积压、尾音和听感 |
-| I2S 供音节拍 | `tools/test_i2s_playback_cadence.py` | 持续播放、三种策略的起播和收尾、`AP level/srcclip/dma_est/late`；驱动仿真通过不代表真机爆音消失 |
-| 播放诊断隔离 | `tools/test_audio_diagnostics.py` | 连续播放的 `late/pubmax/stack`、日志拥塞时的错误计数 |
-| 唤醒 FFT | `tools/test_wake_fft.py` | 不同语速、距离及播放中唤醒 |
-| 卷积适配 | `tools/test_conv_channels.py` | P4 向量计算输出和推理耗时 |
-| 界面 | `tools/test_product_layout.py` | 快速点击、字幕、表情与视频并发 |
-| 源码整理 | `tools/test_source_layout.py` | 首页、菜单、配网、绑定及通话页面；主机检查只证明当前入口与所需源码保留 |
-| 表情与切换 | `tools/test_face_animation.py` | 23 种表情、44 套有效姿态，快速切换、眨眼、聆听/思考、隐藏后恢复；观察轮廓、装饰、残影、触摸和绘制耗时 |
-| 联系人与微信 | `tools/test_contact_query.py`、`tools/test_voip_incoming_media.py`、`tools/test_voip_profile.py` | 查询回包、双向语音/视频呼叫 |
-| 设备能力上报状态 | `tools/test_device_profile.py` | 首次上线、重连、解绑、平台能力展示及失败重试边界 |
-| 视频 | `tools/test_p4_video.py`、`tools/test_full_frame_uplink.py`、`tools/test_video_ingress.py`、`tools/test_p4_profile_switch.py` | 首帧、方向、摄像头开关与连续显示 |
-| 码率 | `tools/test_video_bitrate.py`、`tools/test_bitrate_governor.py` | SDK 反馈及真实发送码率 |
-| Hosted | `tools/test_hosted_rpc_routing.py`、`tools/test_hosted_init_lifecycle.py` | 并发请求、掉线和资源回收 |
-| 手机热点配网 | `tools/test_wifi_portal.py`、`tools/test_nvs_store.py` | 中文名称、开放/隐藏网络、已保存密码复用和修改、超过 4 个网络的替换、失败密码不入历史；零条/多条扫描、反复刷新、扫描中重连及退出；手机 320/390/480 像素宽度 |
-| 依赖 | `tools/test_dependency_lock.py` | 固件构建 |
-| I2C 驱动链接 | `tools/test_i2c_driver_family.py` | `tools/check_i2c_driver_family.py` 检查实际 ELF/MAP，随后验证启动、触摸和音频 |
-
-运行前阅读脚本的编译器要求。需要 gcc/g++ 或 sanitizer 的检查使用 Linux/WSL 主机环境；IDF 交叉编译器不能直接替代主机编译器。卷积适配检查需要 CMake 和 Ninja。
-
-HTTP 复用检查还需设置当前环境的 `IDF_PATH`，用于编译 IDF 的实际 URL 解析器；不进行网络请求。
-
-配网生命周期检查执行真实 UI 定时器前段、配网页状态更新及页面构建后的刷新分支，以 stub 模拟网络、LVGL 和快照锁。可用 `--revision <commit>` 对照历史源码，不切换工作树。它能验证首次启动的依赖顺序、锁竞争和文本更新，不能替代实际屏幕、热点与绑定消息测试。
-
-表情检查读取本工程 `managed_components` 中的 LVGL 源码，不自动下载依赖；覆盖 44 套有效姿态与局部重绘一致性，其中“思考”“放松”仅使用第一套。主机结果不能替代屏幕目视检查与运行时耗时验证。启动校时检查使用 SNTP stub，不能证明真实服务器可达或 SDK 防重放错误已消失。
-
-例如：
-
-```sh
-python tools/test_audio_playout.py
-python tools/test_i2s_playback_cadence.py
-python tools/test_audio_diagnostics.py
-python tools/test_playback_resampler.py
-python tools/test_prompt_resampler.py
-python -B -X utf8 tools/test_conv_channels.py
-python -B -X utf8 tools/test_dependency_lock.py
-```
-
-依赖锁检查不要求已有 build。检查已生成的锁时增加：
-
-```sh
-python -B -X utf8 tools/test_dependency_lock.py --resolved build/dependencies.lock
-```
-
-播放所有权测试默认检查当前代码。复现历史实现时显式传入 `--baseline SOURCE_FILE`，不要从当前 HEAD 猜测旧文件位置；参数检查入口为 `tools/test_playback_ownership_cli.py`。
-
-主机检查可能使用真实 C 函数、stub 或源码断言，脚本说明决定其覆盖范围。通过结果不代表目标板音视频效果已验收。
+构建检查只能证明源码可配置、可链接且未混入已知冲突实现。配网、网络恢复、触摸、音频、视频、会话释放和弱网表现仍以目标板日志及实际体验为准。
 
 ## 真机回归
 
@@ -199,6 +145,8 @@ python -B -X utf8 tools/test_dependency_lock.py --resolved build/dependencies.lo
 | 9. 稳态 | 重复上述操作并持续观察 | 稳定阶段内存、队列和任务数量无持续异常增长 |
 
 测试前确认端口、板卡和对端可用。烧录不擅自擦除 NVS；采样避免记录无关人员和隐私。
+
+H5 抢占专项：先让 AI 播放，再从网页发起实时查看。核对 `H5 connection queued`、待接管时的 `audio/video subscribe ... pending=1`、`H5 connection promoted ... audio_sub/video_sub`、首个摄像头上行帧和网页画面；网页按住讲话后还要核对下行音频。重复测试 AI 取 token、建连和播放三个时段，以及 H5 结束后再次进入 AI。若网页仍显示“等待媒体”，保留订阅与首包日志，不把 `h5-active` 或摄像头 ready 当作媒体成功。
 
 启动校时专项应同时覆盖已有绑定和首次绑定：`network clock synchronized` 必须先于 `pre-tirtc-bootstrap` 和设备上报/鉴权请求。SNTP 无响应时保留 `network clock unavailable`，后续上线不能提前执行；网络恢复后应由同一校时服务继续推进，UI 和采集仍可运行。顺序通过不等于 SDK 防重放问题已经闭环，仍需多次断电与复位日志验证。
 
@@ -226,8 +174,7 @@ SDK 文本、源码路径、SDP 或凭据。连接建立后 `tp_probe=off` 表�
 重新等待下次建连。媒体阶段继续使用原有 `AP/CP` 指标，不开启逐包或 SDK STAT 日志。
 以后更新 SDK 若日志格式变化，需要重新核对过滤器。没有新增任务、PCM 队列或应用堆分配。
 
-`tools/test_transport_diagnostics.py` 检查日志提取、敏感字段过滤、失败语义和日志开关；
-它是主机检查，不能证明真机协议协商。实测时保留从建连到挂断的完整日志，再施加丢包、
+实测时保留从建连到挂断的完整日志，再施加丢包、
 延迟和抖动，分别记录协议、首次收发、缓冲水位、变速、队列丢弃、供音超时和听感。
 
 按“无整形 → 延时 → 抖动 → 丢包 → 组合条件 → 恢复正常”的顺序测试，先建立同一网络下的基线。
@@ -251,4 +198,4 @@ SDK 文本、源码路径、SDP 或凭据。连接建立后 `tp_probe=off` 表�
 
 一次记录包含：源码及未提交改动、SDK/工具链、有效配置、板卡修订、操作、预期、实际结果和首处异常。分别标明静态检查、主机测试、构建、烧录、真机和长稳结果。
 
-日志、录音和固件放在自己的调试目录。分享前遮盖 token、设备密钥和个人信息。串口开发控制台默认关闭，命令以 `starter_console` 注册表为准；视频采样见[抓流说明](VIDEO_CAPTURE.md)。
+日志、录音和固件放在自己的调试目录。分享前遮盖 token、设备密钥和个人信息。串口开发控制台默认关闭，命令以 `starter_console` 注册表为准。

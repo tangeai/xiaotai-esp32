@@ -1,6 +1,6 @@
 # 小钛 P4
 
-小钛 P4 是微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 上的音视频设备应用，版本为 **1.4.0**。支持 AI 语音对讲、设备间语音/视频呼叫、微信通话、多人对讲和 H5 实时查看，包含热点配网、设备绑定和联系人管理。
+小钛 P4 是微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 上的音视频设备应用，版本为 **1.4.1**。通过 TiRTC/WebRTC 支持 AI 语音对讲、设备间语音/视频呼叫、微信通话、多人对讲和 H5 实时查看，包含热点配网、设备绑定和联系人管理。
 
 ## 准备什么
 
@@ -16,7 +16,7 @@
 
 ## 开始使用
 
-1. 按[开发指南](docs/GETTING_STARTED_CN.md#编译与烧录)安装环境，在本目录运行 `idf.py build`，再烧录到 P4。
+1. 下载 [1.4.1 完整 16 MB 烧录包](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.4.1/xiaotai-esp32-p4-app-v1.4.1-full-16MB.bin)，按[网页烧录说明](../README.md#用浏览器烧录)从 `0x0` 写入，无需自行编译。完整包会清除配网、绑定和用户设置，请先备份；校验清单见[发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.4.1)。
 2. 手机连接设备显示的 `XiaoTai-XXXX` 开放热点，访问 `http://192.168.6.1`，选择扫描到的 Wi-Fi 并输入密码；已保存网络可直接复用密码。
 3. 设备联网后显示六位验证码。在[平台“我的设备”](https://xiaotai.chat/devices)中添加设备并填写验证码。
 4. 完成绑定后，按[功能体验](docs/GETTING_STARTED_CN.md#功能体验)配置 AI、联系人或微信授权，开始通话。
@@ -39,7 +39,7 @@ AI 角色、设备联系人和微信授权由配套平台配置。当前应用�
 | 找到负责某项功能的代码 | [系统与媒体架构](docs/P4_MEDIA_ARCHITECTURE.md) |
 | 排查故障、选择测试和记录结果 | [测试与排障](docs/TESTING.md) |
 | 核对版本、SDK、模型和配置 | [版本与依赖](docs/DEPENDENCIES.md) |
-| 查看本版改动 | [版本记录](RELEASE_NOTES.md) |
+| 查看本版及历史改动 | [版本记录](CHANGELOG.md) |
 | 恢复 C6 或采集视频诊断数据 | [专项资料](docs/README.md) |
 
 许可证见 [LICENSE](LICENSE)，第三方组件和资源说明见 [THIRD_PARTY.md](THIRD_PARTY.md)。

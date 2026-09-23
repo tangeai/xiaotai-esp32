@@ -1,0 +1,60 @@
+diff --git a/TiRTC/tiRTC.c b/TiRTC/tiRTC.c
+index b898a6d..9f1ddfa 100644
+--- a/TiRTC/tiRTC.c
++++ b/TiRTC/tiRTC.c
+@@ -294,6 +294,16 @@ static void _on_destroy_done(void *ctx)
+     }
+ }
+ 
++/* Failed connects never transfer a handle to the application. */
++static void _on_connect_failed_destroy_done(void *ctx)
++{
++    if(ctx) {
++        struct _tirtc_conn *hconn = (struct _tirtc_conn *)ctx;
++        SA_MutexUninit(hconn->send_lock);
++        My_free(hconn);
++    }
++}
++
+ /* ---------- connection-level callbacks ---------- */
+ 
+ static void _on_channel(tgtrp_connection pc, tgtrp_channel c, void *context)
+@@ -326,7 +336,6 @@ static void _on_channel(tgtrp_connection pc, tgtrp_channel c, void *context)
+ static void _on_error(tgtrp_connection pc, void *context, int ev)
+ {
+     struct _tirtc_conn *hconn = (struct _tirtc_conn *)context;
+-    (void)pc;
+     Logf(ev==-8?LOGLEVEL_DEBUG:LOGLEVEL_ERR, "tiRTC", " _on_error hconn=p%p ev=%d\n", hconn, ev);
+     //_warn("[tiRTC] _on_error hconn=%p ev=%d\n", hconn, ev);
+ #if 0
+@@ -362,11 +371,23 @@ static void _on_error(tgtrp_connection pc, void *context, int ev)
+         hconn->error_conn = TIRTC_E_CONN_OTHER_ERROR;
+     }
+ 
+-    /* 若 connect_cb 尚未触发 (连接建立阶段失败), 以错误码回调并结束 */
++    /* SDK 回收未交付的连接；应用仍只收到 error + NULL。 */
+     if(hconn->connect_cb) {
+         TIRTCCONNECTCALLBACK cb = hconn->connect_cb;
++        void *user_data = hconn->connect_user_data;
++        int error = hconn->error_conn;
+         hconn->connect_cb = NULL;
+-        cb(hconn->error_conn, NULL, hconn->connect_user_data);
++        /* 销毁异步排队，先撤销迟到的错误、通道及媒体回调。 */
++        tgtrp_connection_set_on_error(pc, NULL, NULL);
++        tgtrp_connection_set_on_channel(pc, NULL, NULL);
++        for(int i = 0; i < CH_COUNT; ++i) {
++            if(hconn->ch[i])
++                tgtrp_channel_set_on_data_ex(pc, hconn->ch[i], NULL, NULL);
++        }
++        tgtrp_connection_destroy(pc, _on_destroy_stat, hconn,
++                                 _on_connect_failed_destroy_done, hconn);
++        /* 排队后不再访问 hconn，允许结果回调立即发起下一次连接。 */
++        cb(error, NULL, user_data);
+         return;
+     }
+ 
+@@ -1358,4 +1379,3 @@ TiRTC_EXPORT int TiRtcServiceRequest(const char *path,
+ {
+     return svc_req(_cfg.service_endpoint, path, json_body, token, cb, user_data);
+ }
+-

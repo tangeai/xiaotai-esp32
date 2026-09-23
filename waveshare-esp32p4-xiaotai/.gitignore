@@ -46,5 +46,4 @@ Thumbs.db
 # Retired compile-only probe and historical diagnostic; archived outside Git.
 /port/
 /docs/history/
-/tools/test_rtc_endpoint_policy.py
 /components/espressif__esp_hosted/.gitmodules

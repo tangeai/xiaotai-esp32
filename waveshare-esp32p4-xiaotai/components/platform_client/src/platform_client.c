@@ -12,12 +12,20 @@
 #include "platform_http_trace.h"
 #include "sdkconfig.h"
 
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <time.h>
 #include <stdatomic.h>
+#include <unistd.h>
 
 #include "cJSON.h"
 #include "esp_attr.h"
@@ -188,7 +196,7 @@ static const char *http_api_name(const char *url_or_path)
 static void http_log_result(const char *url, bool post, uint32_t started_ms,
                             uint32_t queue_ms, uint32_t prep_ms, uint32_t io_ms,
                             esp_err_t err, int status, const platform_http_trace_t *trace,
-                            bool redirected)
+                            bool redirected, uint32_t stale_retry_ms)
 {
     uint32_t total_ms = (uint32_t)(esp_timer_get_time() / 1000) - started_ms;
     const char *api = http_api_name(url);
@@ -204,7 +212,7 @@ static void http_log_result(const char *url, bool post, uint32_t started_ms,
     long link_ms = trace->enabled && trace->connect_ms >= trace->dns_ms
                        ? (long)(trace->connect_ms - trace->dns_ms) : -1;
     ESP_LOGI(TAG,
-             "HTTP t=%lu api=%s m=%s q=%lu prep=%lu dns=%ld/%lu drc=%d link=%ld sock=%lu tcp_wait=%lu/%d wait=%ld io=%lu total=%lu conn=%lu redir=%d tx=%lu rx=%lu rc=%d status=%d",
+             "HTTP t=%lu api=%s m=%s q=%lu prep=%lu dns=%ld/%lu drc=%d link=%ld sock=%lu tcp_wait=%lu/%d wait=%ld io=%lu total=%lu conn=%lu redir=%d fresh_retry=%lu tx=%lu rx=%lu rc=%d status=%d",
              (unsigned long)started_ms, api, post ? "POST" : "GET",
              (unsigned long)queue_ms, (unsigned long)prep_ms,
              trace->enabled ? (long)trace->dns_ms : -1,
@@ -213,6 +221,7 @@ static void http_log_result(const char *url, bool post, uint32_t started_ms,
              trace->tcp_wait_rc, wait_ms,
              (unsigned long)io_ms, (unsigned long)total_ms,
              (unsigned long)trace->connect_calls, (int)redirected,
+             (unsigned long)stale_retry_ms,
              (unsigned long)trace->tx_bytes, (unsigned long)trace->rx_bytes,
              (int)err, status);
 }
@@ -321,7 +330,7 @@ static esp_err_t http_request_timed(const char *url,
 {
     uint32_t started_ms = (uint32_t)(esp_timer_get_time() / 1000);
     uint32_t queue_ms = queued_ms == 0 ? 0 : started_ms - queued_ms;
-    uint32_t prep_ms = 0, io_ms = 0;
+    uint32_t prep_ms = 0, io_ms = 0, stale_retry_ms = 0;
     platform_http_trace_t trace = {0};
     if (status != NULL) *status = 0;
     if (url == NULL || response == NULL || response_size == 0 ||
@@ -334,20 +343,29 @@ static esp_err_t http_request_timed(const char *url,
         .capacity = response_size,
     };
     response[0] = '\0';
+    unsigned request_timeout_ms = timeout_ms == 0
+                                      ? PLATFORM_DEFAULT_HTTP_TIMEOUT_MS
+                                      : timeout_ms;
     esp_http_client_config_t config = {
         .url = url,
         .event_handler = http_event,
         .user_data = &output,
-        .timeout_ms = (int)(timeout_ms == 0
-                                ? PLATFORM_DEFAULT_HTTP_TIMEOUT_MS
-                                : timeout_ms),
+        .timeout_ms = (int)request_timeout_ms,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .disable_auto_redirect = false,
     };
     esp_http_client_handle_t client = http_reuse_take(url);
+    bool reused_client = client != NULL;
     esp_err_t err = ESP_ERR_NO_MEM;
     int response_status = 0;
-    char authorization[1100];
+    char authorization[1100] = {0};
+
+prepare_attempt:
+    output.length = 0;
+    output.overflow = false;
+    output.redirected = false;
+    response[0] = '\0';
+    uint32_t attempt_started_ms = (uint32_t)(esp_timer_get_time() / 1000);
     if (client != NULL) {
         err = esp_http_client_set_url(client, url);
         if (err != ESP_OK) goto done;
@@ -381,22 +399,38 @@ static esp_err_t http_request_timed(const char *url,
         if (err != ESP_OK) goto done;
     }
 
-    prep_ms = (uint32_t)(esp_timer_get_time() / 1000) - started_ms;
+    prep_ms += (uint32_t)(esp_timer_get_time() / 1000) - attempt_started_ms;
     platform_http_trace_begin(&trace);
     err = esp_http_client_perform(client);
     platform_http_trace_end(&trace);
-    io_ms = (uint32_t)(esp_timer_get_time() / 1000) - trace.started_ms;
+    io_ms += (uint32_t)(esp_timer_get_time() / 1000) - trace.started_ms;
     response_status = esp_http_client_get_status_code(client);
     if (err == ESP_OK && output.overflow) {
         err = ESP_ERR_INVALID_SIZE;
+    }
+    /* A server may close an idle keep-alive socket without notifying us until
+     * the next read. Replaying a GET on a fresh socket is safe; POST requests
+     * are never replayed because the server may already have applied them. */
+    if (err != ESP_OK && reused_client && json_body == NULL && stale_retry_ms == 0U) {
+        uint32_t elapsed_ms = (uint32_t)(esp_timer_get_time() / 1000) - started_ms;
+        esp_http_client_cleanup(client);
+        client = NULL;
+        reused_client = false;
+        if (elapsed_ms < request_timeout_ms) {
+            stale_retry_ms = elapsed_ms == 0U ? 1U : elapsed_ms;
+            config.timeout_ms = (int)(request_timeout_ms - elapsed_ms);
+            response_status = 0;
+            memset(&trace, 0, sizeof(trace));
+            goto prepare_attempt;
+        }
     }
 done:
     if (client != NULL) {
         bool reusable = err == ESP_OK && response_status >= 200 && response_status < 300 &&
                         !output.redirected && !output.overflow;
         /* Never retain caller stack pointers, signed headers or a previous
-         * POST body. A failed/stale connection is closed, not silently replayed:
-         * a call/create POST may already have executed on the server. */
+         * POST body. Failed connections are closed; POST is never replayed
+         * because a call/create request may already have executed. */
         if (reusable) {
             for (size_t i = 0; i < header_count; ++i)
                 (void)esp_http_client_delete_header(client, header_names[i]);
@@ -417,7 +451,8 @@ done:
     if (!trace.enabled) prep_ms = (uint32_t)(esp_timer_get_time() / 1000) - started_ms - io_ms;
     if (status != NULL) *status = response_status;
     http_log_result(url, json_body != NULL, started_ms, queue_ms, prep_ms,
-                    io_ms, err, response_status, &trace, output.redirected);
+                    io_ms, err, response_status, &trace, output.redirected,
+                    stale_retry_ms);
     return err;
 }
 
@@ -527,9 +562,34 @@ static bool json_copy_string(const cJSON *object,
     return true;
 }
 
+static bool url_uses_scheme(const char *url, const char *scheme)
+{
+    if (url == NULL || scheme == NULL) {
+        return false;
+    }
+    size_t scheme_length = strlen(scheme);
+    return strncasecmp(url, scheme, scheme_length) == 0 &&
+           url[scheme_length] != '\0';
+}
+
+static bool services_use_authenticated_transports(const platform_services_t *services)
+{
+    return services != NULL &&
+           url_uses_scheme(services->device, "https://") &&
+           url_uses_scheme(services->ai, "https://") &&
+           url_uses_scheme(services->call, "https://") &&
+           url_uses_scheme(services->voip, "https://") &&
+           url_uses_scheme(services->tirtc, "https://") &&
+           url_uses_scheme(services->mqtt, "mqtts://");
+}
+
 static esp_err_t discover_services(const char *url)
 {
     /* 服务地址属于运行时发现结果，不在固件中分别硬编码。 */
+    if (!url_uses_scheme(url, "https://")) {
+        ESP_LOGE(TAG, "service discovery requires HTTPS");
+        return ESP_ERR_INVALID_ARG;
+    }
     char *response = http_response_alloc();
     if (response == NULL) {
         return ESP_ERR_NO_MEM;
@@ -556,14 +616,18 @@ static esp_err_t discover_services(const char *url)
               json_copy_string(root, "call-srv", s_services.call,
                                sizeof(s_services.call)) &&
               json_copy_string(root, "voip-srv", s_services.voip,
-                               sizeof(s_services.voip));
-    if (root != NULL) {
-        (void)json_copy_string(root, "tirtc-srv", s_services.tirtc,
+                               sizeof(s_services.voip)) &&
+              json_copy_string(root, "tirtc-srv", s_services.tirtc,
                                sizeof(s_services.tirtc));
-    }
     cJSON_Delete(root);
     if (!ok) {
+        memset(&s_services, 0, sizeof(s_services));
         ESP_LOGE(TAG, "service discovery response is incomplete");
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    if (!services_use_authenticated_transports(&s_services)) {
+        memset(&s_services, 0, sizeof(s_services));
+        ESP_LOGE(TAG, "service discovery returned an unauthenticated transport");
         return ESP_ERR_INVALID_RESPONSE;
     }
     s_services_ready = true;
@@ -925,12 +989,293 @@ static bool s_clock_initialized;
 static bool s_clock_synchronized;
 
 #define PLATFORM_CLOCK_PEERS 2U
+#define PLATFORM_CLOCK_PARALLEL_TIMEOUT_MS 3000U
+#define PLATFORM_CLOCK_REPLY_SETTLE_MS 500U
+#define PLATFORM_CLOCK_MAX_SPREAD_MS 2000U
+#define PLATFORM_NTP_PACKET_BYTES 48U
+#define PLATFORM_NTP_PORT 123U
+#define PLATFORM_NTP_UNIX_EPOCH_DELTA 2208988800ULL
+
+static const char *const s_clock_server_names[PLATFORM_CLOCK_PEERS] = {
+    "ntp.aliyun.com",
+    "pool.ntp.org",
+};
+
+typedef struct {
+    const char *name;
+    int socket_fd;
+    int64_t sent_us;
+    uint32_t request_seconds;
+    uint32_t request_fraction;
+    uint64_t unix_us;
+    uint32_t resolve_ms;
+    uint32_t rtt_ms;
+    bool valid;
+    char address[INET_ADDRSTRLEN];
+} clock_probe_t;
+
 typedef struct {
     bool active;
     ip_addr_t dns[DNS_MAX_SERVERS];
     ip_addr_t peer[PLATFORM_CLOCK_PEERS];
     uint8_t reach[PLATFORM_CLOCK_PEERS];
 } clock_snapshot_t;
+
+static uint32_t clock_read_be32(const uint8_t *data)
+{
+    return ((uint32_t)data[0] << 24) |
+           ((uint32_t)data[1] << 16) |
+           ((uint32_t)data[2] << 8) |
+           (uint32_t)data[3];
+}
+
+static void clock_write_be32(uint8_t *data, uint32_t value)
+{
+    data[0] = (uint8_t)(value >> 24);
+    data[1] = (uint8_t)(value >> 16);
+    data[2] = (uint8_t)(value >> 8);
+    data[3] = (uint8_t)value;
+}
+
+static void clock_probe_close(clock_probe_t *probe)
+{
+    if (probe->socket_fd >= 0) {
+        close(probe->socket_fd);
+        probe->socket_fd = -1;
+    }
+}
+
+static bool clock_probe_prepare(clock_probe_t *probe)
+{
+    struct addrinfo hints = {
+        .ai_family = AF_INET,
+        .ai_socktype = SOCK_DGRAM,
+        .ai_protocol = IPPROTO_UDP,
+    };
+    struct addrinfo *result = NULL;
+    int64_t started_us = esp_timer_get_time();
+    int rc = getaddrinfo(probe->name, NULL, &hints, &result);
+    probe->resolve_ms = (uint32_t)((esp_timer_get_time() - started_us) / 1000);
+    if (rc != 0 || result == NULL) {
+        ESP_LOGW(TAG, "network clock resolve failed: server=%s rc=%d elapsed_ms=%lu",
+                 probe->name, rc, (unsigned long)probe->resolve_ms);
+        if (result != NULL) freeaddrinfo(result);
+        return false;
+    }
+
+    bool ready = false;
+    for (const struct addrinfo *candidate = result;
+         candidate != NULL && !ready;
+         candidate = candidate->ai_next) {
+        if (candidate->ai_family != AF_INET ||
+            candidate->ai_addrlen < sizeof(struct sockaddr_in)) {
+            continue;
+        }
+        struct sockaddr_in remote = {0};
+        memcpy(&remote, candidate->ai_addr, sizeof(remote));
+        remote.sin_port = htons(PLATFORM_NTP_PORT);
+        if (inet_ntop(AF_INET, &remote.sin_addr,
+                      probe->address, sizeof(probe->address)) == NULL) {
+            continue;
+        }
+
+        int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (fd < 0) continue;
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 ||
+            connect(fd, (const struct sockaddr *)&remote, sizeof(remote)) != 0) {
+            close(fd);
+            continue;
+        }
+        probe->socket_fd = fd;
+        ready = true;
+    }
+    freeaddrinfo(result);
+    if (!ready) {
+        ESP_LOGW(TAG, "network clock socket unavailable: server=%s elapsed_ms=%lu",
+                 probe->name, (unsigned long)probe->resolve_ms);
+        return false;
+    }
+    ESP_LOGI(TAG, "network clock peer ready: server=%s addr=%s dns_ms=%lu",
+             probe->name, probe->address, (unsigned long)probe->resolve_ms);
+    return true;
+}
+
+static bool clock_probe_send(clock_probe_t *probe)
+{
+    uint8_t request[PLATFORM_NTP_PACKET_BYTES] = {0};
+    request[0] = (uint8_t)((4U << 3) | 3U); /* NTP v4, client mode. */
+    struct timeval now = {0};
+    (void)gettimeofday(&now, NULL);
+    uint64_t ntp_seconds = (uint64_t)(now.tv_sec > 0 ? now.tv_sec : 0) +
+                           PLATFORM_NTP_UNIX_EPOCH_DELTA;
+    probe->request_seconds = (uint32_t)ntp_seconds;
+    probe->request_fraction = esp_random();
+    if (probe->request_fraction == 0U) probe->request_fraction = 1U;
+    clock_write_be32(&request[40], probe->request_seconds);
+    clock_write_be32(&request[44], probe->request_fraction);
+    probe->sent_us = esp_timer_get_time();
+    ssize_t sent = send(probe->socket_fd, request, sizeof(request), 0);
+    if (sent != (ssize_t)sizeof(request)) {
+        ESP_LOGW(TAG, "network clock send failed: server=%s errno=%d",
+                 probe->name, errno);
+        clock_probe_close(probe);
+        return false;
+    }
+    return true;
+}
+
+static bool clock_probe_parse(clock_probe_t *probe,
+                              const uint8_t *response,
+                              size_t length,
+                              int64_t received_us)
+{
+    if (length < PLATFORM_NTP_PACKET_BYTES) return false;
+    uint8_t leap = response[0] >> 6;
+    uint8_t version = (response[0] >> 3) & 0x07U;
+    uint8_t mode = response[0] & 0x07U;
+    uint8_t stratum = response[1];
+    if (leap == 3U || (version != 3U && version != 4U) || mode != 4U ||
+        stratum == 0U || stratum > 15U ||
+        clock_read_be32(&response[24]) != probe->request_seconds ||
+        clock_read_be32(&response[28]) != probe->request_fraction) {
+        return false;
+    }
+
+    uint32_t seconds = clock_read_be32(&response[40]);
+    uint32_t fraction = clock_read_be32(&response[44]);
+    uint64_t era_seconds = seconds >= PLATFORM_NTP_UNIX_EPOCH_DELTA
+                               ? seconds
+                               : (1ULL << 32) + seconds;
+    uint64_t unix_seconds = era_seconds - PLATFORM_NTP_UNIX_EPOCH_DELTA;
+    if (unix_seconds <= 1700000000ULL || unix_seconds >= 4102444800ULL) {
+        return false;
+    }
+    uint64_t fraction_us = ((uint64_t)fraction * 1000000ULL) >> 32;
+    uint64_t rtt_us = received_us > probe->sent_us
+                          ? (uint64_t)(received_us - probe->sent_us)
+                          : 0U;
+    probe->rtt_ms = (uint32_t)(rtt_us / 1000U);
+    probe->unix_us = unix_seconds * 1000000ULL + fraction_us + rtt_us / 2U;
+    probe->valid = true;
+    ESP_LOGI(TAG, "network clock reply: server=%s addr=%s rtt_ms=%lu stratum=%u",
+             probe->name, probe->address, (unsigned long)probe->rtt_ms,
+             (unsigned)stratum);
+    return true;
+}
+
+static esp_err_t clock_parallel_sync(void)
+{
+    clock_probe_t probes[PLATFORM_CLOCK_PEERS] = {0};
+    unsigned ready_count = 0;
+    for (unsigned i = 0; i < PLATFORM_CLOCK_PEERS; ++i) {
+        probes[i].name = s_clock_server_names[i];
+        probes[i].socket_fd = -1;
+        if (clock_probe_prepare(&probes[i])) ready_count++;
+    }
+    if (ready_count == 0U) return ESP_ERR_NOT_FOUND;
+
+    unsigned sent_count = 0;
+    int64_t started_us = esp_timer_get_time();
+    for (unsigned i = 0; i < PLATFORM_CLOCK_PEERS; ++i) {
+        if (probes[i].socket_fd >= 0 && clock_probe_send(&probes[i])) sent_count++;
+    }
+    if (sent_count == 0U) return ESP_FAIL;
+    ESP_LOGI(TAG, "network clock parallel query: sent=%u timeout_ms=%u",
+             sent_count, PLATFORM_CLOCK_PARALLEL_TIMEOUT_MS);
+
+    unsigned valid_count = 0;
+    int64_t final_deadline_us = started_us +
+                                (int64_t)PLATFORM_CLOCK_PARALLEL_TIMEOUT_MS * 1000;
+    int64_t settle_deadline_us = final_deadline_us;
+    for (;;) {
+        int64_t now_us = esp_timer_get_time();
+        int64_t deadline_us = settle_deadline_us < final_deadline_us
+                                  ? settle_deadline_us
+                                  : final_deadline_us;
+        if (now_us >= deadline_us || valid_count == sent_count) break;
+
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        int max_fd = -1;
+        for (unsigned i = 0; i < PLATFORM_CLOCK_PEERS; ++i) {
+            if (probes[i].socket_fd >= 0 && !probes[i].valid) {
+                FD_SET(probes[i].socket_fd, &read_set);
+                if (probes[i].socket_fd > max_fd) max_fd = probes[i].socket_fd;
+            }
+        }
+        if (max_fd < 0) break;
+        int64_t remaining_us = deadline_us - now_us;
+        struct timeval timeout = {
+            .tv_sec = (time_t)(remaining_us / 1000000),
+            .tv_usec = (suseconds_t)(remaining_us % 1000000),
+        };
+        int selected = select(max_fd + 1, &read_set, NULL, NULL, &timeout);
+        if (selected < 0) {
+            if (errno == EINTR) continue;
+            ESP_LOGW(TAG, "network clock select failed: errno=%d", errno);
+            break;
+        }
+        if (selected == 0) break;
+
+        for (unsigned i = 0; i < PLATFORM_CLOCK_PEERS; ++i) {
+            clock_probe_t *probe = &probes[i];
+            if (probe->socket_fd < 0 || !FD_ISSET(probe->socket_fd, &read_set)) continue;
+            uint8_t response[PLATFORM_NTP_PACKET_BYTES];
+            ssize_t length = recv(probe->socket_fd, response, sizeof(response), 0);
+            int64_t received_us = esp_timer_get_time();
+            if (length >= 0 && clock_probe_parse(probe, response,
+                                                 (size_t)length, received_us)) {
+                valid_count++;
+                clock_probe_close(probe);
+                if (valid_count == 1U) {
+                    settle_deadline_us = received_us +
+                                         (int64_t)PLATFORM_CLOCK_REPLY_SETTLE_MS * 1000;
+                }
+            }
+        }
+    }
+
+    for (unsigned i = 0; i < PLATFORM_CLOCK_PEERS; ++i) clock_probe_close(&probes[i]);
+    if (valid_count == 0U) {
+        ESP_LOGW(TAG, "network clock parallel query timed out: sent=%u elapsed_ms=%lu",
+                 sent_count,
+                 (unsigned long)((esp_timer_get_time() - started_us) / 1000));
+        return ESP_ERR_TIMEOUT;
+    }
+
+    uint64_t minimum_us = UINT64_MAX;
+    uint64_t maximum_us = 0U;
+    uint64_t total_us = 0U;
+    for (unsigned i = 0; i < PLATFORM_CLOCK_PEERS; ++i) {
+        if (!probes[i].valid) continue;
+        if (probes[i].unix_us < minimum_us) minimum_us = probes[i].unix_us;
+        if (probes[i].unix_us > maximum_us) maximum_us = probes[i].unix_us;
+        total_us += probes[i].unix_us;
+    }
+    uint64_t spread_ms = (maximum_us - minimum_us) / 1000U;
+    if (valid_count > 1U && spread_ms > PLATFORM_CLOCK_MAX_SPREAD_MS) {
+        ESP_LOGE(TAG, "network clock peers disagree: replies=%u spread_ms=%llu",
+                 valid_count, (unsigned long long)spread_ms);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    uint64_t selected_us = total_us / valid_count;
+    struct timeval selected_time = {
+        .tv_sec = (time_t)(selected_us / 1000000ULL),
+        .tv_usec = (suseconds_t)(selected_us % 1000000ULL),
+    };
+    if (settimeofday(&selected_time, NULL) != 0) {
+        ESP_LOGE(TAG, "network clock settimeofday failed: errno=%d", errno);
+        return ESP_FAIL;
+    }
+    if (time(NULL) <= 1700000000) return ESP_ERR_INVALID_RESPONSE;
+    ESP_LOGI(TAG,
+             "network clock parallel synchronized: replies=%u/%u spread_ms=%llu elapsed_ms=%lu",
+             valid_count, sent_count, (unsigned long long)spread_ms,
+             (unsigned long)((esp_timer_get_time() - started_us) / 1000));
+    return ESP_OK;
+}
 
 static esp_err_t clock_snapshot_read(void *context)
 {
@@ -943,6 +1288,35 @@ static esp_err_t clock_snapshot_read(void *context)
         snapshot->peer[i] = *esp_sntp_getserver(i);
         snapshot->reach[i] = esp_sntp_getreachability(i);
     }
+    return ESP_OK;
+}
+
+esp_err_t platform_client_resolve_tirtc_endpoint(const char *discovery_url,
+                                                 char *output,
+                                                 size_t output_size)
+{
+    if (output == NULL || output_size == 0U) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    output[0] = '\0';
+    esp_err_t err = platform_client_sync_clock();
+    if (err != ESP_OK) {
+        return err;
+    }
+    const char *discovery = discovery_url != NULL && discovery_url[0] != '\0'
+                                ? discovery_url
+                                : PLATFORM_DEFAULT_DISCOVERY;
+    if (!s_services_ready) {
+        err = discover_services(discovery);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+    size_t length = strlen(s_services.tirtc);
+    if (length == 0U || length >= output_size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(output, s_services.tirtc, length + 1U);
     return ESP_OK;
 }
 
@@ -975,9 +1349,15 @@ esp_err_t platform_client_sync_clock(void)
      * Reuse the service and confirmed time on binding/SDK retries. */
     if (s_clock_synchronized && time(NULL) > 1700000000) return ESP_OK;
     s_clock_synchronized = false;
+    const int64_t started_us = esp_timer_get_time();
+    esp_err_t parallel_err = clock_parallel_sync();
+
+    /* Keep the IDF service for hourly background refresh. Its built-in client
+     * polls peers serially, so it is only the compatibility fallback for the
+     * startup query above, never the normal 15-second failover path. */
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(
         PLATFORM_CLOCK_PEERS,
-        ESP_SNTP_SERVER_LIST("ntp.aliyun.com", "pool.ntp.org"));
+        ESP_SNTP_SERVER_LIST(s_clock_server_names[0], s_clock_server_names[1]));
     esp_err_t err;
     if (!s_clock_initialized) {
         err = esp_netif_sntp_init(&config);
@@ -987,17 +1367,23 @@ esp_err_t platform_client_sync_clock(void)
         }
         s_clock_initialized = true;
     }
+    if (parallel_err == ESP_OK) {
+        s_clock_synchronized = true;
+        ESP_LOGI(TAG, "network clock ready: source=parallel elapsed_ms=%lu",
+                 (unsigned long)((esp_timer_get_time() - started_us) / 1000));
+        return ESP_OK;
+    }
+
     /* lwIP switches peers only after SNTP_RECV_TIMEOUT (15 s in IDF 5.5.4).
-     * Cover both peers plus one resolution/start window; the former 10 s
-     * deadline abandoned first binding before the fallback could answer.
-     * This blocks only the startup worker, not LVGL or audio capture. */
+     * Preserve that proven fallback if every parallel UDP probe fails. This
+     * blocks only the startup worker, not LVGL or audio capture. */
     uint32_t timeout_ms = (config.num_of_servers + 1U) * SNTP_RECV_TIMEOUT;
 #if SNTP_STARTUP_DELAY && defined(CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY)
     timeout_ms += CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY;
 #endif
-    const int64_t started_us = esp_timer_get_time();
-    ESP_LOGI(TAG, "waiting for network clock: timeout_ms=%lu peers=%u",
-             (unsigned long)timeout_ms, (unsigned)config.num_of_servers);
+    ESP_LOGW(TAG,
+             "parallel network clock failed: error=%s; falling back to IDF SNTP timeout_ms=%lu",
+             esp_err_to_name(parallel_err), (unsigned long)timeout_ms);
     err = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(timeout_ms));
     const unsigned long elapsed_ms = (unsigned long)((esp_timer_get_time() - started_us) / 1000);
     if (err == ESP_OK && time(NULL) > 1700000000) {
@@ -1672,6 +2058,11 @@ bool platform_client_ready(void)
     return s_ready && atomic_load(&s_rebind_request) == 0;
 }
 
+bool platform_client_request_worker_ready(void)
+{
+    return s_request_worker_ready;
+}
+
 uint32_t platform_client_epoch(void) { return atomic_load(&s_epoch); }
 uint32_t platform_client_response_epoch(void) { return s_response_epoch; }
 int platform_client_response_status(void) { return s_response_status; }
@@ -1835,7 +2226,15 @@ esp_err_t platform_client_request_timeout(platform_service_t service,
     if (json_body != NULL) {
         (void)snprintf(request->body, sizeof(request->body), "%s", json_body);
     }
-    if (xQueueSend(s_request_ready_queue, &slot, 0) == pdTRUE) {
+    /* AI token is a direct foreground interaction. Put it ahead of queued
+     * profile/contact refreshes, while keeping the single HTTP/TLS owner and
+     * its fixed memory footprint. An already-running request is not preempted. */
+    bool foreground_ai = service == PLATFORM_SERVICE_AI &&
+                         strcmp(path, "/v1/ai/token") == 0;
+    BaseType_t queued = foreground_ai
+        ? xQueueSendToFront(s_request_ready_queue, &slot, 0)
+        : xQueueSend(s_request_ready_queue, &slot, 0);
+    if (queued == pdTRUE) {
         return ESP_OK;
     }
     memset(request, 0, sizeof(*request));

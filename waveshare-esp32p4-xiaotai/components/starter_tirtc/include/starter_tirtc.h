@@ -6,7 +6,8 @@
  * @brief TiRTC SDK 的窄适配接口。
  *
  * 只有本模块的实现文件直接包含 tiRTC.h。其余代码只看见模板自有类型，避免
- * SDK ABI 和回调细节扩散。模块最多持有一个连接，并用 generation 标识连接生命周期。
+ * SDK ABI 和回调细节扩散。模块只暴露一个活动连接；AI 被 H5 抢占时可短暂
+ * 暂存一个入站连接，并用 generation 标识切换后的连接生命周期。
  */
 
 #include <stdbool.h>
@@ -54,7 +55,7 @@ typedef struct {
     /** SDK 异步启动或停止结果。 */
     void (*on_started)(bool started, int error, void *user_data);
 
-    /** 入站/外连建立或断开；request_tag 只用于关联 AI 外连请求。 */
+    /** 入站/外连建立或断开；H5 generation=0 表示等待 runtime 接管的入站连接。 */
     void (*on_connection)(starter_tirtc_mode_t mode,
                           uint32_t generation,
                           uint32_t request_tag,
@@ -111,8 +112,17 @@ int starter_tirtc_start(const starter_tirtc_config_t *config);
 /** SDK 是否已经通过 TIRTC_EVENT_SYS_STARTED 确认启动。 */
 bool starter_tirtc_started(void);
 
-/** 控制是否接受 H5 入站；AI 占用资源时会暂时关闭。 */
+/** 控制是否接受 H5 入站；通话和多人房间占用资源时暂时关闭。 */
 void starter_tirtc_accept_h5(bool accept);
+
+/** AI 活动期间是否有一个等待接管的 H5 入站连接。 */
+bool starter_tirtc_h5_takeover_pending(void);
+
+/**
+ * 将等待中的 H5 入站连接提升为当前连接并断开旧 AI 连接。
+ * 只能由 runtime owner 调用；成功时返回 0 并写入新的 generation。
+ */
+int starter_tirtc_promote_pending_h5(uint32_t *generation);
 
 /** 异步发起 AI WHIP 连接；request_tag 会原样带回 on_connection。 */
 int starter_tirtc_ai_connect(const char *peer_id,

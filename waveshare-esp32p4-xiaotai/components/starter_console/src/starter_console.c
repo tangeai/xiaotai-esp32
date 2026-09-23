@@ -236,7 +236,7 @@ static int command_voice_config(int argc, char **argv)
     char *end = NULL;
     unsigned long threshold = argc == 2 ? strtoul(argv[1], &end, 10) : 0;
     if (argc != 2 || end == argv[1] || *end != '\0' || threshold < 50 || threshold > 990) {
-        printf("usage: voice-config <threshold-milli:50..990>; volatile, default 700\n");
+        printf("usage: voice-config <threshold-milli:50..990>; volatile override\n");
         return 1;
     }
     esp_err_t err = starter_voice_configure((unsigned)threshold, true);

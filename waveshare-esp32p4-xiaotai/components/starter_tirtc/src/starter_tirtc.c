@@ -1,8 +1,8 @@
 /*
  * TiRTC SDK 适配层，也是工程中唯一直接依赖 tiRTC.h 的模块。
  *
- * 模块最多持有一条连接：H5 是 SDK 接受的入站连接，AI 是 WHIP 外连。原子
- * connection/mode/generation 让 SDK 回调与会话任务能识别当前连接，并拒绝
+ * 媒体只有一个活动连接；AI 到 H5 切换时可短暂保留一个待接管的入站连接。
+ * connection/mode/generation 让 SDK 回调与会话任务识别当前连接，并拒绝
  * 断连后到达的旧回调。SDK 回调只转换参数并通知 starter_runtime/media，
  * 不执行 HTTP、阻塞等待、TiRtcStop 或 TiRtcUninit。
  */
@@ -51,6 +51,16 @@ static starter_tirtc_handlers_t s_handlers;
 static atomic_bool s_started;
 static atomic_bool s_accept_h5 = true;
 static atomic_uintptr_t s_connection;
+/* MAX_CONNECTIONS=2 is used only for an AI -> H5 handover. The second handle
+ * is never exposed to media callbacks until the runtime owner promotes it. */
+static atomic_uintptr_t s_pending_h5_connection;
+/* Subscription callbacks may precede the runtime's handover event. Keep
+ * their state with the pending handle instead of rejecting the peer. */
+static atomic_bool s_pending_h5_audio_subscribed;
+#if CONFIG_IDF_TARGET_ESP32P4
+static atomic_bool s_pending_h5_video_subscribed;
+#endif
+static portMUX_TYPE s_connection_lock = portMUX_INITIALIZER_UNLOCKED;
 static atomic_int s_mode;
 
 /*
@@ -263,24 +273,50 @@ static void on_conn_accepted(tirtc_conn_t connection)
                                              : STARTER_TIRTC_H5;
     if (accepted_mode == STARTER_TIRTC_H5 &&
         !atomic_load_explicit(&s_accept_h5, memory_order_acquire)) {
-        ESP_LOGW(TAG, "H5 connection arrived while AI owns the media path; rejecting");
+        ESP_LOGW(TAG, "H5 connection rejected by foreground owner gate");
         (void)TiRtcDisconnect(connection);
         return;
     }
-    uintptr_t expected = 0;
-    if (!atomic_compare_exchange_strong_explicit(&s_connection,
-                                                  &expected,
-                                                  (uintptr_t)connection,
-                                                  memory_order_acq_rel,
-                                                  memory_order_acquire)) {
-        ESP_LOGW(TAG, "additional H5 connection rejected");
+    bool pending_h5 = false;
+    bool accepted = false;
+    uint32_t generation = 0;
+    taskENTER_CRITICAL(&s_connection_lock);
+    bool h5_allowed = accepted_mode != STARTER_TIRTC_H5 ||
+                      atomic_load_explicit(&s_accept_h5, memory_order_acquire);
+    if (h5_allowed && atomic_load_explicit(&s_connection, memory_order_acquire) == 0U) {
+        atomic_store_explicit(&s_connection, (uintptr_t)connection, memory_order_release);
+        if (accepted_mode == STARTER_TIRTC_H5) {
+            /* A late AI connect result must not replace this inbound winner. */
+            atomic_store_explicit(&s_pending_request, 0, memory_order_release);
+        }
+        clear_subscriptions();
+        generation = next_generation();
+        atomic_store_explicit(&s_mode, accepted_mode, memory_order_release);
+        atomic_store_explicit(&s_active_generation, generation, memory_order_release);
+        accepted = true;
+    } else if (h5_allowed && accepted_mode == STARTER_TIRTC_H5 &&
+               atomic_load_explicit(&s_mode, memory_order_acquire) == STARTER_TIRTC_AI &&
+               atomic_load_explicit(&s_pending_h5_connection, memory_order_acquire) == 0U) {
+        atomic_store_explicit(&s_pending_h5_audio_subscribed, false, memory_order_release);
+#if CONFIG_IDF_TARGET_ESP32P4
+        atomic_store_explicit(&s_pending_h5_video_subscribed, false, memory_order_release);
+#endif
+        atomic_store_explicit(&s_pending_h5_connection, (uintptr_t)connection,
+                              memory_order_release);
+        pending_h5 = true;
+    }
+    taskEXIT_CRITICAL(&s_connection_lock);
+    if (pending_h5) {
+        ESP_LOGI(TAG, "H5 connection queued to preempt AI");
+        /* generation=0 means the handle is not active yet. */
+        notify_connection(STARTER_TIRTC_H5, 0, 0, true, 0);
+        return;
+    }
+    if (!accepted) {
+        ESP_LOGW(TAG, "inbound connection rejected: gate=%d", h5_allowed);
         (void)TiRtcDisconnect(connection);
         return;
     }
-    clear_subscriptions();
-    uint32_t generation = next_generation();
-    atomic_store_explicit(&s_mode, accepted_mode, memory_order_release);
-    atomic_store_explicit(&s_active_generation, generation, memory_order_release);
     sdk_transport_probe(false);
     ESP_LOGI(TAG, "inbound connection accepted mode=%d generation=%lu tp_probe=off",
              (int)accepted_mode, (unsigned long)generation);
@@ -289,13 +325,33 @@ static void on_conn_accepted(tirtc_conn_t connection)
 
 static void on_conn_error(tirtc_conn_t connection, int error)
 {
-    if (!connection_matches(connection)) {
+    bool pending = false;
+    bool current = false;
+    starter_tirtc_mode_t mode = STARTER_TIRTC_NONE;
+    uint32_t generation = 0;
+    taskENTER_CRITICAL(&s_connection_lock);
+    if (connection != NULL &&
+        atomic_load_explicit(&s_pending_h5_connection, memory_order_acquire) ==
+            (uintptr_t)connection) {
+        atomic_store_explicit(&s_pending_h5_connection, 0, memory_order_release);
+        atomic_store_explicit(&s_pending_h5_audio_subscribed, false, memory_order_release);
+#if CONFIG_IDF_TARGET_ESP32P4
+        atomic_store_explicit(&s_pending_h5_video_subscribed, false, memory_order_release);
+#endif
+        pending = true;
+    } else if (connection_matches(connection)) {
+        mode = (starter_tirtc_mode_t)atomic_load_explicit(&s_mode, memory_order_acquire);
+        generation = (uint32_t)atomic_load_explicit(&s_active_generation,
+                                                     memory_order_acquire);
+        current = true;
+    }
+    taskEXIT_CRITICAL(&s_connection_lock);
+    if (pending) {
+        ESP_LOGW(TAG, "pending H5 connection error=%d", error);
+        (void)TiRtcDisconnect(connection);
         return;
     }
-    starter_tirtc_mode_t mode = (starter_tirtc_mode_t)atomic_load_explicit(
-        &s_mode, memory_order_acquire);
-    uint32_t generation = (uint32_t)atomic_load_explicit(
-        &s_active_generation, memory_order_acquire);
+    if (!current) return;
     /* 只记录稳定的数值错误码，不把 SDK 原始错误文本直接写入产品日志。 */
     ESP_LOGW(TAG, "connection error=%d", error);
     notify_connection(mode, generation, 0, false, error);
@@ -303,20 +359,29 @@ static void on_conn_error(tirtc_conn_t connection, int error)
 
 static void on_disconnected(tirtc_conn_t connection)
 {
-    /* CAS 既过滤旧 handle，也保证只有一个回调负责清空当前连接。 */
-    uintptr_t expected = (uintptr_t)connection;
-    if (!atomic_compare_exchange_strong_explicit(&s_connection,
-                                                  &expected,
-                                                  0,
-                                                  memory_order_acq_rel,
-                                                  memory_order_acquire)) {
-        return;
+    bool current = false;
+    starter_tirtc_mode_t mode = STARTER_TIRTC_NONE;
+    uint32_t generation = 0;
+    taskENTER_CRITICAL(&s_connection_lock);
+    if (connection_matches(connection)) {
+        atomic_store_explicit(&s_connection, 0, memory_order_release);
+        mode = (starter_tirtc_mode_t)atomic_exchange_explicit(
+            &s_mode, STARTER_TIRTC_NONE, memory_order_acq_rel);
+        generation = (uint32_t)atomic_exchange_explicit(
+            &s_active_generation, 0, memory_order_acq_rel);
+        clear_subscriptions();
+        current = true;
+    } else if (connection != NULL &&
+               atomic_load_explicit(&s_pending_h5_connection, memory_order_acquire) ==
+                   (uintptr_t)connection) {
+        atomic_store_explicit(&s_pending_h5_connection, 0, memory_order_release);
+        atomic_store_explicit(&s_pending_h5_audio_subscribed, false, memory_order_release);
+#if CONFIG_IDF_TARGET_ESP32P4
+        atomic_store_explicit(&s_pending_h5_video_subscribed, false, memory_order_release);
+#endif
     }
-    starter_tirtc_mode_t mode = (starter_tirtc_mode_t)atomic_exchange_explicit(
-        &s_mode, STARTER_TIRTC_NONE, memory_order_acq_rel);
-    uint32_t generation = (uint32_t)atomic_exchange_explicit(
-        &s_active_generation, 0, memory_order_acq_rel);
-    clear_subscriptions();
+    taskEXIT_CRITICAL(&s_connection_lock);
+    if (!current) return;
     sdk_transport_probe(true);
     ESP_LOGI(TAG, "connection closed generation=%lu", (unsigned long)generation);
     notify_connection(mode, generation, 0, false, 0);
@@ -326,40 +391,44 @@ static void on_external_connect(int error, tirtc_conn_t connection, void *user_d
 {
     /* request id 已失效说明请求被取消或被新会话取代，成功的迟到连接也要关闭。 */
     uint32_t request = (uint32_t)(uintptr_t)user_data;
-    if (request == 0U ||
-        request != atomic_load_explicit(&s_pending_request, memory_order_acquire)) {
-        if (error == 0 && connection != NULL) {
-            (void)TiRtcDisconnect(connection);
+    bool valid_request = false;
+    bool accepted = false;
+    uint32_t request_tag = 0;
+    uint32_t generation = 0;
+    starter_tirtc_mode_t pending_mode = STARTER_TIRTC_NONE;
+    taskENTER_CRITICAL(&s_connection_lock);
+    if (request != 0U &&
+        request == atomic_load_explicit(&s_pending_request, memory_order_acquire)) {
+        valid_request = true;
+        request_tag = (uint32_t)atomic_load_explicit(&s_pending_tag, memory_order_acquire);
+        pending_mode = (starter_tirtc_mode_t)atomic_load_explicit(
+            &s_pending_mode, memory_order_acquire);
+        atomic_store_explicit(&s_pending_request, 0, memory_order_release);
+        if (error == 0 && connection != NULL &&
+            atomic_load_explicit(&s_connection, memory_order_acquire) == 0U) {
+            atomic_store_explicit(&s_connection, (uintptr_t)connection, memory_order_release);
+            clear_subscriptions();
+            generation = next_generation();
+            atomic_store_explicit(&s_mode, pending_mode, memory_order_release);
+            atomic_store_explicit(&s_active_generation, generation, memory_order_release);
+            accepted = true;
         }
+    }
+    taskEXIT_CRITICAL(&s_connection_lock);
+    if (!valid_request) {
+        if (error == 0 && connection != NULL) (void)TiRtcDisconnect(connection);
         return;
     }
-    uint32_t request_tag = (uint32_t)atomic_load_explicit(
-        &s_pending_tag, memory_order_acquire);
-    starter_tirtc_mode_t pending_mode =
-        (starter_tirtc_mode_t)atomic_load_explicit(&s_pending_mode,
-                                                    memory_order_acquire);
-    atomic_store_explicit(&s_pending_request, 0, memory_order_release);
     if (error != 0 || connection == NULL) {
         notify_connection(pending_mode, 0, request_tag, false, error);
         return;
     }
-
-    /* H5 可能在 AI 外连期间抢先到达；连接槽位只允许一个赢家。 */
-    uintptr_t expected = 0;
-    if (!atomic_compare_exchange_strong_explicit(&s_connection,
-                                                  &expected,
-                                                  (uintptr_t)connection,
-                                                  memory_order_acq_rel,
-                                                  memory_order_acquire)) {
-        ESP_LOGW(TAG, "AI connection completed after another connection won");
+    if (!accepted) {
+        ESP_LOGW(TAG, "external connection completed after another connection won");
         (void)TiRtcDisconnect(connection);
         notify_connection(pending_mode, 0, request_tag, false, TIRTC_E_BUSY);
         return;
     }
-    clear_subscriptions();
-    uint32_t generation = next_generation();
-    atomic_store_explicit(&s_mode, pending_mode, memory_order_release);
-    atomic_store_explicit(&s_active_generation, generation, memory_order_release);
     sdk_transport_probe(false);
     ESP_LOGI(TAG, "external connection ready mode=%d generation=%lu tp_probe=off",
              (int)pending_mode, (unsigned long)generation);
@@ -502,38 +571,57 @@ static bool audio_subscription_matches(starter_tirtc_mode_t mode, uint8_t stream
 static int on_subscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
 {
     /* 返回 0 接受协议规定的发送流；其他 stream 明确拒绝。 */
-    if (!connection_matches(connection)) {
-        return -1;
+    bool pending = false;
+    bool accepted = false;
+    starter_tirtc_mode_t mode = STARTER_TIRTC_NONE;
+    taskENTER_CRITICAL(&s_connection_lock);
+    if (connection_matches(connection)) {
+        mode = (starter_tirtc_mode_t)atomic_load_explicit(&s_mode, memory_order_acquire);
+        accepted = audio_subscription_matches(mode, stream_id);
+        if (accepted) atomic_store_explicit(&s_audio_subscribed, true, memory_order_release);
+    } else if (connection != NULL &&
+               atomic_load_explicit(&s_pending_h5_connection, memory_order_acquire) ==
+                   (uintptr_t)connection) {
+        mode = STARTER_TIRTC_H5;
+        pending = true;
+        accepted = stream_id == H5_AUDIO_STREAM;
+        if (accepted) atomic_store_explicit(&s_pending_h5_audio_subscribed, true,
+                                             memory_order_release);
     }
-    starter_tirtc_mode_t mode = (starter_tirtc_mode_t)atomic_load_explicit(
-        &s_mode, memory_order_acquire);
-    bool accepted = audio_subscription_matches(mode, stream_id);
-    if (accepted) {
-        atomic_store_explicit(&s_audio_subscribed, true, memory_order_release);
-    }
+    taskEXIT_CRITICAL(&s_connection_lock);
     ESP_LOGI(TAG,
-             "audio subscribe mode=%d stream=%u accepted=%d",
+             "audio subscribe mode=%d stream=%u accepted=%d pending=%d",
              (int)mode,
              (unsigned)stream_id,
-             accepted);
+             accepted, pending);
     return accepted ? 0 : -1;
 }
 
 static int on_subscribe_video(tirtc_conn_t connection, uint8_t stream_id)
 {
 #if CONFIG_IDF_TARGET_ESP32P4
-    bool accepted = connection_matches(connection) &&
-                    (atomic_load_explicit(&s_mode, memory_order_acquire) == STARTER_TIRTC_H5
-#if CONFIG_IDF_TARGET_ESP32P4
-                     || starter_tirtc_mode() == STARTER_TIRTC_CALL
-                     || starter_tirtc_mode() == STARTER_TIRTC_VOIP
-#endif
-                    ) &&
-                    stream_id == H5_VIDEO_STREAM;
-    if (accepted) {
-        atomic_store_explicit(&s_video_subscribed, true, memory_order_release);
-        on_request_key_frame(connection, stream_id);
+    bool pending = false;
+    bool accepted = false;
+    taskENTER_CRITICAL(&s_connection_lock);
+    if (connection_matches(connection)) {
+        starter_tirtc_mode_t mode = (starter_tirtc_mode_t)atomic_load_explicit(
+            &s_mode, memory_order_acquire);
+        accepted = (mode == STARTER_TIRTC_H5 || mode == STARTER_TIRTC_CALL ||
+                    mode == STARTER_TIRTC_VOIP) && stream_id == H5_VIDEO_STREAM;
+        if (accepted) atomic_store_explicit(&s_video_subscribed, true,
+                                             memory_order_release);
+    } else if (connection != NULL &&
+               atomic_load_explicit(&s_pending_h5_connection, memory_order_acquire) ==
+                   (uintptr_t)connection) {
+        pending = true;
+        accepted = stream_id == H5_VIDEO_STREAM;
+        if (accepted) atomic_store_explicit(&s_pending_h5_video_subscribed, true,
+                                             memory_order_release);
     }
+    taskEXIT_CRITICAL(&s_connection_lock);
+    ESP_LOGI(TAG, "video subscribe stream=%u accepted=%d pending=%d",
+             (unsigned)stream_id, accepted, pending);
+    if (accepted && !pending) on_request_key_frame(connection, stream_id);
     return accepted ? 0 : -1;
 #else
     /* S3 is audio-only; explicitly reject video instead of advertising a
@@ -546,18 +634,34 @@ static int on_subscribe_video(tirtc_conn_t connection, uint8_t stream_id)
 
 static void on_unsubscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
 {
-    if (connection_matches(connection) &&
-        audio_subscription_matches(starter_tirtc_mode(), stream_id)) {
+    taskENTER_CRITICAL(&s_connection_lock);
+    if (connection_matches(connection) && audio_subscription_matches(
+            (starter_tirtc_mode_t)atomic_load_explicit(&s_mode, memory_order_acquire),
+            stream_id)) {
         atomic_store_explicit(&s_audio_subscribed, false, memory_order_release);
+    } else if (connection != NULL && stream_id == H5_AUDIO_STREAM &&
+               atomic_load_explicit(&s_pending_h5_connection, memory_order_acquire) ==
+                   (uintptr_t)connection) {
+        atomic_store_explicit(&s_pending_h5_audio_subscribed, false, memory_order_release);
     }
+    taskEXIT_CRITICAL(&s_connection_lock);
 }
 
 #if CONFIG_IDF_TARGET_ESP32P4
 static void on_unsubscribe_video(tirtc_conn_t connection, uint8_t stream_id)
 {
-    if (connection_matches(connection) && stream_id == H5_VIDEO_STREAM) {
-        atomic_store_explicit(&s_video_subscribed, false, memory_order_release);
+    taskENTER_CRITICAL(&s_connection_lock);
+    if (stream_id == H5_VIDEO_STREAM) {
+        if (connection_matches(connection)) {
+            atomic_store_explicit(&s_video_subscribed, false, memory_order_release);
+        } else if (connection != NULL &&
+                   atomic_load_explicit(&s_pending_h5_connection, memory_order_acquire) ==
+                       (uintptr_t)connection) {
+            atomic_store_explicit(&s_pending_h5_video_subscribed, false,
+                                  memory_order_release);
+        }
     }
+    taskEXIT_CRITICAL(&s_connection_lock);
 }
 
 static void on_update_bitrate(tirtc_conn_t connection, uint8_t stream_id,
@@ -721,7 +825,9 @@ int starter_tirtc_start(const starter_tirtc_config_t *config)
         return rollback_start("TiRtcSetOption(CLIENT_ID)", rc);
     }
     int network_type = TIRTC_NETCONN_WIFI;
-    int max_connections = 1;
+    /* One foreground connection plus one transient inbound H5 handle. The
+     * application still runs exactly one media owner at a time. */
+    int max_connections = 2;
     rc = TiRtcSetOption(TIRTC_OPT_NETWORK_TYPE,
                         &network_type,
                         sizeof(network_type));
@@ -757,7 +863,73 @@ bool starter_tirtc_started(void)
 
 void starter_tirtc_accept_h5(bool accept)
 {
+    taskENTER_CRITICAL(&s_connection_lock);
     atomic_store_explicit(&s_accept_h5, accept, memory_order_release);
+    taskEXIT_CRITICAL(&s_connection_lock);
+}
+
+bool starter_tirtc_h5_takeover_pending(void)
+{
+    return atomic_load_explicit(&s_pending_h5_connection,
+                                memory_order_acquire) != 0;
+}
+
+int starter_tirtc_promote_pending_h5(uint32_t *generation)
+{
+    if (generation == NULL) return TIRTC_E_INVALID_PARAMETER;
+    tirtc_conn_t previous;
+    tirtc_conn_t incoming;
+    bool audio_subscribed;
+#if CONFIG_IDF_TARGET_ESP32P4
+    bool video_subscribed;
+#endif
+    uint32_t next;
+    taskENTER_CRITICAL(&s_connection_lock);
+    starter_tirtc_mode_t mode = (starter_tirtc_mode_t)atomic_load_explicit(
+        &s_mode, memory_order_acquire);
+    incoming = (tirtc_conn_t)atomic_load_explicit(&s_pending_h5_connection,
+                                                  memory_order_acquire);
+    if ((mode != STARTER_TIRTC_AI && mode != STARTER_TIRTC_NONE) || incoming == NULL) {
+        taskEXIT_CRITICAL(&s_connection_lock);
+        return incoming == NULL ? TIRTC_E_INVALID_HANDLE : TIRTC_E_INVALID_PARAMETER;
+    }
+    audio_subscribed = atomic_load_explicit(&s_pending_h5_audio_subscribed,
+                                            memory_order_acquire);
+#if CONFIG_IDF_TARGET_ESP32P4
+    video_subscribed = atomic_load_explicit(&s_pending_h5_video_subscribed,
+                                            memory_order_acquire);
+#endif
+    /* Subscription callbacks serialize on this lock. No callback can see an
+     * unowned handle between clearing AI and publishing H5. */
+    previous = (tirtc_conn_t)atomic_exchange_explicit(&s_connection, 0,
+                                                       memory_order_acq_rel);
+    atomic_store_explicit(&s_pending_request, 0, memory_order_release);
+    atomic_store_explicit(&s_pending_tag, 0, memory_order_release);
+    atomic_store_explicit(&s_pending_mode, STARTER_TIRTC_NONE, memory_order_release);
+    clear_subscriptions();
+    next = next_generation();
+    atomic_store_explicit(&s_mode, STARTER_TIRTC_H5, memory_order_release);
+    atomic_store_explicit(&s_active_generation, next, memory_order_release);
+    atomic_store_explicit(&s_audio_subscribed, audio_subscribed, memory_order_release);
+#if CONFIG_IDF_TARGET_ESP32P4
+    atomic_store_explicit(&s_video_subscribed, video_subscribed, memory_order_release);
+    atomic_store_explicit(&s_pending_h5_video_subscribed, false, memory_order_release);
+#endif
+    atomic_store_explicit(&s_pending_h5_audio_subscribed, false, memory_order_release);
+    atomic_store_explicit(&s_connection, (uintptr_t)incoming, memory_order_release);
+    atomic_store_explicit(&s_pending_h5_connection, 0, memory_order_release);
+    taskEXIT_CRITICAL(&s_connection_lock);
+    sdk_transport_probe(false);
+    *generation = next;
+    if (previous != NULL) (void)TiRtcDisconnect(previous);
+    ESP_LOGI(TAG, "H5 connection promoted generation=%lu audio_sub=%d video_sub=%d",
+             (unsigned long)next, audio_subscribed,
+#if CONFIG_IDF_TARGET_ESP32P4
+             video_subscribed);
+#else
+             0);
+#endif
+    return 0;
 }
 
 static atomic_uint s_room_tx_generation;
@@ -849,15 +1021,29 @@ int starter_tirtc_disconnect(void)
 {
     atomic_store(&s_room_tx_generation, 0);
     /* 先使待完成回调和当前 handle 失效，再请求 SDK 断开。 */
+    taskENTER_CRITICAL(&s_connection_lock);
     atomic_store_explicit(&s_pending_request, 0, memory_order_release);
     atomic_store_explicit(&s_expected_call_tag, 0, memory_order_release);
     tirtc_conn_t connection = (tirtc_conn_t)atomic_exchange_explicit(
         &s_connection, 0, memory_order_acq_rel);
+    tirtc_conn_t pending_h5 = (tirtc_conn_t)atomic_exchange_explicit(
+        &s_pending_h5_connection, 0, memory_order_acq_rel);
+    atomic_store_explicit(&s_pending_h5_audio_subscribed, false, memory_order_release);
+#if CONFIG_IDF_TARGET_ESP32P4
+    atomic_store_explicit(&s_pending_h5_video_subscribed, false, memory_order_release);
+#endif
     atomic_store_explicit(&s_mode, STARTER_TIRTC_NONE, memory_order_release);
     atomic_store_explicit(&s_active_generation, 0, memory_order_release);
     clear_subscriptions();
+    taskEXIT_CRITICAL(&s_connection_lock);
     if (starter_tirtc_started()) sdk_transport_probe(true);
-    return connection == NULL ? TIRTC_E_INVALID_HANDLE : TiRtcDisconnect(connection);
+    int result = connection == NULL ? TIRTC_E_INVALID_HANDLE
+                                    : TiRtcDisconnect(connection);
+    if (pending_h5 != NULL) {
+        int pending_result = TiRtcDisconnect(pending_h5);
+        if (result == TIRTC_E_INVALID_HANDLE) result = pending_result;
+    }
+    return result;
 }
 
 bool starter_tirtc_connected(void)

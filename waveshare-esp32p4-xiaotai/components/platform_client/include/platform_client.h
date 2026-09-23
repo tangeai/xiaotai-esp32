@@ -84,16 +84,27 @@ typedef void (*platform_signal_callback_t)(const char *json,
 typedef void (*platform_online_callback_t)(void *user_data);
 
 /**
- * Start/reuse SNTP and wait for a valid synchronization in this boot before
- * TiRTC initialization, provisioning or authentication. A plausible retained
- * wall clock alone does not satisfy the first wait. Later calls reuse the
- * confirmed clock; SNTP keeps refreshing it in the background.
+ * Query the configured time peers in parallel and require a valid response in
+ * this boot before TiRTC initialization, provisioning or authentication. A
+ * plausible retained wall clock alone does not satisfy the first wait. The
+ * ESP-IDF SNTP service remains active for background refresh and as a serial
+ * compatibility fallback if every parallel probe fails. Later calls reuse the
+ * confirmed clock.
  * Call serially from the startup/platform HTTP owner after Wi-Fi has an IP,
  * never from LVGL, media or SDK callbacks. One wait is bounded by the configured
- * SNTP peer timeouts; errors leave dependent startup work to the caller.
+ * parallel and fallback timeouts; errors leave dependent startup work to the caller.
  * Does not create a product task, start MQTT or perform service discovery.
  */
 esp_err_t platform_client_sync_clock(void);
+
+/**
+ * 完成受信服务发现并复制 TiRTC 服务入口。发现结果必须包含完整的 HTTPS
+ * 业务地址、MQTTS 地址和 tirtc-srv；失败时不会启动 TiRTC 或鉴权请求。
+ * 只能由启动/平台 HTTP 所有者串行调用，output 由调用者持有。
+ */
+esp_err_t platform_client_resolve_tirtc_endpoint(const char *discovery_url,
+                                                 char *output,
+                                                 size_t output_size);
 
 /**
  * 完成服务发现、签名设备登录和永久 MQTT。为了降低 TiRTC TLS 启动峰值，
@@ -136,6 +147,7 @@ esp_err_t platform_client_provision(const platform_provision_config_t *config,
 
 /** 以下查询返回模块当前瞬时状态。 */
 bool platform_client_ready(void);
+bool platform_client_request_worker_ready(void);
 bool platform_client_mqtt_connected(void);
 bool platform_client_provisioning(void);
 

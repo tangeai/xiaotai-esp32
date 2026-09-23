@@ -16,6 +16,7 @@
 #include <time.h>
 
 #include "esp_app_desc.h"
+#include "esp_attr.h"
 #include "esp_chip_info.h"
 #include "esp_heap_caps.h"
 #include "esp_idf_version.h"
@@ -41,9 +42,8 @@
 #include "sdkconfig.h"
 #include "wifi_manager.h"
 
-/* 联调阶段先使用已验证的 HTTP 平台服务发现；HTTPS 留到功能验收后启用。 */
+/* 服务发现是所有平台与 TiRTC 地址的唯一入口。 */
 #define DISCOVERY_URL CONFIG_XIAOTAI_DISCOVERY_URL
-#define TIRTC_SERVICE_ENDPOINT CONFIG_XIAOTAI_TIRTC_SERVICE_ENDPOINT
 #define START_RETRY_DELAY_MS 5000U
 #define STARTER_TASK_STACK_BYTES 13312U
 #define PLATFORM_REQUEST_TASK_STACK_BYTES 13312U
@@ -55,6 +55,7 @@ static const char *TAG = "starter_main";
 static runtime_tirtc_config_t s_tirtc_config;
 static void *s_tirtc_internal_reserve;
 static char s_station_mac[18];
+static EXT_RAM_BSS_ATTR char s_tirtc_service_endpoint[256];
 static esp_err_t rebind_platform(bool *binding_restored);
 
 static void on_local_voice_result(const starter_voice_result_t *result, void *user_data)
@@ -302,6 +303,7 @@ static esp_err_t rebind_platform(bool *binding_restored)
     if (err == ESP_OK) {
         platform_client_complete_rebind();
         starter_product_set_binding_state(STARTER_BINDING_READY);
+        starter_product_set_initialization_state(STARTER_INITIALIZATION_READY);
         ESP_LOGI(TAG, "binding transition complete: elapsed_ms=%lu; Wi-Fi/SDK retained",
                  (unsigned long)((esp_timer_get_time() - started) / 1000));
     }
@@ -323,6 +325,7 @@ static void wait_for_network_clock(void)
 static void starter_start_task(void *argument)
 {
     (void)argument;
+    starter_product_set_initialization_state(STARTER_INITIALIZATION_PREPARING);
     /* Resolve local configuration while Wi-Fi associates. The UI can switch
      * on got-IP, rather than wait for Hosted MAC RPC, SNTP or HTTP. */
     esp_err_t err = runtime_config_load_tirtc(&s_tirtc_config);
@@ -374,6 +377,21 @@ static void starter_start_task(void *argument)
                        "%s",
                        default_client_id);
     }
+
+    /* TiRTC 必须和设备、MQTT、呼叫服务来自同一次受信服务发现，避免
+     * 固化地址造成测试/正式环境分裂。首次绑定已完成发现，此处为缓存读取；
+     * 已绑定冷启动则在 SDK 初始化前完成唯一一次发现。 */
+    for (;;) {
+        err = platform_client_resolve_tirtc_endpoint(DISCOVERY_URL,
+                                                     s_tirtc_service_endpoint,
+                                                     sizeof(s_tirtc_service_endpoint));
+        if (err == ESP_OK) {
+            break;
+        }
+        ESP_LOGE(TAG, "trusted service discovery unavailable: %s; retrying in %u ms",
+                 esp_err_to_name(err), START_RETRY_DELAY_MS);
+        vTaskDelay(pdMS_TO_TICKS(START_RETRY_DELAY_MS));
+    }
     ESP_LOGI(TAG,
              "starter task internal stack remaining=%u bytes",
              (unsigned)uxTaskGetStackHighWaterMark(NULL));
@@ -385,9 +403,11 @@ static void starter_start_task(void *argument)
     err = starter_runtime_start(s_tirtc_config.device_id);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "session runtime unavailable: %s", esp_err_to_name(err));
+        starter_product_set_initialization_state(STARTER_INITIALIZATION_FAILED);
         vTaskDelete(NULL);
         return;
     }
+    starter_product_set_initialization_state(STARTER_INITIALIZATION_TIRTC);
 
     const platform_client_config_t platform = {
         .device_id = s_tirtc_config.device_id,
@@ -404,6 +424,7 @@ static void starter_start_task(void *argument)
     bool tirtc_submitted = false;
     bool controls_started = false;
     bool wake_submitted = false;
+    bool tirtc_ready_notified = false;
     for (;;) {
         /* Normally a cache hit; also covers a retry after time became invalid.
          * Keep the internal bootstrap reserve until SNTP is ready. */
@@ -427,7 +448,7 @@ static void starter_start_task(void *argument)
                 .device_id = s_tirtc_config.device_id,
                 .device_secret = s_tirtc_config.device_secret,
                 .client_id = s_tirtc_config.client_id,
-                .service_endpoint = TIRTC_SERVICE_ENDPOINT,
+                .service_endpoint = s_tirtc_service_endpoint,
                 /* 与 TiRTC ESP32 参考工程一致。1 MiB 会在 HTTPS、MQTT、
                  * audio/I2S 已就绪后放大启动期内存压力。 */
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -458,6 +479,10 @@ static void starter_start_task(void *argument)
             /* TiRtcStart is asynchronous; avoid overlapping MQTT/TLS startup. */
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
+        }
+        if (!tirtc_ready_notified) {
+            tirtc_ready_notified = true;
+            starter_product_set_initialization_state(STARTER_INITIALIZATION_PLATFORM);
         }
 
         /*
@@ -527,6 +552,12 @@ static void starter_start_task(void *argument)
                                     NULL,
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) ==
                 pdPASS) {
+                while (platform_client_ready() &&
+                       !platform_client_request_worker_ready())
+                    vTaskDelay(pdMS_TO_TICKS(20));
+                if (platform_client_ready() &&
+                    platform_client_request_worker_ready())
+                    starter_product_set_initialization_state(STARTER_INITIALIZATION_READY);
                 ESP_LOGI(TAG,
                          "platform request loop moved to PSRAM; releasing "
                          "cache-safe startup stack");

@@ -1,0 +1,59 @@
+{
+  "batch": "20260922-p4-fixes2",
+  "nano_commit": "9088239cc654ec863869d4adc5433ddec3572fad",
+  "tgwebrtc_commit": "f72f5d3ce04c2be369d88f499c7720d0ed7d788f",
+  "tgsysadpt_commit": "983a086f2bf472f89655f1d62b228ab4d5241635",
+  "before_sha256": "5571e6918dd07b78e1df9e76362f427ef90d250075b8203a3bae8c2330972792",
+  "after_sha256": "6c5c1543f4a099c2f8fdfdff5b50ef728cf181ce09931c2798d34e84d22473b1",
+  "after_md5": "003ac4a68176ec3592f73f1fa75d7474",
+  "after_bytes": 2047340,
+  "sdk_changed_objects": [
+    "tiRTC.o#1"
+  ],
+  "sdk_members": 107,
+  "unchanged_members": 106,
+  "nano_clean_ab_changed_objects": [
+    "tiRTC.o#1"
+  ],
+  "nano_baseline_matches_installed_except_build_time": true,
+  "build_time_utc": "2026-09-22T15:27:21+00:00",
+  "old_build_time_literals": "Sep 19 2026,13:30:37",
+  "public_symbols_equal": true,
+  "undefined_symbols_equal": true,
+  "architecture": "all 107 members ELF32 RISC-V",
+  "headers_unchanged": {
+    "include/basedef.h": "0ec9b20214fba0eaa170a0998e6b3e9a1aa2b30bcef7ab23d69dddbd604f960a",
+    "include/tirtc_voip_cmdw.h": "58f24acd6215cd73702f14a716dafbe997d0ba2ffbe62765b2d9402bba741044",
+    "include/tiRTC.h": "d08d1ecc76c33ce0d8b4bd63fdbde1341c0fa5e568be32086037f2d27c65839e",
+    "include/tiRTC_Util.h": "8e615545889756b9ccd37136a3025156ea675696d7812b7a0bd511f703480d24",
+    "include/tirtc/ticloudstorage.h": "00c6db292468095fcf6ee00e3ec3c61e79752e9e12adb4bd1c66b0210c2c58d7",
+    "include/tirtc/basedef.h": "23883b8040838fcda10927523536def667cfe7be7fcd8b6f4a1c9410d3e03c04",
+    "include/tirtc/tiRTC_stat.h": "2932246a6a09aad0cc3d8252410b34c349e45ffe052682a6dfc0ac10ee1d6541",
+    "include/tirtc/tgtrp.h": "c46c23d112340d7a2fbf308f6a70001df5eb1c4bab62a9beafbcd250c503d4fa",
+    "include/tirtc/tiRTC.h": "b1315121abf843c43c669f754382cab302c3b0b35bdfe41f4c4756ef95636293"
+  },
+  "cleanup_patch_sha256": "94258a80d322f32d4b95072b71686aec1089f596e77c0f4a621c63a4b3480da6",
+  "nano_before_object_sha256": "7c8949d9f234a4d1ce754259c8164b3d5d067ea9ec4d9470f3103ea5c49e59ba",
+  "nano_after_object_sha256": "63b4c05de9e009caeedf3d3834ea6287d91e696f7906f5aaccebebf5a3d405f8",
+  "turn_object_sha256": "efdd5298ffb560df9c587962feb5afdf94b302ad1a71e178ecc8a653b1f3886b",
+  "feedback_object_sha256": "dbc0cdcfaa5f1db6289326bd3592a476109c73c629050a8f42273ecdc065e64e",
+  "diagnostic_string_counts": {
+    "[MRX]": 0,
+    "[TRX]": 0,
+    "[TTX]": 0,
+    "[JTL]": 0,
+    "[KG+": 0,
+    "[KG-": 0,
+    "[KR!": 0,
+    "[IRX": 0,
+    "[NET]": 0,
+    "SOCK_TX_FAIL": 0,
+    "ICE_TX_FAIL": 0,
+    "ICE_RX_DIAG": 0,
+    "TGTRP_POLL_DIAG": 0
+  },
+  "stack_config": "1000Hz, trace/stats off, staticsem84, RTC stack unchanged 8192B",
+  "host_tests": "baseline red / fixed green: optimized and ASan/UBSan, 200 failures and lifecycle cases",
+  "verification_boundary": "No APP build/flash; actual P4 socket baseline and weak-network regression pending",
+  "sdkconfig_sha256": "393bf02c0d7cce46ceaa45590f9088d717952ceba381057143859b2760f6ceb2"
+}

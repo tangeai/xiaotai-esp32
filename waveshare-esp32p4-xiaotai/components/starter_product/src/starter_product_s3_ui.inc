@@ -43,6 +43,7 @@ static EXT_RAM_BSS_ATTR struct {
     lv_obj_t *binding_code;
     lv_obj_t *binding_hint;
     lv_obj_t *binding_retry;
+    lv_obj_t *initialization_hint;
     bool setup_active;
     product_page_t contacts_origin;
     lv_obj_t *volume_down;
@@ -419,6 +420,7 @@ static void s3_render_home(lv_obj_t *screen)
     lv_obj_set_style_bg_opa(tap, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(tap, 0, 0);
     lv_obj_clear_flag(tap, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(tap, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_PRESS_LOCK);
     lv_obj_add_event_cb(tap, on_home_tap, LV_EVENT_CLICKED, NULL);
     lv_obj_t *left = s3_icon(screen, LV_SYMBOL_LEFT, 0, 94, 44,
                              (product_action_t)S3_ACTION_CLOCK);
@@ -605,7 +607,7 @@ static void s3_render_binding(lv_obj_t *screen)
     lv_obj_set_style_text_font(code, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_align(code, LV_TEXT_ALIGN_CENTER, 0);
     (void)make_label(screen, "打开下方网址，输入上方验证码", 16, 150, 288, lv_color_hex(S3_TEXT));
-    lv_obj_t *website = make_label(screen, "https://xiaotai.chat/",
+    lv_obj_t *website = make_label(screen, CONFIG_XIAOTAI_PORTAL_URL,
                                    16, 176, 288, lv_color_hex(S3_ACCENT));
     lv_obj_set_style_text_align(website, LV_TEXT_ALIGN_CENTER, 0);
     s3_ui.binding_hint = make_label(screen, "正在获取验证码…", 16, 210, 288, lv_color_hex(S3_MUTED));
@@ -614,35 +616,91 @@ static void s3_render_binding(lv_obj_t *screen)
     lv_obj_add_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
 }
 
+static const char *s3_initialization_text(starter_product_initialization_state_t state)
+{
+    switch (state) {
+    case STARTER_INITIALIZATION_TIRTC: return "正在初始化通话服务";
+    case STARTER_INITIALIZATION_PLATFORM: return "正在连接设备服务";
+    case STARTER_INITIALIZATION_FAILED: return "初始化失败，请重新启动";
+    case STARTER_INITIALIZATION_PREPARING: return "正在准备设备服务";
+    case STARTER_INITIALIZATION_READY: return "设备已就绪";
+    default: return "正在准备设备服务";
+    }
+}
+
+static void s3_update_initialization_hint(int64_t now,
+                                          starter_product_initialization_state_t state)
+{
+    if (s3_ui.initialization_hint == NULL) return;
+    char text[64];
+    unsigned dots = (unsigned)((now / 500) % 4);
+    int written = snprintf(text, sizeof(text), "%s", s3_initialization_text(state));
+    if (state != STARTER_INITIALIZATION_FAILED && written > 0 &&
+        (size_t)written < sizeof(text)) {
+        for (unsigned i = 0; i < dots && (size_t)written + 1U < sizeof(text); ++i)
+            text[written++] = '.';
+        text[written] = '\0';
+    }
+    label_set_text_if_changed(s3_ui.initialization_hint, text);
+}
+
+static void s3_render_initializing(lv_obj_t *screen)
+{
+    render_header(screen, "设备初始化");
+    lv_obj_t *symbol = make_label(screen, LV_SYMBOL_REFRESH, 132, 66, 56,
+                                  lv_color_hex(S3_ACCENT));
+    lv_obj_set_style_text_font(symbol, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_align(symbol, LV_TEXT_ALIGN_CENTER, 0);
+    (void)make_label(screen, "小钛正在准备", 16, 112, 288, lv_color_hex(S3_TEXT));
+    s3_ui.initialization_hint = make_label(screen, "", 16, 148, 288,
+                                            lv_color_hex(S3_MUTED));
+    (void)make_label(screen, "完成后将自动进入首页", 16, 184, 288,
+                     lv_color_hex(S3_MUTED));
+    s3_update_initialization_hint(monotonic_ms(),
+        atomic_load_explicit(&s_initialization_ui_state, memory_order_acquire));
+}
+
 static void s3_update_setup(int64_t now, bool connected, bool idle, bool provisioning,
                             const char *verification_code)
 {
     /* Offline configuration owns navigation even if an old session is still
      * tearing down. Its lifecycle remains with runtime; never clear it here. */
     starter_product_binding_state_t binding = atomic_load_explicit(&s_binding_ui_state, memory_order_acquire);
+    starter_product_initialization_state_t initialization =
+        atomic_load_explicit(&s_initialization_ui_state, memory_order_acquire);
     if (platform_client_reconciling() && binding != STARTER_BINDING_FAILED)
         binding = platform_client_known_unbound() ? STARTER_BINDING_REQUIRED : STARTER_BINDING_CHECKING;
-    if (connected && !idle && !s3_ui.setup_active && binding == STARTER_BINDING_READY) return;
+    if (connected && !idle && !s3_ui.setup_active &&
+        binding == STARTER_BINDING_READY && initialization == STARTER_INITIALIZATION_READY) return;
     product_page_t target = s_page;
     if (!connected) {
         s3_ui.setup_active = true;
         target = PAGE_NETWORK;
-    } else if (binding != STARTER_BINDING_READY || provisioning) {
+    } else if (binding == STARTER_BINDING_REQUIRED || binding == STARTER_BINDING_FAILED || provisioning) {
         s3_ui.setup_active = true;
         target = PAGE_BINDING;
         (void)snprintf(s_previous_verification_code, sizeof(s_previous_verification_code), "%s",
                        provisioning && verification_code ? verification_code : "");
+    } else if (initialization != STARTER_INITIALIZATION_READY &&
+               (binding == STARTER_BINDING_READY ||
+                initialization != STARTER_INITIALIZATION_PREPARING)) {
+        s3_ui.setup_active = true;
+        target = PAGE_INITIALIZING;
+    } else if (binding != STARTER_BINDING_READY) {
+        s3_ui.setup_active = true;
+        target = PAGE_BINDING;
     } else if (s3_ui.setup_active) {
         s3_ui.setup_active = false;
         s_previous_verification_code[0] = '\0';
-        if (s_page == PAGE_NETWORK || s_page == PAGE_BINDING) target = PAGE_HOME_FACE;
+        if (s_page == PAGE_NETWORK || s_page == PAGE_BINDING ||
+            s_page == PAGE_INITIALIZING) target = PAGE_HOME_FACE;
     }
     if (target != s_page) {
         s_page = target;
         render_page();
         note_interaction();
-        ESP_LOGI(TAG, "setup view: page=%u wifi=%u binding=%u", (unsigned)target,
-                 (unsigned)connected, (unsigned)binding);
+        ESP_LOGI(TAG, "setup view: page=%u wifi=%u binding=%u init=%u", (unsigned)target,
+                 (unsigned)connected, (unsigned)binding, (unsigned)initialization);
     }
     if (s3_ui.setup_active) note_interaction();
     if (s_page == PAGE_BINDING && s3_ui.binding_code != NULL) {
@@ -656,6 +714,8 @@ static void s3_update_setup(int64_t now, bool connected, bool idle, bool provisi
             lv_obj_clear_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
     }
+    if (s_page == PAGE_INITIALIZING)
+        s3_update_initialization_hint(now, initialization);
     /* The AP can become ready seconds after the page is created. Its SSID,
      * URL and control results must refresh without a runtime snapshot too. */
     if (s3_ui.network_text && now >= s3_ui.network_due) {
@@ -692,6 +752,7 @@ static void s3_reset_page(void)
     s3_ui.binding_code = NULL;
     s3_ui.binding_hint = NULL;
     s3_ui.binding_retry = NULL;
+    s3_ui.initialization_hint = NULL;
     s3_ui.volume_down = NULL;
     s3_ui.volume_up = NULL;
     s3_ui.network_text = NULL;
@@ -722,6 +783,7 @@ static bool s3_render_page(lv_obj_t *screen)
         break;
     case PAGE_NETWORK: s3_render_network(screen); break;
     case PAGE_BINDING: s3_render_binding(screen); break;
+    case PAGE_INITIALIZING: s3_render_initializing(screen); break;
     case PAGE_EMOJIS: s3_render_emojis(screen); break;
     case PAGE_EMOJI_PREVIEW:
         s3_header(screen, s_emoji_names[s_preview_emoji], ACTION_EMOJIS);
@@ -748,7 +810,8 @@ static bool s3_render_page(lv_obj_t *screen)
     }
     /* Setup pages use network/binding state, never the runtime snapshot.
      * This also avoids its 50 ms lock wait when unbinding during a call. */
-    if (s_page == PAGE_NETWORK || s_page == PAGE_BINDING) return true;
+    if (s_page == PAGE_NETWORK || s_page == PAGE_BINDING ||
+        s_page == PAGE_INITIALIZING) return true;
     starter_runtime_product_snapshot_t product = starter_runtime_product_snapshot();
     s3_refresh_ui(monotonic_ms(), starter_runtime_status(), &product);
     return true;

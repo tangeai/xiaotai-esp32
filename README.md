@@ -20,7 +20,7 @@
 [![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
 [![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#微信呼叫)
 
-[下载固件](#下载固件) · [S3 变更](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md) · [P4 变更](waveshare-esp32p4-xiaotai/CHANGELOG.md) · [在线烧录](https://espressif.github.io/esptool-js/) · [体验平台](https://xiaotai.chat/) · [服务端与小程序](https://github.com/tangeai/tirtc-server-example)
+[下载固件](#下载固件) · [S3 变更](https://github.com/tangeai/xiaotai-esp32/releases?q=esp32-s3-app-v) · [P4 变更](waveshare-esp32p4-xiaotai/CHANGELOG.md) · [在线烧录](https://espressif.github.io/esptool-js/) · [体验平台](https://xiaotai.chat/) · [服务端与小程序](https://github.com/tangeai/tirtc-server-example)
 
 </div>
 
@@ -37,11 +37,11 @@
 | 开发板 | 完整 BIN 下载（16 MB） | 功能 |
 | --- | --- | --- |
 | 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.4.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.4.0/xiaotai-esp32-s3-app-v1.4.0-full-16MB.bin) | 语音通话、AI 对讲、H5 摄像头查看 |
-| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.4.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.4.0/xiaotai-esp32-p4-app-v1.4.0-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
+| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.4.1](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.4.1/xiaotai-esp32-p4-app-v1.4.1-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
 
 烧录前请核对芯片修订版本：**S3 rev 0.0–0.99，P4 rev 1.0–1.99**。P4 其他修订需另行适配；芯片修订版本与 PCB 版本不同。S3/P4 固件不可互刷。
 
-当前固件为体验版（Pre-release）。[S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.4.0)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.4.0)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
+当前固件为体验版（Pre-release）。[S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.4.0)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.4.1)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
 
 <details>
 <summary>校验下载文件与查看构建记录</summary>
@@ -141,7 +141,7 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 
 ## 开发资料
 
-- **版本改动**：[S3 变更记录](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md)、[P4 变更记录](waveshare-esp32p4-xiaotai/CHANGELOG.md)，分别查看各版本的功能、修正与依赖变化。
+- **版本改动**：[S3 变更记录](https://github.com/tangeai/xiaotai-esp32/releases?q=esp32-s3-app-v)、[P4 变更记录](waveshare-esp32p4-xiaotai/CHANGELOG.md)，分别查看各版本的功能、修正与依赖变化。
 - **构建与配置**：[S3 开发指南](lckfb-szpi-esp32s3-tirtc/README.md)、[P4 开发指南](waveshare-esp32p4-xiaotai/README.md)。构建使用 ESP-IDF 5.5.4。两个工程各自包含所需代码、SDK、模型与资源，可独立构建。
 - **架构与代码入口**：[S3 通信与音频链路](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)、[P4 通信与音视频链路](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md)。
 - **排障与使用限制**：[S3 已知问题](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md)、[P4 排障说明](waveshare-esp32p4-xiaotai/docs/TESTING.md)。

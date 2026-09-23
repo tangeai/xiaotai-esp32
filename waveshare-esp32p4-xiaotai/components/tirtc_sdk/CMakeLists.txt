@@ -9,7 +9,7 @@ if(NOT EXISTS "${TIRTC_LIB}")
     message(FATAL_ERROR "TiRTC static library not found: ${TIRTC_LIB}")
 endif()
 
-# TiRTC 2.5.0 P4 package (local batch 20260919-p4-feedback-stack1: https1 + feedback-stack).
+# TiRTC 2.5.0 P4 package (20260922-p4-fixes2: HTTPS + feedback/TURN stack + failed-connect cleanup).
 # Not interchangeable with the S3 SDK.
 if(NOT IDF_TARGET STREQUAL "esp32p4")
     message(FATAL_ERROR "XiaoTai P4 requires the ESP32-P4 target")
@@ -25,7 +25,7 @@ if(NOT CONFIG_FREERTOS_HZ EQUAL 1000 OR
 endif()
 file(SHA256 "${TIRTC_LIB}" TIRTC_LIB_SHA256)
 if(NOT TIRTC_LIB_SHA256 STREQUAL
-   "7cf1569eb936280476410b2739f859b90a931c52851c790fdc926f705bb84f11")
+   "6c5c1543f4a099c2f8fdfdff5b50ef728cf181ce09931c2798d34e84d22473b1")
     message(FATAL_ERROR "TiRTC archive differs from the pinned P4 baseline; review its ABI before updating the contract")
 endif()
 

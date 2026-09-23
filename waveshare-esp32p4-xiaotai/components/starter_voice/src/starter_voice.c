@@ -1,6 +1,5 @@
 /* Dedicated Voicute wake only. One inference owner; capture never invokes it. */
 #include "starter_voice.h"
-#include "sdkconfig.h"
 #include "wake_backend.h"
 #include "wake_window.h"
 #include "wake_audio_queue.h"
@@ -14,6 +13,8 @@
 #include <ctype.h>
 #include <string.h>
 
+#define WAKE_THRESHOLD_MILLI 950U
+
 static StaticSemaphore_t s_mutex_storage;
 static SemaphoreHandle_t s_mutex;
 static atomic_bool s_started, s_ready, s_gap;
@@ -24,7 +25,7 @@ static uint32_t s_window_input_epoch;
 static atomic_uint s_dropped;
 static atomic_int s_init_error;
 static wake_window_t s_window;
-static starter_voice_status_t s_status = {.threshold_milli = CONFIG_XIAOTAI_WAKE_THRESHOLD_MILLI, .ns_vad = true, .last_raw_id = -1};
+static starter_voice_status_t s_status = {.threshold_milli = WAKE_THRESHOLD_MILLI, .ns_vad = true, .last_raw_id = -1};
 static starter_voice_result_handler_t s_handler;
 static void *s_user;
 static bool s_enabled;
@@ -78,7 +79,7 @@ static void wake_task(void *arg)
     xSemaphoreGive(s_mutex);
     atomic_store(&s_ready, true);
     ESP_LOGI("starter_voice", "Voicute wake ready: 你好小钛; clean16k window=%u hop=%u threshold=%u/1000 core=0",
-             WAKE_WINDOW_SAMPLES, WAKE_HOP_SAMPLES, (unsigned)CONFIG_XIAOTAI_WAKE_THRESHOLD_MILLI);
+             WAKE_WINDOW_SAMPLES, WAKE_HOP_SAMPLES, (unsigned)s_status.threshold_milli);
     ESP_LOGI("starter_voice", "capture handoff: PSRAM=%u bytes blocks=%u nonblocking producer",
              (unsigned)sizeof(*s_input), WAKE_AUDIO_QUEUE_BLOCKS);
     for (;;) {
@@ -215,7 +216,7 @@ bool starter_voice_ready(void) { return atomic_load(&s_ready); }
 
 starter_voice_status_t starter_voice_status(void)
 {
-    if (!atomic_load(&s_ready)) return (starter_voice_status_t){.threshold_milli = CONFIG_XIAOTAI_WAKE_THRESHOLD_MILLI,
+    if (!atomic_load(&s_ready)) return (starter_voice_status_t){.threshold_milli = WAKE_THRESHOLD_MILLI,
         .ns_vad = true, .last_raw_id = -1, .init_error = atomic_load(&s_init_error)};
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     starter_voice_status_t out = s_status;

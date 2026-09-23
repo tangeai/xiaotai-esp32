@@ -1,18 +1,11 @@
 menu "XiaoTai application"
 config XIAOTAI_DISCOVERY_URL
     string "ThingConnect service discovery URL"
-    default "http://ep-open.tangeopen.com/services"
+    default "https://ep-open.tangeopen.com/services"
     help
-        Existing development endpoint is retained. Override for your deployment.
-        HTTPS requires valid time, trusted certificates and sufficient TLS memory.
-config XIAOTAI_TIRTC_SERVICE_ENDPOINT
-    string "TiRTC service endpoint"
-    default "https://ep-tirtc.tange365.com"
-    help
-        Passed to the SDK via TIRTC_OPT_SERVICE_ENDPOINT before start; empty keeps
-        the SDK built-in default. HTTPS needs the HTTPS-enabled TiRTC library plus
-        valid time, the ESP-IDF certificate bundle and sufficient TLS memory; a
-        non-HTTPS library rejects an https address with TIRTC_E_INVALID_PARAMETER.
+        The response must use HTTPS for HTTP services, MQTTS for MQTT and include
+        tirtc-srv. TiRTC consumes the discovered endpoint instead of a second
+        compile-time address. Override only with an equivalent TLS deployment.
 config XIAOTAI_DEVELOPMENT_CONSOLE
     bool "Enable local development command console"
     default n
@@ -31,12 +24,6 @@ config XIAOTAI_FALLBACK_DNS_IPV4
         Keep DHCP main/backup DNS unchanged. The resolver can use this server
         when DHCP supplies no DNS, or after its preferred servers fail.
         Private networks can specify their resolver or disable this policy.
-config XIAOTAI_WAKE_THRESHOLD_MILLI
-    int "Voicute wake threshold (thousandths)"
-    range 50 990
-    default 900
-    help
-        Model-specific; requires acoustic validation. Console overrides are volatile.
 config XIAOTAI_CAPTURE_AGC
     bool "Adaptive uplink gain after AEC"
     default y
