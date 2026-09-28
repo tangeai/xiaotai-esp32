@@ -9,7 +9,7 @@
 [![MIT License](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](LICENSE)
 [![ESP32-S3](https://img.shields.io/badge/ESP32-S3-E7352C?style=flat-square&logo=espressif&logoColor=white)](lckfb-szpi-esp32s3-tirtc/README.md)
 [![ESP32-P4](https://img.shields.io/badge/ESP32-P4-E7352C?style=flat-square&logo=espressif&logoColor=white)](waveshare-esp32p4-xiaotai/README.md)
-[![ESP-IDF 5.5.4](https://img.shields.io/badge/ESP--IDF-5.5.4-0969DA?style=flat-square)](https://github.com/espressif/esp-idf/releases/tag/v5.5.4)
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.5.4%20%7C%205.5.5-0969DA?style=flat-square)](README.md#开发资料)
 [![GitHub Stars](https://img.shields.io/github/stars/tangeai/xiaotai-esp32?style=flat-square&label=Stars&color=B8860B)](https://github.com/tangeai/xiaotai-esp32)
 [![GitHub Issues](https://img.shields.io/github/issues/tangeai/xiaotai-esp32?style=flat-square&label=Issues&color=0969DA)](https://github.com/tangeai/xiaotai-esp32/issues)
 
@@ -37,11 +37,13 @@ Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi**
 | Board | Full BIN download (16 MB) | Features |
 | --- | --- | --- |
 | LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.4.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.4.0/xiaotai-esp32-s3-app-v1.4.0-full-16MB.bin) | Voice calls, AI voice chat, and browser camera viewing |
-| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.5.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.5.0/xiaotai-esp32-p4-app-v1.5.0-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
+| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.6.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.0/xiaotai-esp32-p4-app-v1.6.0-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
 
 Chip requirements: **S3 rev 0.0–0.99; ESP32-P4 rev3.2 or later**. Choose the matching firmware. If the flasher reports an incompatible chip, stop rather than bypassing the check.
 
-These are **pre-release** images. The **Assets** section of each [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.4.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.5.0) also includes `FLASHING_CN.md`, `SHA256SUMS.txt`, and `release-manifest.json`. The flashing guide is in Chinese. `Source code` is not a flashable image.
+These are **pre-release** images. The **Assets** section of each [S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.4.0) or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.0) also includes `FLASHING_CN.md`, `SHA256SUMS.txt`, and `release-manifest.json`. The flashing guide is in Chinese. `Source code` is not a flashable image.
+
+**P4 needs only one USB connection to flash the full image above.** It contains the paired C6 firmware. On startup, P4 checks C6 and updates supported versions; keep power connected until setup or the home screen appears. Do not flash the separate C6 attachment for this workflow. If a recovery screen appears, follow the [C6 guide](waveshare-esp32p4-xiaotai/docs/C6_PREPARATION.md) rather than repeatedly erasing or forcing an update.
 
 <details>
 <summary>Verify downloads and view build records</summary>
@@ -144,7 +146,7 @@ This feature requires room support on the platform and uses voice on both S3 and
 The linked development guides are in Chinese.
 
 - **Version changes:** [S3 changelog](https://github.com/tangeai/xiaotai-esp32/releases?q=esp32-s3-app-v) and [P4 changelog](waveshare-esp32p4-xiaotai/CHANGELOG.md), each covering its own features, fixes, and dependency changes by version.
-- **Build and configuration:** [S3 guide](lckfb-szpi-esp32s3-tirtc/README.md) and [P4 guide](waveshare-esp32p4-xiaotai/README.md). Builds use ESP-IDF 5.5.4. Each project includes its own code, SDK, model, and resources and can be built independently.
+- **Build and configuration:** [S3 guide](lckfb-szpi-esp32s3-tirtc/README.md) and [P4 guide](waveshare-esp32p4-xiaotai/README.md). S3 uses ESP-IDF 5.5.4; P4 uses 5.5.5. Both build independently. Before building P4, download the matching C6 attachment as described in its guide.
 - **Architecture and code:** [S3 communication and audio](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md) and [P4 communication, audio, and video](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md).
 - **Troubleshooting and limitations:** [S3 known issues](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md) and [P4 troubleshooting](waveshare-esp32p4-xiaotai/docs/TESTING.md).
 - **Server, Web, and WeChat mini program:** [tirtc-server-example](https://github.com/tangeai/tirtc-server-example). For self-hosting, see the [deployment guide](https://github.com/tangeai/tirtc-server-example/blob/main/thing-connect/deployment.md).

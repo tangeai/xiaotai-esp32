@@ -1,0 +1,494 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <stdio.h>
+#include <inttypes.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "unity.h"
+#include "sdkconfig.h"
+
+#include "example_video_common.h"
+#include "esp_video_isp_pipeline.h"
+#include "esp_video_isp_ioctl.h"
+#include "esp_video_pipeline_isp.h"
+
+#if CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER && CONFIG_ESP_VIDEO_ENABLE_MIPI_CSI_VIDEO_DEVICE
+
+/**
+ * Set to 1 to print dumped ISP statistics (AE luminance grid, AWB, etc.).
+ * Default is off to keep CI/log output quiet.
+ */
+#ifndef TEST_ISP_PIPELINE_DUMP_STATS_PRINT
+#define TEST_ISP_PIPELINE_DUMP_STATS_PRINT  0
+#endif
+
+#define TEST_APP_VIDEO_DEVICE           EXAMPLE_CAM_DEV_PATH
+#define TEST_ISP_STATS_QUEUE_SIZE       4
+#define TEST_ISP_STATS_DUMP_COUNT       30
+#define TEST_ISP_STATS_DUMP_TIMEOUT_MS  1000
+#define TEST_VIDEO_BUFFER_COUNT         3
+#define TEST_IPA_LUMA_WAIT_MS           8000
+#define TEST_IPA_LUMA_POLL_MS           1000
+
+void setUp(void);
+
+#if TEST_ISP_PIPELINE_DUMP_STATS_PRINT
+static void print_isp_stats(const esp_video_isp_stats_t *stats)
+{
+    printf("ISP stats seq=%" PRIu64 " flags=0x%" PRIx32 "\n", stats->seq, stats->flags);
+
+    if (stats->flags & ESP_VIDEO_ISP_STATS_FLAG_AE) {
+        const isp_ae_result_t *ae = &stats->ae.ae_result;
+
+        printf("AE luminance:\n");
+        for (int i = 0; i < ISP_AE_BLOCK_X_NUM; i++) {
+            char print_buf[ISP_AE_BLOCK_Y_NUM * 6];
+            uint32_t offset = 0;
+
+            for (int j = 0; j < ISP_AE_BLOCK_Y_NUM; j++) {
+                int ret = snprintf(print_buf + offset, sizeof(print_buf) - offset,
+                                   " %3d", ae->luminance[i][j]);
+                if (ret > 0) {
+                    offset += ret;
+                }
+            }
+            printf("  [%s ]\n", print_buf);
+        }
+    }
+
+    if (stats->flags & ESP_VIDEO_ISP_STATS_FLAG_AWB) {
+        const isp_awb_stat_result_t *awb = &stats->awb.awb_result;
+
+        printf("AWB white_patch_num=%" PRIu32 " sum_r=%" PRIu32 " sum_g=%" PRIu32 " sum_b=%" PRIu32 "\n",
+               awb->white_patch_num, awb->sum_r, awb->sum_g, awb->sum_b);
+    }
+
+    if (stats->flags & ESP_VIDEO_ISP_STATS_FLAG_HIST) {
+        printf("HIST:");
+        for (int i = 0; i < ISP_HIST_SEGMENT_NUMS; i++) {
+            printf(" %u", (unsigned)stats->hist.hist_result.hist_value[i]);
+        }
+        printf("\n");
+    }
+
+    if (stats->flags & ESP_VIDEO_ISP_STATS_FLAG_AF) {
+        printf("AF:\n");
+        for (int i = 0; i < ISP_AF_WINDOW_NUM; i++) {
+            printf("  win[%d] definition=%d luminance=%d\n",
+                   i, stats->af.af_result.definition[i], stats->af.af_result.luminance[i]);
+        }
+    }
+}
+#endif /* TEST_ISP_PIPELINE_DUMP_STATS_PRINT */
+
+TEST_CASE("ISP pipeline AGC set/get", "[video][isp_pipeline]")
+{
+    esp_video_isp_pipeline_agc_status_t status;
+
+    setUp();
+
+    TEST_ESP_OK(example_video_init());
+
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_status(&status));
+    TEST_ASSERT_EQUAL_INT(ESP_VIDEO_ISP_PIPELINE_AGC_ENABLE, status);
+
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_status(ESP_VIDEO_ISP_PIPELINE_AGC_DISABLE));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_status(&status));
+    TEST_ASSERT_EQUAL_INT(ESP_VIDEO_ISP_PIPELINE_AGC_DISABLE, status);
+
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_status(ESP_VIDEO_ISP_PIPELINE_AGC_ENABLE));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_status(&status));
+    TEST_ASSERT_EQUAL_INT(ESP_VIDEO_ISP_PIPELINE_AGC_ENABLE, status);
+
+    TEST_ESP_OK(example_video_deinit());
+}
+
+TEST_CASE("ISP pipeline dump stats after MIPI-CSI stream on", "[video][isp_pipeline]")
+{
+    int fd;
+    int ret;
+    int type;
+    int dump_ok_count = 0;
+    struct v4l2_buffer buf;
+    struct v4l2_requestbuffers req;
+    esp_video_isp_stats_t stats;
+    uint64_t last_seq = 0;
+    bool has_last_seq = false;
+
+    setUp();
+
+    TEST_ESP_OK(example_video_init());
+
+    fd = open(TEST_APP_VIDEO_DEVICE, O_RDWR);
+    TEST_ASSERT_GREATER_OR_EQUAL(0, fd);
+
+    memset(&req, 0, sizeof(req));
+    req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_MMAP;
+    req.count  = TEST_VIDEO_BUFFER_COUNT;
+    ret = ioctl(fd, VIDIOC_REQBUFS, &req);
+    TEST_ESP_OK(ret);
+
+    for (int i = 0; i < TEST_VIDEO_BUFFER_COUNT; i++) {
+        memset(&buf, 0, sizeof(buf));
+        buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index  = i;
+        ret = ioctl(fd, VIDIOC_QUERYBUF, &buf);
+        TEST_ESP_OK(ret);
+
+        ret = ioctl(fd, VIDIOC_QBUF, &buf);
+        TEST_ESP_OK(ret);
+    }
+
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    ret = ioctl(fd, VIDIOC_STREAMON, &type);
+    TEST_ESP_OK(ret);
+
+    TEST_ESP_OK(esp_video_isp_pipeline_start_dump_stats(TEST_ISP_STATS_QUEUE_SIZE));
+    /* start twice should fail */
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, esp_video_isp_pipeline_start_dump_stats(TEST_ISP_STATS_QUEUE_SIZE));
+
+    for (int i = 0; i < TEST_ISP_STATS_DUMP_COUNT; i++) {
+        memset(&buf, 0, sizeof(buf));
+        buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        ret = ioctl(fd, VIDIOC_DQBUF, &buf);
+        TEST_ESP_OK(ret);
+
+        memset(&stats, 0, sizeof(stats));
+        ret = esp_video_isp_pipeline_dump_stats(&stats, TEST_ISP_STATS_DUMP_TIMEOUT_MS);
+        if (ret == ESP_OK) {
+            dump_ok_count++;
+            TEST_ASSERT_NOT_EQUAL(0, stats.flags);
+
+            if (has_last_seq) {
+                TEST_ASSERT_GREATER_THAN_UINT64(last_seq, stats.seq);
+            }
+            last_seq = stats.seq;
+            has_last_seq = true;
+
+#if TEST_ISP_PIPELINE_DUMP_STATS_PRINT
+            print_isp_stats(&stats);
+#endif
+        } else {
+            TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, ret);
+        }
+
+        ret = ioctl(fd, VIDIOC_QBUF, &buf);
+        TEST_ESP_OK(ret);
+    }
+
+    TEST_ASSERT_GREATER_THAN(0, dump_ok_count);
+
+    TEST_ESP_OK(esp_video_isp_pipeline_stop_dump_stats());
+    /* stop twice should fail */
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, esp_video_isp_pipeline_stop_dump_stats());
+
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    ret = ioctl(fd, VIDIOC_STREAMOFF, &type);
+    TEST_ESP_OK(ret);
+
+    close(fd);
+
+    TEST_ESP_OK(example_video_deinit());
+}
+
+TEST_CASE("ISP pipeline dump stats invalid args", "[video][isp_pipeline]")
+{
+    esp_video_isp_stats_t stats;
+
+    setUp();
+
+    TEST_ESP_OK(example_video_init());
+
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_start_dump_stats(0));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, esp_video_isp_pipeline_stop_dump_stats());
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, esp_video_isp_pipeline_dump_stats(&stats, 10));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_dump_stats(NULL, 10));
+
+    TEST_ESP_OK(esp_video_isp_pipeline_start_dump_stats(2));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_dump_stats(NULL, 10));
+    TEST_ESP_OK(esp_video_isp_pipeline_stop_dump_stats());
+
+    TEST_ESP_OK(example_video_deinit());
+}
+
+TEST_CASE("ISP pipeline set/get AGC status", "[video][isp_pipeline]")
+{
+    esp_video_isp_pipeline_agc_status_t status;
+
+    setUp();
+
+    TEST_ESP_OK(example_video_init());
+    TEST_ASSERT_TRUE(esp_video_isp_pipeline_is_initialized());
+
+    /* Initial AGC status should be enabled */
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_status(&status));
+    TEST_ASSERT_EQUAL_INT(ESP_VIDEO_ISP_PIPELINE_AGC_ENABLE, status);
+
+    /* Disable AGC and verify */
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_status(ESP_VIDEO_ISP_PIPELINE_AGC_DISABLE));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_status(&status));
+    TEST_ASSERT_EQUAL_INT(ESP_VIDEO_ISP_PIPELINE_AGC_DISABLE, status);
+
+    /* Enable AGC and verify */
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_status(ESP_VIDEO_ISP_PIPELINE_AGC_ENABLE));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_status(&status));
+    TEST_ASSERT_EQUAL_INT(ESP_VIDEO_ISP_PIPELINE_AGC_ENABLE, status);
+
+    /* Invalid argument */
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_get_agc_status(NULL));
+
+    TEST_ESP_OK(example_video_deinit());
+}
+
+TEST_CASE("ISP pipeline set/get AGC max/min exposure", "[video][isp_pipeline]")
+{
+    uint32_t min_us;
+    uint32_t max_us;
+    uint32_t value;
+
+    setUp();
+
+    TEST_ESP_OK(example_video_init());
+    TEST_ASSERT_TRUE(esp_video_isp_pipeline_is_initialized());
+
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_max_exposure(&max_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_min_exposure(&min_us));
+    TEST_ASSERT_GREATER_OR_EQUAL(min_us, max_us);
+
+    /* Set may align down to exposure step; use aligned values for round-trip checks */
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_max_exposure(max_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_max_exposure(&max_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_max_exposure(max_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_max_exposure(&value));
+    TEST_ASSERT_EQUAL_UINT32(max_us, value);
+
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_min_exposure(min_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_min_exposure(&min_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_min_exposure(min_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_min_exposure(&value));
+    TEST_ASSERT_EQUAL_UINT32(min_us, value);
+
+    /* Narrow the max exposure to the current min and restore */
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_max_exposure(min_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_max_exposure(&value));
+    TEST_ASSERT_EQUAL_UINT32(min_us, value);
+
+    TEST_ESP_OK(esp_video_isp_pipeline_set_agc_max_exposure(max_us));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_agc_max_exposure(&value));
+    TEST_ASSERT_EQUAL_UINT32(max_us, value);
+
+    /* Out of range values should fail */
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_set_agc_max_exposure(UINT32_MAX));
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_set_agc_min_exposure(UINT32_MAX));
+    if (min_us > 0) {
+        TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_set_agc_max_exposure(0));
+    }
+
+    /* Invalid argument */
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_get_agc_max_exposure(NULL));
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_get_agc_min_exposure(NULL));
+
+    TEST_ESP_OK(example_video_deinit());
+}
+
+TEST_CASE("ISP pipeline get IPA environment variables after stream on", "[video][isp_pipeline]")
+{
+    int fd;
+    int ret;
+    int type;
+    int32_t ct;
+    float env_luma_avg;
+    struct v4l2_buffer buf;
+    struct v4l2_requestbuffers req;
+
+    setUp();
+
+    TEST_ESP_OK(example_video_init());
+    TEST_ASSERT_TRUE(esp_video_isp_pipeline_is_initialized());
+
+    fd = open(TEST_APP_VIDEO_DEVICE, O_RDWR);
+    TEST_ASSERT_GREATER_OR_EQUAL(0, fd);
+
+    memset(&req, 0, sizeof(req));
+    req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_MMAP;
+    req.count  = TEST_VIDEO_BUFFER_COUNT;
+    ret = ioctl(fd, VIDIOC_REQBUFS, &req);
+    TEST_ESP_OK(ret);
+
+    for (int i = 0; i < TEST_VIDEO_BUFFER_COUNT; i++) {
+        memset(&buf, 0, sizeof(buf));
+        buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index  = i;
+        ret = ioctl(fd, VIDIOC_QUERYBUF, &buf);
+        TEST_ESP_OK(ret);
+
+        ret = ioctl(fd, VIDIOC_QBUF, &buf);
+        TEST_ESP_OK(ret);
+    }
+
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    ret = ioctl(fd, VIDIOC_STREAMON, &type);
+    TEST_ESP_OK(ret);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    TEST_ESP_OK(esp_video_isp_pipeline_get_env_int32("ct", &ct));
+    TEST_ESP_OK(esp_video_isp_pipeline_get_env_float("env.luma.avg", &env_luma_avg));
+    printf("IPA env: ct=%" PRId32 ", env.luma.avg=%f\n", ct, env_luma_avg);
+
+    /* Non-existent variable should fail */
+    TEST_ESP_ERR(ESP_ERR_NOT_FOUND, esp_video_isp_pipeline_get_env_int32("ct_not_exist", &ct));
+    TEST_ESP_ERR(ESP_ERR_NOT_FOUND, esp_video_isp_pipeline_get_env_float("env.luma.avg_not_exist", &env_luma_avg));
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_get_env_int32(NULL, &ct));
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_get_env_float("env.luma.avg", NULL));
+
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    ret = ioctl(fd, VIDIOC_STREAMOFF, &type);
+    TEST_ESP_OK(ret);
+
+    close(fd);
+
+    TEST_ESP_OK(example_video_deinit());
+}
+
+static int test_stream_on(int *out_fd)
+{
+    int fd;
+    int ret;
+    int type;
+    struct v4l2_buffer buf;
+    struct v4l2_requestbuffers req;
+
+    fd = open(TEST_APP_VIDEO_DEVICE, O_RDWR);
+    TEST_ASSERT_GREATER_OR_EQUAL(0, fd);
+
+    memset(&req, 0, sizeof(req));
+    req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_MMAP;
+    req.count  = TEST_VIDEO_BUFFER_COUNT;
+    ret = ioctl(fd, VIDIOC_REQBUFS, &req);
+    TEST_ESP_OK(ret);
+
+    for (int i = 0; i < TEST_VIDEO_BUFFER_COUNT; i++) {
+        memset(&buf, 0, sizeof(buf));
+        buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index  = i;
+        ret = ioctl(fd, VIDIOC_QUERYBUF, &buf);
+        TEST_ESP_OK(ret);
+
+        ret = ioctl(fd, VIDIOC_QBUF, &buf);
+        TEST_ESP_OK(ret);
+    }
+
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    ret = ioctl(fd, VIDIOC_STREAMON, &type);
+    TEST_ESP_OK(ret);
+
+    *out_fd = fd;
+    return fd;
+}
+
+static void test_stream_off(int fd)
+{
+    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    int ret = ioctl(fd, VIDIOC_STREAMOFF, &type);
+    TEST_ESP_OK(ret);
+    close(fd);
+}
+
+static const esp_ipa_config_t *find_ipa_config_by_description(const char *sensor_name, const char *description)
+{
+    for (int i = 0; ; i++) {
+        const esp_ipa_config_t *cfg = esp_video_isp_pipeline_enum_ipa_configs(sensor_name, i);
+
+        if (!cfg) {
+            break;
+        }
+        if (cfg->description && !strcmp(cfg->description, description)) {
+            return cfg;
+        }
+    }
+
+    return NULL;
+}
+
+static float wait_env_luma(const char *prompt, uint32_t wait_ms)
+{
+    float luma = 0;
+    uint32_t elapsed = 0;
+
+    printf(">>> %s\n", prompt);
+    fflush(stdout);
+
+    while (elapsed < wait_ms) {
+        vTaskDelay(pdMS_TO_TICKS(TEST_IPA_LUMA_POLL_MS));
+        elapsed += TEST_IPA_LUMA_POLL_MS;
+        TEST_ESP_OK(esp_video_isp_pipeline_get_env_float("env.luma.avg", &luma));
+        printf("    env.luma.avg=%f (%" PRIu32 " ms)\n", luma, elapsed);
+        fflush(stdout);
+    }
+
+    return luma;
+}
+
+TEST_CASE("ISP pipeline switch IPA JSON by environment luma", "[video][isp_pipeline]")
+{
+    int fd;
+    float luma_before;
+    float luma_dark;
+    float luma_bright;
+    const esp_ipa_config_t *bright_cfg;
+    const esp_ipa_config_t *dark_cfg;
+
+    setUp();
+
+    TEST_ESP_OK(example_video_init());
+    TEST_ASSERT_TRUE(esp_video_isp_pipeline_is_initialized());
+
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_video_isp_pipeline_set_ipa_config(NULL));
+    TEST_ASSERT_NULL(esp_video_isp_pipeline_enum_ipa_configs(NULL, 0));
+    TEST_ASSERT_NULL(esp_video_isp_pipeline_enum_ipa_configs("not_exist_sensor", 0));
+
+    bright_cfg = find_ipa_config_by_description("test_json", "bright");
+    dark_cfg = find_ipa_config_by_description("test_json", "dark");
+    if (!bright_cfg || !dark_cfg) {
+        TEST_ESP_OK(example_video_deinit());
+        TEST_IGNORE_MESSAGE("SC2336 bright/dark IPA JSON is not available");
+    }
+
+    TEST_ESP_OK(esp_video_isp_pipeline_set_ipa_config(bright_cfg));
+
+    test_stream_on(&fd);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    TEST_ESP_OK(esp_video_isp_pipeline_get_env_float("env.luma.avg", &luma_before));
+    printf("Current env.luma.avg=%f, IPA JSON description=%s\n", luma_before, bright_cfg->description);
+
+    luma_dark = wait_env_luma("Please decrease the ambient brightness", TEST_IPA_LUMA_WAIT_MS);
+    printf("After decreasing brightness: env.luma.avg=%f, switch to dark IPA JSON\n", luma_dark);
+    TEST_ESP_OK(esp_video_isp_pipeline_set_ipa_config(dark_cfg));
+
+    luma_bright = wait_env_luma("Please increase the ambient brightness", TEST_IPA_LUMA_WAIT_MS);
+    printf("After increasing brightness: env.luma.avg=%f, switch to bright IPA JSON\n", luma_bright);
+    TEST_ESP_OK(esp_video_isp_pipeline_set_ipa_config(bright_cfg));
+
+    test_stream_off(fd);
+    TEST_ESP_OK(example_video_deinit());
+}
+#endif /* CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER && CONFIG_ESP_VIDEO_ENABLE_MIPI_CSI_VIDEO_DEVICE */

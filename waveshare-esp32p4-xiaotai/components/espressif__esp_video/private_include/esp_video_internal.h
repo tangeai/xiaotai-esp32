@@ -8,17 +8,24 @@
 
 #include "esp_err.h"
 #include "esp_cam_sensor.h"
+#include "esp_cam_motor.h"
+#include "esp_video_ioctl.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#define ESP_VIDEO_ALIGN(s, a)               (((s) + ((a) - 1)) / (a) * (a))
+
 #define VIDEO_PRIV_DATA(t, v)               ((t)(v)->priv)
 
 #define STREAM_FORMAT(s)                    (&(s)->format)
 #define STREAM_BUF_INFO(s)                  (&(s)->buf_info)
+#define STREAM_RECT(s)                      (&(s)->rect)
+#define STREAM_PARAM(s)                     (&(s)->param)
 
 #define STREAM_BUFFER_SIZE(s)               (STREAM_BUF_INFO(s)->size)
+#define STREAM_BUFFER_COUNT(s)              (STREAM_BUF_INFO(s)->count)
 
 #define SET_BUF_INFO(bi, s, a, c)           \
 {                                           \
@@ -51,6 +58,12 @@ extern "C" {
 #define GET_FORMAT_PIXEL_FORMAT(_fmt)                                   \
     ((_fmt)->fmt.pix.pixelformat)
 
+#define GET_RECT_WIDTH(_rect)                                           \
+    ((_rect)->width)
+
+#define GET_RECT_HEIGHT(_rect)                                          \
+    ((_rect)->height)
+
 #define SET_STREAM_BUF_INFO(st, s, a, c)                                \
     SET_BUF_INFO(STREAM_BUF_INFO(st), s, a, c)
 
@@ -72,12 +85,23 @@ extern "C" {
 #define GET_STREAM_FORMAT_PIXEL_FORMAT(st)                              \
     GET_FORMAT_PIXEL_FORMAT(STREAM_FORMAT(st))
 
+#define GET_STREAM_RECT_WIDTH(st)                                     \
+    GET_RECT_WIDTH(STREAM_RECT(st))
+
+#define GET_STREAM_RECT_HEIGHT(st)                                    \
+    GET_RECT_HEIGHT(STREAM_RECT(st))
+
 /* video capture operations */
 
 #define CAPTURE_VIDEO_STREAM(v)             ((v)->stream)
 #define CAPTURE_VIDEO_BUF_SIZE(v)           STREAM_BUFFER_SIZE(CAPTURE_VIDEO_STREAM(v))
+#define CAPTURE_VIDEO_BUF_COUNT(v)          STREAM_BUFFER_COUNT(CAPTURE_VIDEO_STREAM(v))
+#define CAPTURE_VIDEO_BUF(v)                (CAPTURE_VIDEO_STREAM(v)->buffer)
 
 #define CAPTURE_VIDEO_DONE_BUF(v, b, n)     esp_video_done_buffer(v, V4L2_BUF_TYPE_VIDEO_CAPTURE, b, n)
+#define CAPTURE_VIDEO_SKIP_BUF(v, b)        esp_video_skip_buffer(v, V4L2_BUF_TYPE_VIDEO_CAPTURE, b)
+
+#define CAPTURE_VIDEO_PARAM(v)              STREAM_PARAM(CAPTURE_VIDEO_STREAM(v))
 
 #define CAPTURE_VIDEO_SET_FORMAT_WIDTH(v, w)                            \
     SET_STREAM_FORMAT_WIDTH(CAPTURE_VIDEO_STREAM(v), w)
@@ -97,6 +121,14 @@ extern "C" {
 #define CAPTURE_VIDEO_GET_FORMAT_PIXEL_FORMAT(v)                        \
     GET_STREAM_FORMAT_PIXEL_FORMAT(CAPTURE_VIDEO_STREAM(v))
 
+#define CAPTURE_VIDEO_GET_RECT(v)                                       \
+    STREAM_RECT(CAPTURE_VIDEO_STREAM(v))
+
+#define CAPTURE_VIDEO_GET_RECT_WIDTH(v)                                 \
+    GET_STREAM_RECT_WIDTH(CAPTURE_VIDEO_STREAM(v))
+
+#define CAPTURE_VIDEO_GET_RECT_HEIGHT(v)                                \
+    GET_STREAM_RECT_HEIGHT(CAPTURE_VIDEO_STREAM(v))
 
 #define CAPTURE_VIDEO_SET_FORMAT(v, w, h, f)                            \
 {                                                                       \
@@ -116,6 +148,9 @@ extern "C" {
 
 #define CAPTURE_VIDEO_GET_QUEUED_ELEMENT(v)                             \
     esp_video_get_queued_element(v, V4L2_BUF_TYPE_VIDEO_CAPTURE)
+
+#define CAPTURE_VIDEO_GET_FIRST_DONE_ELEMENT_PTR(v)                     \
+    TAILQ_FIRST(&CAPTURE_VIDEO_STREAM(v)->done_list)
 
 /* video M2M operations */
 
@@ -205,6 +240,7 @@ extern "C" {
 /* video meta operations */
 
 #define META_VIDEO_STREAM(v)                ((v)->stream)
+#define META_VIDEO_RECT(v)                  STREAM_RECT(META_VIDEO_STREAM(v))
 #define META_VIDEO_BUF_SIZE(v)              STREAM_BUFFER_SIZE(CAPTURE_VIDEO_STREAM(v))
 
 #define META_VIDEO_GET_FORMAT_WIDTH(v)                                  \
@@ -241,15 +277,23 @@ extern "C" {
 #define META_VIDEO_DONE_BUF(v, b, n)                                    \
     esp_video_done_buffer(v, V4L2_BUF_TYPE_META_CAPTURE, (uint8_t *)b, n)
 
+#define META_VIDEO_SET_RECT(v, r)                                       \
+    memcpy(META_VIDEO_RECT(v), (r), sizeof(struct v4l2_rect))
+
+#define META_VIDEO_GET_RECT(v)                                          \
+    (META_VIDEO_RECT(v))
+
 /**
  * @brief Video event.
  */
 enum esp_video_event {
     ESP_VIDEO_BUFFER_VALID = 0,     /*!< Video buffer is freed and it can be allocated by video device */
     ESP_VIDEO_M2M_TRIGGER,          /*!< Trigger M2M video device transforming event */
+    ESP_VIDEO_DATA_PREPROCESSING,   /*!< Trigger data preprocessing */
 };
 
 struct esp_video;
+struct esp_video_stream;
 
 /**
  * @brief M2M video device process function
@@ -320,9 +364,57 @@ struct esp_video_ops {
 
     esp_err_t (*get_sensor_format)(struct esp_video *video, esp_cam_sensor_format_t *format);
 
+    /*!< Enumerate sensor format */
+
+    esp_err_t (*enum_sensor_format)(struct esp_video *video, struct v4l2_sensor_format_enum *enum_fmt);
+
     /*!< Query menu value */
 
     esp_err_t (*query_menu)(struct esp_video *video, struct v4l2_querymenu *qmenu);
+
+    /*< Set Selection */
+
+    esp_err_t (*set_selection)(struct esp_video *video, struct v4l2_selection *selection);
+
+    /*!< Set format to sensor */
+
+    esp_err_t (*set_motor_format)(struct esp_video *video, const esp_cam_motor_format_t *format);
+
+    /*!< Get format from sensor */
+
+    esp_err_t (*get_motor_format)(struct esp_video *video, esp_cam_motor_format_t *format);
+
+    /*!< Set V4L2 stream parameters */
+
+    esp_err_t (*set_parm)(struct esp_video *video, struct v4l2_streamparm *stream_parm, struct esp_video_stream *stream);
+
+    /*!< Get V4L2 stream parameters */
+
+    esp_err_t (*get_parm)(struct esp_video *video, struct v4l2_streamparm *stream_parm, struct esp_video_stream *stream);
+
+    /*!< Enumerate video frame sizes */
+
+    esp_err_t (*enum_framesizes)(struct esp_video *video, struct v4l2_frmsizeenum *frmsize, struct esp_video_stream *stream);
+
+    /*!< Enumerate video frame intervals */
+
+    esp_err_t (*enum_frameintervals)(struct esp_video *video, struct v4l2_frmivalenum *frmival, struct esp_video_stream *stream);
+
+    /*!< Subscribe video event */
+
+    esp_err_t (*subscribe_event)(struct esp_video *video, struct v4l2_event_subscription *sub);
+
+    /*!< Unsubscribe video event */
+
+    esp_err_t (*unsubscribe_event)(struct esp_video *video, struct v4l2_event_subscription *sub);
+
+    /* Restart video hardware */
+
+    esp_err_t (*restart)(struct esp_video *video, struct v4l2_restart_config *config);
+
+    /*!< Set event callback */
+
+    esp_err_t (*set_event_callback)(struct esp_video *video, struct v4l2_event_callback *callback);
 };
 
 #ifdef __cplusplus

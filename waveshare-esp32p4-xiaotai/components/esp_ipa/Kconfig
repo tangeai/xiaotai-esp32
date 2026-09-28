@@ -1,0 +1,72 @@
+menu "Espressif Image Process Algorithm Configuration"
+
+    config ESP_IPA_CONFIG_PARAM_VERSION
+        int
+        default 1
+
+    config ESP_IPA_IAN_ALGORITHM
+        bool "Image Analyze Algorithm"
+        default y
+
+    config ESP_IPA_ADN_ALGORITHM
+        bool "Auto Denoising Algorithm"
+        default y
+
+    config ESP_IPA_AWB_ALGORITHM
+        bool "Auto White Balance Algorithm"
+        default y
+
+    config ESP_IPA_ACC_ALGORITHM
+        bool "Auto Color Correction Algorithm"
+        default y
+
+    config ESP_IPA_AGC_ALGORITHM
+        bool "Auto Gain Control Algorithm"
+        default y
+
+    config ESP_IPA_AEN_ALGORITHM
+        bool "Auto Enhancement Algorithm"
+        default y
+
+    config ESP_IPA_AF_ALGORITHM
+        bool "Auto Focus Algorithm"
+        default y
+
+    config ESP_IPA_ATC_ALGORITHM
+        bool "Auto Sensor AE Target Level Control Algorithm"
+        default y
+
+    config ESP_IPA_DPC_ALGORITHM
+        bool "Dead Pixel Correction Algorithm"
+        default y
+
+    config ESP_IPA_EXT_CONFIG
+        bool "Extended Configuration"
+        default y
+
+    choice ESP_IPA_DETECT_METHOD
+        prompt "Choose IPA detection method"
+        default ESP_IPA_DETECT_METHOD_DYNAMIC_LINK
+        help
+            Specify how the IPA detection functions are included in the firmware.
+
+        config ESP_IPA_DETECT_METHOD_DYNAMIC_LINK
+            bool "Dynamic linking of IPA detection functions"
+            help
+                Automatically include all available IPA detection functions in firmware via
+                the esp_ipa_detect section in flash memory.
+
+                In this mode, the linker retains all detection functions, even if they are not
+                explicitly referenced by the application code. This ensures that auto-detection
+                works for all supported IPAs but will increase the overall firmware size.
+
+        config ESP_IPA_DETECT_METHOD_STATIC_STORE
+            bool "Static inclusion of IPA detection objects"
+            help
+                Only include the detection functions for IPAs that are actually referenced by
+                the application, with data stored in a flash-based C-language array.
+
+                With this mode, if detection functions are unused in your application, the linker
+                will exclude them from the final firmware, resulting in a smaller binary size.
+    endchoice
+endmenu

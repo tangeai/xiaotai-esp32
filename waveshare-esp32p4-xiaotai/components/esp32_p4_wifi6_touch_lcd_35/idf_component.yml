@@ -1,6 +1,6 @@
 dependencies:
   esp_codec_dev:
-    version: "~1.5"
+    version: "==1.6.2"
     public: true
   espressif/esp_lcd_st7796: '^1'
   espressif/esp_lcd_touch_ft5x06: ^1
@@ -8,7 +8,7 @@ dependencies:
     public: true
     version: "*"
   idf: '>=5.3'
-  lvgl/lvgl: '8.3.*'
+  lvgl/lvgl: '==8.4.0'
 description: Based on ESP32-P4 chip, waveshare electronics designed a 3.4-inch, 4-inch
   circular screen, highly integrated development board
 repository: git://github.com/waveshareteam/Waveshare-ESP32-components.git

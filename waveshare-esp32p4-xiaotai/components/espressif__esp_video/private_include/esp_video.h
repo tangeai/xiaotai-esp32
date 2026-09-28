@@ -29,6 +29,14 @@ struct esp_video_format_desc {
 };
 
 /**
+ * @brief Video stream parameters.
+ */
+struct esp_video_param {
+    uint16_t skip_frames;                   /*!< Skip frame numbers */
+    uint16_t skip_count;                    /*!< Skip frame count */
+};
+
+/**
  * @brief Video stream object.
  */
 struct esp_video_stream {
@@ -36,13 +44,16 @@ struct esp_video_stream {
 
     struct v4l2_format format;              /*!< Video stream format */
     struct esp_video_buffer_info buf_info;  /*!< Video stream buffer information */
-    uint32_t next_sequence;                 /*!< Next completion sequence */
 
     esp_video_buffer_list_t queued_list;    /*!< Workqueue buffer elements list */
     esp_video_buffer_list_t done_list;      /*!< Done buffer elements list */
 
     struct esp_video_buffer *buffer;        /*!< Video stream buffer */
     SemaphoreHandle_t ready_sem;            /*!< Video stream buffer element ready semaphore */
+
+    struct v4l2_rect rect;                  /*!< Selection rectangles */
+
+    struct esp_video_param param;           /*!< Video stream parameters */
 };
 
 /**
@@ -62,8 +73,16 @@ struct esp_video {
     portMUX_TYPE stream_lock;               /*!< Stream list lock */
     struct esp_video_stream *stream;        /*!< Video device stream, capture-only or output-only device has 1 stream, M2M device has 2 streams */
 
+    TickType_t dqbuf_timeout_ticks;         /*!< Video device DQBUF timeout ticks */
+
+    QueueHandle_t event_queue;              /*!< Video device event queue */
+    struct v4l2_event_subscription event_sub; /*!< Video device event subscription */
+    struct v4l2_event event;                 /*!< Video device event */
+
     SemaphoreHandle_t mutex;                /*!< Video device mutex lock */
     uint8_t reference;                      /*!< video device open reference count */
+
+    uint8_t inited : 1;                     /*!< video device is initialized */
 };
 
 /**
@@ -98,12 +117,11 @@ esp_err_t esp_video_destroy(struct esp_video *video);
  * @brief Open a video device, this function will initialize hardware.
  *
  * @param name video device name
+ * @param video_ret video object pointer
  *
- * @return
- *      - Video object pointer on success
- *      - NULL if failed
+ * @return ESP_OK on success, others if failed
  */
-struct esp_video *esp_video_open(const char *name);
+esp_err_t esp_video_open(const char *name, struct esp_video **video_ret);
 
 /**
  * @brief Close a video device, this function will de-initialize hardware.
@@ -191,6 +209,22 @@ esp_err_t esp_video_set_format(struct esp_video *video, const struct v4l2_format
  *      - Others if failed
  */
 esp_err_t esp_video_setup_buffer(struct esp_video *video, uint32_t type, uint32_t memory_type, uint32_t count);
+
+/**
+ * @brief Release video buffers for one stream.
+ *
+ * Mirrors the standard V4L2 VIDIOC_REQBUFS count=0 behavior. The stream must
+ * be stopped before buffers can be released.
+ *
+ * @param video Video object
+ * @param type  Video stream type
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_STATE when stream is still started
+ *      - Others if failed
+ */
+esp_err_t esp_video_release_buffer(struct esp_video *video, uint32_t type);
 
 /**
  * @brief Get video buffer count.
@@ -285,12 +319,13 @@ esp_err_t esp_video_done_buffer(struct esp_video *video, uint32_t type, uint8_t 
  * @param video Video object
  * @param type  Video stream type
  * @param ticks Wait OS tick
+ * @param element_ptr Video buffer element object pointer
  *
  * @return
- *      - Video buffer element object pointer on success
- *      - NULL if failed
+ *      - ESP_OK on success
+ *      - Others if failed
  */
-struct esp_video_buffer_element *esp_video_recv_element(struct esp_video *video, uint32_t type, uint32_t ticks);
+esp_err_t esp_video_recv_element(struct esp_video *video, uint32_t type, uint32_t ticks, struct esp_video_buffer_element **element_ptr);
 
 /**
  * @brief Put buffer element into queued list.
@@ -339,12 +374,13 @@ esp_err_t esp_video_queue_element_index_buffer(struct esp_video *video, uint32_t
  * @param video Video object
  * @param type  Video stream type
  * @param index Video buffer element index
+ * @param payload Buffer element payload pointer
  *
  * @return
  *      - ESP_OK on success
  *      - Others if failed
  */
-uint8_t *esp_video_get_element_index_payload(struct esp_video *video, uint32_t type, int index);
+esp_err_t esp_video_get_element_index_payload(struct esp_video *video, uint32_t type, int index, uint8_t **payload);
 
 /**
  * @brief Get video object by name
@@ -540,6 +576,7 @@ esp_err_t esp_video_m2m_process(struct esp_video *video, uint32_t src_type, uint
  *
  * @return
  *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_STATE if video buffers are allocated; free them with VIDIOC_REQBUFS count=0 first
  *      - Others if failed
  */
 esp_err_t esp_video_set_sensor_format(struct esp_video *video, const esp_cam_sensor_format_t *format);
@@ -557,6 +594,18 @@ esp_err_t esp_video_set_sensor_format(struct esp_video *video, const esp_cam_sen
 esp_err_t esp_video_get_sensor_format(struct esp_video *video, esp_cam_sensor_format_t *format);
 
 /**
+ * @brief Enumerate sensor format
+ *
+ * @param video     Video object
+ * @param enum_fmt  Sensor format enumeration pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_enum_sensor_format(struct esp_video *video, struct v4l2_sensor_format_enum *enum_fmt);
+
+/**
  * @brief Query menu value
  *
  * @param video  Video object
@@ -567,6 +616,221 @@ esp_err_t esp_video_get_sensor_format(struct esp_video *video, esp_cam_sensor_fo
  *      - Others if failed
  */
 esp_err_t esp_video_query_menu(struct esp_video *video, struct v4l2_querymenu *qmenu);
+
+/**
+ * @brief Set video owner
+ *
+ * @param video  Video object
+ * @param owner  non-zero: video reference adds by 1; 0: video reference subs by 1. Must be 0 or 1.
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_owner(struct esp_video *video, int owner);
+
+/**
+ * @brief Set V4L2 selection rectangles
+ *
+ * @param video     Video object
+ * @param selection Selection rectangles buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_selection(struct esp_video *video, struct v4l2_selection *selection);
+
+/**
+ * @brief Get V4L2 selection rectangles
+ *
+ * @param video     Video object
+ * @param selection Selection rectangles buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_selection(struct esp_video *video, struct v4l2_selection *selection);
+
+#if CONFIG_ESP_VIDEO_ENABLE_CAMERA_MOTOR_CONTROLLER
+/**
+ * @brief Set format to motor
+ *
+ * @param video  Video object
+ * @param format Motor format pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_motor_format(struct esp_video *video, const esp_cam_motor_format_t *format);
+
+/**
+ * @brief Get format from motor
+ *
+ * @param video  Video object
+ * @param format Motor format pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_motor_format(struct esp_video *video, esp_cam_motor_format_t *format);
+#endif
+
+/**
+ * @brief Set V4L2 stream parameters
+ *
+ * @param video         Video object
+ * @param stream_parm   Stream parameters buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_parm(struct esp_video *video, struct v4l2_streamparm *stream_parm);
+
+/**
+ * @brief Get V4L2 stream parameters
+ *
+ * @param video         Video object
+ * @param stream_parm   Stream parameters buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_parm(struct esp_video *video, struct v4l2_streamparm *stream_parm);
+
+/**
+ * @brief Skip video buffer
+ *
+ * @param video  Video object
+ * @param type   Video stream type
+ * @param buffer Video buffer pointer
+ *
+ * @return None
+ */
+void esp_video_skip_buffer(struct esp_video *video, uint32_t type, uint8_t *buffer);
+
+/**
+ * @brief Enumerate video frame sizes
+ *
+ * @param video     Video object
+ * @param frmsize   Frame size buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success or others if failed
+ */
+esp_err_t esp_video_enum_framesizes(struct esp_video *video, struct v4l2_frmsizeenum *frmsize);
+
+/**
+ * @brief Enumerate video frame intervals
+ *
+ * @param video     Video object
+ * @param frmival   Frame interval buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success or others if failed
+ */
+esp_err_t esp_video_enum_frameintervals(struct esp_video *video, struct v4l2_frmivalenum *frmival);
+
+/**
+ * @brief Configure video stream buffer by given V4L2 format
+ *
+ * @param video     Video object
+ * @param format    Video format pointer
+ * @param frame_caps Frame buffer capabilities
+ *
+ * @return ESP_OK on success or others if failed
+ */
+esp_err_t esp_video_config_buffer(struct esp_video *video, const struct v4l2_format *format, uint32_t frame_caps);
+
+/**
+ * @brief Set DQBUF timeout
+ *
+ * @param video     Video object
+ * @param timeout   Timeout value, consider the FreeRTOS total timeout limit is portMAX_DELAY, so the too
+ *                  long timeout value will be treated as portMAX_DELAY
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_dqbuf_timeout(struct esp_video *video, const struct timeval *timeout);
+
+/**
+ * @brief Get DQBUF timeout
+ *
+ * @param video     Video object
+ * @param timeout   Timeout value
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_dqbuf_timeout(struct esp_video *video, struct timeval *timeout);
+
+/**
+ * @brief Subscribe video event
+ *
+ * @param video     Video object
+ * @param sub       Event subscription buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_subscribe_event(struct esp_video *video, struct v4l2_event_subscription *sub);
+
+/**
+ * @brief Unsubscribe video event
+ *
+ * @param video     Video object
+ * @param sub       Event subscription buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_unsubscribe_event(struct esp_video *video, struct v4l2_event_subscription *sub);
+
+/**
+ * @brief Get video event
+ *
+ * @param video     Video object
+ * @param event     Event buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_event(struct esp_video *video, struct v4l2_event *event);
+
+/**
+ * @brief Restart video hardware
+ *
+ * @param video     Video object
+ * @param config    Restart configuration
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_restart(struct esp_video *video, struct v4l2_restart_config *config);
+
+/**
+ * @brief Set event callback
+ *
+ * @param video     Video object
+ * @param callback  Event callback pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_event_callback(struct esp_video *video, struct v4l2_event_callback *callback);
 
 #ifdef __cplusplus
 }

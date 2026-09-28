@@ -46,10 +46,11 @@ static int _i2c_ctrl_open(const audio_codec_ctrl_if_t *ctrl, void *cfg, int cfg_
     if (i2c_cfg->bus_handle == NULL) {
         return ESP_CODEC_DEV_INVALID_ARG;
     }
+    int clock_speed_hz = i2c_cfg->clock_speed_hz ? i2c_cfg->clock_speed_hz : DEFAULT_I2C_CLOCK;
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = (i2c_cfg->addr >> 1),
-        .scl_speed_hz = DEFAULT_I2C_CLOCK,
+        .scl_speed_hz = clock_speed_hz,
     };
     int ret = i2c_master_bus_add_device(i2c_cfg->bus_handle, &dev_cfg, &i2c_ctrl->dev_handle);
     return (ret == ESP_OK) ? 0 : ESP_CODEC_DEV_DRV_ERR;
@@ -182,6 +183,18 @@ static int _i2c_ctrl_write_reg(const audio_codec_ctrl_if_t *ctrl, int addr, int 
 #endif
 }
 
+static int _i2c_ctrl_get_info(const audio_codec_ctrl_if_t *ctrl, audio_codec_ctrl_info_t *info)
+{
+    if (ctrl == NULL || info == NULL) {
+        return ESP_CODEC_DEV_INVALID_ARG;
+    }
+    i2c_ctrl_t *i2c_ctrl = (i2c_ctrl_t *)ctrl;
+    info->type = AUDIO_CODEC_CTRL_I2C;
+    info->i2c.addr = i2c_ctrl->addr;
+    info->i2c.port = i2c_ctrl->port;
+    return ESP_CODEC_DEV_OK;
+}
+
 static int _i2c_ctrl_close(const audio_codec_ctrl_if_t *ctrl)
 {
     if (ctrl == NULL) {
@@ -212,6 +225,7 @@ const audio_codec_ctrl_if_t *audio_codec_new_i2c_ctrl(audio_codec_i2c_cfg_t *i2c
     ctrl->base.is_open = _i2c_ctrl_is_open;
     ctrl->base.read_reg = _i2c_ctrl_read_reg;
     ctrl->base.write_reg = _i2c_ctrl_write_reg;
+    ctrl->base.get_info = _i2c_ctrl_get_info;
     ctrl->base.close = _i2c_ctrl_close;
     int ret = _i2c_ctrl_open(&ctrl->base, i2c_cfg, sizeof(audio_codec_i2c_cfg_t));
     if (ret != 0) {

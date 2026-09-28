@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.1
+
+### Fixes
+
+- Fixed SW encoder YUV cache allocating 16 frames instead of one 16-byte-aligned I420 buffer (`calloc_prefer` `n` vs alignment)
+
+## 1.4.0
+
+### Features
+
+- Added ESP32-S31 PIE assembly-optimized library support
+- Added ESP32-P4 prebuilt library support for two chip revisions and HWLP acceleration
+
+### Fixes
+
+- Allocated the HW deblocking buffer from non-encrypted PSRAM when supported
+
 ## 1.3.8
 
 ### Features

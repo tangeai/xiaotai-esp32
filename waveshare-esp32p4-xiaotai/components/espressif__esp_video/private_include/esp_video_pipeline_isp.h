@@ -34,6 +34,26 @@ typedef struct esp_video_isp_config {
  */
 esp_err_t esp_video_isp_pipeline_init(const esp_video_isp_config_t *config);
 
+/**
+ * @brief Deinitialize ISP system module.
+ *
+ * @param None
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_isp_pipeline_deinit(void);
+
+/**
+ * @brief Check if ISP pipeline is initialized.
+ *
+ * @return
+ *      - true if ISP pipeline is initialized
+ *      - false if ISP pipeline is not initialized
+ */
+bool esp_video_isp_pipeline_is_initialized(void);
+
 #ifdef __cplusplus
 }
 #endif

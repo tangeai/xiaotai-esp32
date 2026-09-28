@@ -157,6 +157,9 @@ static EXT_RAM_BSS_ATTR int s_response_status;
 static atomic_bool s_binding_retry;
 static volatile bool s_request_worker_ready;
 static atomic_bool s_mqtt_connected;
+static atomic_bool s_mqtt_transport_connected;
+static atomic_int s_mqtt_subscribe_id;
+static atomic_int_fast64_t s_mqtt_subscribe_retry_ms;
 static atomic_bool s_net_fault_latched;
 static atomic_bool s_net_snapshot_pending;
 static platform_online_callback_t s_online_callback;
@@ -230,8 +233,7 @@ static void http_log_result(const char *url, bool post, uint32_t started_ms,
 {
     uint32_t total_ms = (uint32_t)(esp_timer_get_time() / 1000) - started_ms;
     const char *api = http_api_name(url);
-    if (queue_ms < 100U && total_ms < 500U && err == ESP_OK &&
-        status >= 200 && status < 300 && strcmp(api, "/v1/ai/token") != 0) return;
+    if (total_ms < 3000U && err == ESP_OK && status >= 200 && status < 300) return;
     /* link includes TCP/TLS/local scheduling; wait includes network + server.
      * Neither is pure server time. Redirect/auth exchanges may have several
      * response intervals, so do not invent a single wait duration for them. */
@@ -242,15 +244,11 @@ static void http_log_result(const char *url, bool post, uint32_t started_ms,
     long link_ms = trace->enabled && trace->connect_ms >= trace->dns_ms
                        ? (long)(trace->connect_ms - trace->dns_ms) : -1;
     ESP_LOGI(TAG,
-             "NET H api=%s m=%c ms=%lu q/p=%lu/%lu dns=%ld/%lu/%d link=%ld sock=%lu tcp=%lu/%d wait=%ld tx/rx=%lu/%lu conn=%lu redir/retry=%d/%lu rc=%d h=%d",
+             "NET H %s %c t=%lu q/p=%lu/%lu dns=%ld/%d link=%ld tcp=%lu/%d wait=%ld retry=%lu rc/h=%d/%d",
              api, post ? 'P' : 'G', (unsigned long)total_ms,
              (unsigned long)queue_ms, (unsigned long)prep_ms,
-             trace->enabled ? (long)trace->dns_ms : -1,
-             (unsigned long)trace->dns_calls, trace->dns_rc, link_ms,
-             (unsigned long)trace->socket_ms,
+             trace->enabled ? (long)trace->dns_ms : -1, trace->dns_rc, link_ms,
              (unsigned long)trace->tcp_wait_ms, trace->tcp_wait_rc, wait_ms,
-             (unsigned long)trace->tx_bytes, (unsigned long)trace->rx_bytes,
-             (unsigned long)trace->connect_calls, (int)redirected,
              (unsigned long)stale_retry_ms,
              (int)err, status);
     if (err != ESP_OK &&
@@ -849,6 +847,39 @@ static void publish_heartbeat(unsigned sequence)
     xSemaphoreGive(s_mqtt_lifecycle);
 }
 
+static int request_mqtt_subscriptions(esp_mqtt_client_handle_t mqtt)
+{
+    char command_topic[128];
+    char notify_topic[128];
+    (void)snprintf(command_topic, sizeof(command_topic),
+                   "device/sn_%s/cmd", s_device_id);
+    (void)snprintf(notify_topic, sizeof(notify_topic),
+                   "device/sn_%s/notify", s_device_id);
+    const esp_mqtt_topic_t topics[] = {
+        {.filter = command_topic, .qos = 1},
+        {.filter = notify_topic, .qos = 1},
+    };
+    return esp_mqtt_client_subscribe_multiple(mqtt, topics, 2);
+}
+
+static void retry_mqtt_subscriptions(int64_t current_ms)
+{
+    if (!atomic_load(&s_mqtt_transport_connected) || atomic_load(&s_mqtt_connected) ||
+        current_ms < atomic_load(&s_mqtt_subscribe_retry_ms) ||
+        s_mqtt_lifecycle == NULL || xSemaphoreTake(s_mqtt_lifecycle, 0) != pdTRUE) {
+        return;
+    }
+    if (s_mqtt != NULL && atomic_load(&s_mqtt_transport_connected) &&
+        !atomic_load(&s_mqtt_connected)) {
+        int id = request_mqtt_subscriptions(s_mqtt);
+        atomic_store(&s_mqtt_subscribe_id, id > 0 ? id : 0);
+        atomic_store(&s_mqtt_subscribe_retry_ms,
+                     current_ms + (id > 0 ? 30000 : 3000));
+        ESP_LOGW(TAG, "NET MQ subscription retry id=%d", id);
+    }
+    xSemaphoreGive(s_mqtt_lifecycle);
+}
+
 static void request_loop(void)
 {
     /* 启动任务完成 TiRTC TLS 后直接转为请求循环，避免两个 24 KiB 栈重叠。 */
@@ -875,6 +906,7 @@ static void request_loop(void)
             }
         }
         int64_t current_ms = esp_timer_get_time() / 1000;
+        retry_mqtt_subscriptions(current_ms);
         if (current_ms >= next_heartbeat_ms) {
             publish_heartbeat(++heartbeat_sequence);
             next_heartbeat_ms = current_ms + 30000;
@@ -907,22 +939,36 @@ static void mqtt_event(void *handler_args,
     (void)base;
     esp_mqtt_event_handle_t event = event_data;
     if (event_id == MQTT_EVENT_CONNECTED) {
-        char command_topic[128];
-        char notify_topic[128];
-        (void)snprintf(command_topic, sizeof(command_topic),
-                       "device/sn_%s/cmd", s_device_id);
-        (void)snprintf(notify_topic, sizeof(notify_topic),
-                       "device/sn_%s/notify", s_device_id);
-        (void)esp_mqtt_client_subscribe(event->client, command_topic, 1);
-        (void)esp_mqtt_client_subscribe(event->client, notify_topic, 1);
+        s_mqtt_connected = false;
+        int id = request_mqtt_subscriptions(event->client);
+        atomic_store(&s_mqtt_subscribe_id, id > 0 ? id : 0);
+        atomic_store(&s_mqtt_subscribe_retry_ms,
+                     esp_timer_get_time() / 1000 + (id > 0 ? 30000 : 3000));
+        atomic_store(&s_mqtt_transport_connected, true);
+        if (id <= 0) ESP_LOGE(TAG, "NET MQ subscription request failed");
+    } else if (event_id == MQTT_EVENT_SUBSCRIBED) {
+        if (event->msg_id != atomic_load(&s_mqtt_subscribe_id)) return;
+        bool accepted = event->data != NULL && event->data_len == 2 &&
+                        (uint8_t)event->data[0] < 0x80 &&
+                        (uint8_t)event->data[1] < 0x80;
+        if (!accepted) {
+            ESP_LOGE(TAG, "NET MQ subscription rejected: id=%d len=%d codes=%d/%d",
+                     event->msg_id, event->data_len,
+                     event->data_len > 0 && event->data ? (uint8_t)event->data[0] : -1,
+                     event->data_len > 1 && event->data ? (uint8_t)event->data[1] : -1);
+            return;
+        }
+        atomic_store(&s_mqtt_subscribe_retry_ms, 0);
         s_mqtt_connected = true;
         atomic_store(&s_net_fault_latched, false);
-        atomic_store(&s_net_snapshot_pending, false);
-        ESP_LOGI(TAG, "NET MQ up sub_req=2");
+        ESP_LOGI(TAG, "NET MQ ready sub_ack=2");
         notify_platform_online();
     } else if (event_id == MQTT_EVENT_DISCONNECTED) {
         bool was_connected = s_mqtt_connected;
         s_mqtt_connected = false;
+        atomic_store(&s_mqtt_transport_connected, false);
+        atomic_store(&s_mqtt_subscribe_id, 0);
+        atomic_store(&s_mqtt_subscribe_retry_ms, 0);
         if (was_connected) ESP_LOGW(TAG, "NET MQ down");
         if (!atomic_exchange(&s_net_fault_latched, true))
             atomic_store(&s_net_snapshot_pending, true);
@@ -941,12 +987,16 @@ static void mqtt_event(void *handler_args,
                     char ack_topic[128];
                     (void)snprintf(ack_topic, sizeof(ack_topic),
                                    "device/sn_%s/ack", s_device_id);
-                    (void)esp_mqtt_client_publish(event->client,
-                                                  ack_topic,
-                                                  "{\"ack\":true}",
-                                                  12,
-                                                  1,
-                                                  0);
+                    int ack_id = esp_mqtt_client_enqueue(event->client,
+                                                         ack_topic,
+                                                         "{\"ack\":true}",
+                                                         12,
+                                                         1,
+                                                         0,
+                                                         false);
+                    if (ack_id < 0) {
+                        ESP_LOGW(TAG, "NET MQ ack queue failed id=%d", ack_id);
+                    }
                 }
             }
         }
@@ -1718,12 +1768,13 @@ static void provision_handle_message(provision_mqtt_t *context,
                    sizeof(ack_topic),
                    "device/%s/ack",
                    context->temp_client_id);
-    context->ack_message_id = esp_mqtt_client_publish(context->mqtt,
+    context->ack_message_id = esp_mqtt_client_enqueue(context->mqtt,
                                                        ack_topic,
                                                        "{\"ack\":true}",
                                                        12,
                                                        1,
-                                                       0);
+                                                       0,
+                                                       false);
     if (context->ack_message_id < 0) {
         ESP_LOGE(TAG, "cannot publish auth_grant ACK");
         provision_finish_with_error(context);
@@ -2181,6 +2232,9 @@ static esp_err_t stop_mqtt(void)
         xSemaphoreTake(s_mqtt_lifecycle, pdMS_TO_TICKS(1000)) != pdTRUE) return ESP_ERR_TIMEOUT;
     if (s_mqtt == NULL) {
         s_mqtt_connected = false;
+        atomic_store(&s_mqtt_transport_connected, false);
+        atomic_store(&s_mqtt_subscribe_id, 0);
+        atomic_store(&s_mqtt_subscribe_retry_ms, 0);
         xSemaphoreGive(s_mqtt_lifecycle);
         return ESP_OK;
     }
@@ -2193,6 +2247,9 @@ static esp_err_t stop_mqtt(void)
         return err;
     }
     s_mqtt_connected = false;
+    atomic_store(&s_mqtt_transport_connected, false);
+    atomic_store(&s_mqtt_subscribe_id, 0);
+    atomic_store(&s_mqtt_subscribe_retry_ms, 0);
     err = esp_mqtt_client_destroy(mqtt);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "cannot release stopped MQTT client: %s",

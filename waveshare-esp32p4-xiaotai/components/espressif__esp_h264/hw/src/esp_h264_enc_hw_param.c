@@ -16,144 +16,6 @@ static const char *TAG = "H264_ENC.HW.SET";
 #define ESP_H264_REDUNDANT_BYTE (8 + 64)
 #define SPS_PPS_BUF_SIZE        (160)
 
-#if CONFIG_APP_H264_PERSISTENT_REF_POOL
-static portMUX_TYPE s_ref_pool_lock = portMUX_INITIALIZER_UNLOCKED;
-static uint8_t *s_ref_pool;
-static uint32_t s_ref_pool_size;
-static bool s_ref_pool_in_use;
-
-static uint8_t *esp_h264_ref_pool_acquire(uint32_t required_size, bool *from_pool)
-{
-    uint8_t *result = NULL;
-    uint8_t *stale = NULL;
-
-    *from_pool = false;
-    taskENTER_CRITICAL(&s_ref_pool_lock);
-    if (!s_ref_pool_in_use && s_ref_pool != NULL && s_ref_pool_size >= required_size) {
-        s_ref_pool_in_use = true;
-        result = s_ref_pool;
-        *from_pool = true;
-    } else if (!s_ref_pool_in_use && s_ref_pool != NULL) {
-        stale = s_ref_pool;
-        s_ref_pool = NULL;
-        s_ref_pool_size = 0U;
-    }
-    taskEXIT_CRITICAL(&s_ref_pool_lock);
-
-    if (stale != NULL) {
-        esp_h264_free(stale);
-    }
-    if (result != NULL) {
-        return result;
-    }
-
-    uint32_t actual_size = 0U;
-    uint8_t *allocated = (uint8_t *)esp_h264_aligned_malloc(
-        16, 1, required_size, &actual_size, ESP_H264_MEM_INTERNAL);
-    if (allocated == NULL) {
-        return NULL;
-    }
-
-    taskENTER_CRITICAL(&s_ref_pool_lock);
-    if (!s_ref_pool_in_use && s_ref_pool == NULL) {
-        s_ref_pool = allocated;
-        s_ref_pool_size = actual_size;
-        s_ref_pool_in_use = true;
-        result = allocated;
-        *from_pool = true;
-    }
-    taskEXIT_CRITICAL(&s_ref_pool_lock);
-
-    return result != NULL ? result : allocated;
-}
-
-static void esp_h264_ref_pool_release(uint8_t *ref, bool from_pool)
-{
-    if (ref == NULL) {
-        return;
-    }
-    if (!from_pool) {
-        esp_h264_free(ref);
-        return;
-    }
-
-    taskENTER_CRITICAL(&s_ref_pool_lock);
-    if (ref == s_ref_pool) {
-        s_ref_pool_in_use = false;
-    }
-    taskEXIT_CRITICAL(&s_ref_pool_lock);
-}
-#endif
-
-#if CONFIG_APP_H264_PERSISTENT_DB_POOL
-static portMUX_TYPE s_db_pool_lock = portMUX_INITIALIZER_UNLOCKED;
-static uint8_t *s_db_pool;
-static uint32_t s_db_pool_size;
-static bool s_db_pool_in_use;
-
-static uint8_t *esp_h264_db_pool_acquire(uint32_t required_size, bool *from_pool)
-{
-    uint8_t *result = NULL;
-    uint8_t *stale = NULL;
-
-    *from_pool = false;
-    taskENTER_CRITICAL(&s_db_pool_lock);
-    if (!s_db_pool_in_use && s_db_pool != NULL && s_db_pool_size >= required_size) {
-        s_db_pool_in_use = true;
-        result = s_db_pool;
-        *from_pool = true;
-    } else if (!s_db_pool_in_use && s_db_pool != NULL) {
-        stale = s_db_pool;
-        s_db_pool = NULL;
-        s_db_pool_size = 0U;
-    }
-    taskEXIT_CRITICAL(&s_db_pool_lock);
-
-    if (stale != NULL) {
-        esp_h264_free(stale);
-    }
-    if (result != NULL) {
-        return result;
-    }
-
-    uint32_t actual_size = 0U;
-    uint8_t *allocated = (uint8_t *)esp_h264_aligned_malloc(
-        4, 1, required_size, &actual_size, ESP_H264_MEM_SPIRAM);
-    if (allocated == NULL) {
-        return NULL;
-    }
-
-    taskENTER_CRITICAL(&s_db_pool_lock);
-    if (!s_db_pool_in_use && s_db_pool == NULL) {
-        s_db_pool = allocated;
-        s_db_pool_size = actual_size;
-        s_db_pool_in_use = true;
-        result = allocated;
-        *from_pool = true;
-    }
-    taskEXIT_CRITICAL(&s_db_pool_lock);
-
-    return result != NULL ? result : allocated;
-}
-
-static void esp_h264_db_pool_release(uint8_t *db, bool from_pool)
-{
-    if (db == NULL) {
-        return;
-    }
-    if (!from_pool) {
-        esp_h264_free(db);
-        return;
-    }
-
-    taskENTER_CRITICAL(&s_db_pool_lock);
-    if (db == s_db_pool) {
-        s_db_pool_in_use = false;
-    }
-    taskEXIT_CRITICAL(&s_db_pool_lock);
-}
-#endif
-
 typedef struct esp_h264_param {
     esp_h264_enc_param_hw_t    hw_base;
     esp_h264_set_dev_t         device;
@@ -174,12 +36,6 @@ typedef struct esp_h264_param {
     uint32_t                   mvm_buf_len;
     uint8_t                   *db;
     uint8_t                   *ref;
-#if CONFIG_APP_H264_PERSISTENT_REF_POOL
-    bool                       ref_from_pool;
-#endif
-#if CONFIG_APP_H264_PERSISTENT_DB_POOL
-    bool                       db_from_pool;
-#endif
     h264_dma_desc_t           *dsc_ref;
     h264_dma_desc_t           *dsc_db[4];
     h264_dma_desc_t           *dsc_mvm;
@@ -460,18 +316,10 @@ esp_h264_err_t esp_h264_enc_hw_del_param(esp_h264_enc_param_hw_handle_t handle)
             esp_h264_free(param->nal_buf);
         }
         if (param->ref) {
-#if CONFIG_APP_H264_PERSISTENT_REF_POOL
-            esp_h264_ref_pool_release(param->ref, param->ref_from_pool);
-#else
             esp_h264_free(param->ref);
-#endif
         }
         if (param->db) {
-#if CONFIG_APP_H264_PERSISTENT_DB_POOL
-            esp_h264_db_pool_release(param->db, param->db_from_pool);
-#else
             esp_h264_free(param->db);
-#endif
         }
         if (param->dsc_ref) {
             esp_h264_free(param->dsc_ref);
@@ -531,20 +379,9 @@ esp_h264_err_t esp_h264_enc_hw_new_param(esp_h264_enc_hw_param_cfg_t *cfg, esp_h
     param->nal_bit_len += esp_h264_enc_set_pps(param->nal_buf + (param->nal_bit_len >> 3), param->nal_buf_len - (param->nal_bit_len >> 3), param->qp_init, true);
 
     /** Allocated reference frame and DB memory (malloc: large buffers, no need to zero) */
-    uint32_t ref_buffer_size = (uint32_t)max_refame_buffer_size(param->mb_width);
-#if CONFIG_APP_H264_PERSISTENT_REF_POOL
-    param->ref = esp_h264_ref_pool_acquire(ref_buffer_size, &param->ref_from_pool);
-#else
-    param->ref = (uint8_t *)esp_h264_aligned_malloc(16, 1, ref_buffer_size, &actual_size, ESP_H264_MEM_INTERNAL);
-#endif
+    param->ref = (uint8_t *)esp_h264_aligned_malloc(16, 1, max_refame_buffer_size(param->mb_width), &actual_size, ESP_H264_MEM_INTERNAL);
     ESP_H264_GOTO_ON_FALSE(param->ref, ESP_H264_ERR_MEM, __exit__, TAG, "No memory for reference frame");
-#if CONFIG_APP_H264_PERSISTENT_DB_POOL
-    uint32_t db_buffer_size =
-        (uint32_t)max_db_buffer_size(param->mb_width, param->mb_height);
-    param->db = esp_h264_db_pool_acquire(db_buffer_size, &param->db_from_pool);
-#else
-    param->db = (uint8_t *)esp_h264_malloc_prefer(1, max_db_buffer_size(param->mb_width, param->mb_height), &actual_size, ESP_H264_MEM_INTERNAL, ESP_H264_MEM_SPIRAM);
-#endif
+    param->db = (uint8_t *)esp_h264_malloc_prefer(1, max_db_buffer_size(param->mb_width, param->mb_height), &actual_size, ESP_H264_MEM_SPIRAM, ESP_H264_MEM_INTERNAL);
     ESP_H264_GOTO_ON_FALSE(param->db, ESP_H264_ERR_MEM, __exit__, TAG, "No memory for data");
 
     /** Allocated descriptor memory*/

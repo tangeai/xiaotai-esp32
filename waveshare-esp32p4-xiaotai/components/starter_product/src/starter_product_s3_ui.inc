@@ -26,6 +26,7 @@ enum {
     S3_ACTION_QR_CLOSE,
     S3_ACTION_WIFI_DISCONNECT,
     S3_ACTION_BINDING_RETRY,
+    S3_ACTION_C6_RETRY,
 };
 
 /* UI-only state belongs in external RAM; it is never used with cache off. */
@@ -44,6 +45,8 @@ static EXT_RAM_BSS_ATTR struct {
     lv_obj_t *binding_hint;
     lv_obj_t *binding_retry;
     lv_obj_t *initialization_hint;
+    lv_obj_t *c6_update_hint;
+    lv_obj_t *c6_retry_button;
     bool setup_active;
     product_page_t contacts_origin;
     lv_obj_t *volume_down;
@@ -632,6 +635,11 @@ static void s3_update_initialization_hint(int64_t now,
                                           starter_product_initialization_state_t state)
 {
     if (s3_ui.initialization_hint == NULL) return;
+    if (atomic_load_explicit(&s_c6_update_state, memory_order_acquire) !=
+        STARTER_C6_UPDATE_READY) {
+        label_set_text_if_changed(s3_ui.initialization_hint, "");
+        return;
+    }
     char text[64];
     unsigned dots = (unsigned)((now / 500) % 4);
     int written = snprintf(text, sizeof(text), "%s", s3_initialization_text(state));
@@ -646,18 +654,74 @@ static void s3_update_initialization_hint(int64_t now,
 
 static void s3_render_initializing(lv_obj_t *screen)
 {
-    render_header(screen, "设备初始化");
+    bool updating_c6 = atomic_load_explicit(&s_c6_update_state, memory_order_acquire) !=
+                       STARTER_C6_UPDATE_READY;
+    render_header(screen, updating_c6 ? "联网模块" : "设备初始化");
     lv_obj_t *symbol = make_label(screen, LV_SYMBOL_REFRESH, 132, 66, 56,
                                   lv_color_hex(S3_ACCENT));
     lv_obj_set_style_text_font(symbol, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_align(symbol, LV_TEXT_ALIGN_CENTER, 0);
-    (void)make_label(screen, "小钛正在准备", 16, 112, 288, lv_color_hex(S3_TEXT));
+    (void)make_label(screen, updating_c6 ? "正在检查联网模块" : "小钛正在准备",
+                     16, 112, 288, lv_color_hex(S3_TEXT));
     s3_ui.initialization_hint = make_label(screen, "", 16, 148, 288,
                                             lv_color_hex(S3_MUTED));
-    (void)make_label(screen, "完成后将自动进入首页", 16, 184, 288,
-                     lv_color_hex(S3_MUTED));
+    s3_ui.c6_update_hint = make_label(screen, "", 16, 184, 288,
+                                      lv_color_hex(S3_MUTED));
+    s3_ui.c6_retry_button = make_button(screen, "重新检测", 48, 244, 224, 48,
+                                        (product_action_t)S3_ACTION_C6_RETRY);
+    lv_obj_add_flag(s3_ui.c6_retry_button, LV_OBJ_FLAG_HIDDEN);
     s3_update_initialization_hint(monotonic_ms(),
         atomic_load_explicit(&s_initialization_ui_state, memory_order_acquire));
+}
+
+static void s3_update_c6_hint(void)
+{
+    if (!s3_ui.c6_update_hint) return;
+    starter_product_c6_update_state_t state = atomic_load_explicit(
+        &s_c6_update_state, memory_order_acquire);
+    unsigned percent = atomic_load_explicit(&s_c6_update_percent, memory_order_relaxed);
+    esp_err_t error = atomic_load_explicit(&s_c6_update_error, memory_order_relaxed);
+    char message[96];
+    switch (state) {
+    case STARTER_C6_UPDATE_VERIFYING:
+        (void)snprintf(message, sizeof(message), "正在校验联网模块固件"); break;
+    case STARTER_C6_UPDATE_WRITING:
+        (void)snprintf(message, sizeof(message), "正在更新联网模块，请勿断电  %u%%", percent); break;
+    case STARTER_C6_UPDATE_ACTIVATING:
+        (void)snprintf(message, sizeof(message), "正在激活联网模块，请勿断电"); break;
+    case STARTER_C6_UPDATE_HANDSHAKING:
+        (void)snprintf(message, sizeof(message), "正在重新确认联网模块通信"); break;
+    case STARTER_C6_UPDATE_RECOVERY:
+        if (error == ESP_ERR_NOT_SUPPORTED)
+            (void)snprintf(message, sizeof(message),
+                           "联网模块版本未获准自动升级\n请通过 C6 串口恢复");
+        else if (error == ESP_ERR_INVALID_CRC)
+            (void)snprintf(message, sizeof(message),
+                           "内置固件校验失败\n请重新烧录设备固件");
+        else if (error == ESP_ERR_INVALID_STATE)
+            (void)snprintf(message, sizeof(message),
+                           "上次更新中断，请确认供电\n点击重新检测后重试");
+        else
+            (void)snprintf(message, sizeof(message),
+                           "联网模块未就绪 (%s)\n请检查连接，必要时用 C6 串口恢复",
+                           esp_err_to_name(error));
+        break;
+    case STARTER_C6_UPDATE_RECOVERY_POWER_CYCLE:
+        (void)snprintf(message, sizeof(message),
+                       "更新结果尚未确认 (%s)\n请整机断电重启后重新检测",
+                       esp_err_to_name(error));
+        break;
+    case STARTER_C6_UPDATE_READY:
+        (void)snprintf(message, sizeof(message), "联网模块已就绪"); break;
+    default:
+        (void)snprintf(message, sizeof(message), "正在识别联网模块"); break;
+    }
+    label_set_text_if_changed(s3_ui.c6_update_hint, message);
+    if (s3_ui.c6_retry_button) {
+        if (state == STARTER_C6_UPDATE_RECOVERY && error != ESP_ERR_NOT_SUPPORTED)
+            lv_obj_clear_flag(s3_ui.c6_retry_button, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s3_ui.c6_retry_button, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void s3_update_setup(int64_t now, bool connected, bool idle, bool provisioning,
@@ -673,7 +737,12 @@ static void s3_update_setup(int64_t now, bool connected, bool idle, bool provisi
     if (connected && !idle && !s3_ui.setup_active &&
         binding == STARTER_BINDING_READY && initialization == STARTER_INITIALIZATION_READY) return;
     product_page_t target = s_page;
-    if (!connected) {
+    if (initialization != STARTER_INITIALIZATION_READY &&
+        atomic_load_explicit(&s_c6_update_state, memory_order_acquire) !=
+            STARTER_C6_UPDATE_READY) {
+        s3_ui.setup_active = true;
+        target = PAGE_INITIALIZING;
+    } else if (!connected) {
         s3_ui.setup_active = true;
         target = PAGE_NETWORK;
     } else if (binding == STARTER_BINDING_REQUIRED || binding == STARTER_BINDING_FAILED || provisioning) {
@@ -714,8 +783,10 @@ static void s3_update_setup(int64_t now, bool connected, bool idle, bool provisi
             lv_obj_clear_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
     }
-    if (s_page == PAGE_INITIALIZING)
+    if (s_page == PAGE_INITIALIZING) {
         s3_update_initialization_hint(now, initialization);
+        s3_update_c6_hint();
+    }
     /* The AP can become ready seconds after the page is created. Its SSID,
      * URL and control results must refresh without a runtime snapshot too. */
     if (s3_ui.network_text && now >= s3_ui.network_due) {
@@ -753,6 +824,8 @@ static void s3_reset_page(void)
     s3_ui.binding_hint = NULL;
     s3_ui.binding_retry = NULL;
     s3_ui.initialization_hint = NULL;
+    s3_ui.c6_update_hint = NULL;
+    s3_ui.c6_retry_button = NULL;
     s3_ui.volume_down = NULL;
     s3_ui.volume_up = NULL;
     s3_ui.network_text = NULL;
@@ -845,6 +918,10 @@ static void s3_note_ai_request(starter_runtime_state_t from)
 
 static bool s3_handle_action(product_action_t action)
 {
+    if ((unsigned)action == S3_ACTION_C6_RETRY) {
+        (void)starter_product_request_c6_retry();
+        return true;
+    }
     if (action == ACTION_ROOM) {
         if (!wifi_manager_connected()) return true;
         s_page = PAGE_ROOM;

@@ -1,191 +1,109 @@
 menu "Example Configuration"
 
-    choice EXAMPLE_CAM_SENSOR_INTERFACE
-        prompt "Camera sensor interface"
-        default EXAMPLE_CAM_SENSOR_MIPI_CSI
-        help
-            Select camera sensor interface based on development board.
-
-        config EXAMPLE_CAM_SENSOR_MIPI_CSI
-            bool "MIPI-CSI"
-            depends on ESP_VIDEO_ENABLE_MIPI_CSI_VIDEO_DEVICE
-
-        config EXAMPLE_CAM_SENSOR_DVP
-            bool "DVP"
-            depends on ESP_VIDEO_ENABLE_DVP_VIDEO_DEVICE
-    endchoice
-
-    if EXAMPLE_CAM_SENSOR_MIPI_CSI
-        config EXAMPLE_MIPI_CSI_SCCB_I2C_PORT
-            int "MIPI CSI SCCB I2C Port Number"
-            default 0
-            range 0 1
-
-        config EXAMPLE_MIPI_CSI_SCCB_I2C_SCL_PIN
-            int "MIPI CSI SCCB I2C SCL Pin"
-            default 34
-            range -1 56
-
-        config EXAMPLE_MIPI_CSI_SCCB_I2C_SDA_PIN
-            int "MIPI CSI SCCB I2C SDA Pin"
-            default 31
-            range -1 56
-
-        config EXAMPLE_MIPI_CSI_SCCB_I2C_FREQ
-            int "MIPI CSI SCCB I2C Frequency"
-            default 100000
-            range 100000 400000
-            help
-                Increasing this value can reduce the initialization time of the camera sensor.
-                Please refer to the relevant instructions of the camera sensor to adjust the value.
-
-        config EXAMPLE_MIPI_CSI_CAM_SENSOR_RESET_PIN
-            int "MIPI CSI Camera Sensor Reset Pin"
-            default -1
-            range -1 56
-
-        config EXAMPLE_MIPI_CSI_CAM_SENSOR_PWDN_PIN
-            int "MIPI CSI Camera Sensor Power Down Pin"
-            default -1
-            range -1 56
-    endif
-
-    if EXAMPLE_CAM_SENSOR_DVP
-        config EXAMPLE_DVP_SCCB_I2C_PORT
-            int "DVP SCCB I2C Port Number"
-            default 1
-            range 0 1
-
-        config EXAMPLE_DVP_SCCB_I2C_SCL_PIN
-            int "DVP SCCB I2C SCL Pin"
-            default 33
-            range -1 56
-
-        config EXAMPLE_DVP_SCCB_I2C_SDA_PIN
-            int "DVP SCCB I2C SDA Pin"
-            default 32
-            range -1 56
-
-        config EXAMPLE_DVP_SCCB_I2C_FREQ
-            int "DVP SCCB I2C Frequency"
-            default 100000
-            range 100000 400000
-            help
-                Increasing this value can reduce the initialization time of the camera sensor.
-                Please refer to the relevant instructions of the camera sensor to adjust the value.
-
-        config EXAMPLE_DVP_CAM_SENSOR_RESET_PIN
-            int "DVP Camera Sensor Reset Pin"
-            default -1
-            range -1 56
-
-        config EXAMPLE_DVP_CAM_SENSOR_PWDN_PIN
-            int "DVP Camera Sensor Power Down Pin"
-            default -1
-            range -1 56
-
-        config EXAMPLE_DVP_XCLK_FREQ
-            int "DVP XCLK Frequency"
-            default 20000000
-
-        config EXAMPLE_DVP_XCLK_PIN
-            int "DVP XCLK Pin"
-            range 0 56
-            default 20
-
-        config EXAMPLE_DVP_PCLK_PIN
-            int "DVP PCLK Pin"
-            range 0 56
-            default 21
-
-        config EXAMPLE_DVP_VSYNC_PIN
-            int "DVP VSYNC Pin"
-            range 0 56
-            default 23
-
-        config EXAMPLE_DVP_DE_PIN
-            int "DVP DE Pin"
-            range 0 56
-            default 22
-
-        config EXAMPLE_DVP_D0_PIN
-            int "DVP D0 Pin"
-            range 0 56
-            default 53
-
-        config EXAMPLE_DVP_D1_PIN
-            int "DVP D1 Pin"
-            range 0 56
-            default 54
-
-        config EXAMPLE_DVP_D2_PIN
-            int "DVP D2 Pin"
-            range 0 56
-            default 52
-
-        config EXAMPLE_DVP_D3_PIN
-            int "DVP D3 Pin"
-            range 0 56
-            default 1
-
-        config EXAMPLE_DVP_D4_PIN
-            int "DVP D4 Pin"
-            range 0 56
-            default 0
-
-        config EXAMPLE_DVP_D5_PIN
-            int "DVP D5 Pin"
-            range 0 56
-            default 45
-
-        config EXAMPLE_DVP_D6_PIN
-            int "DVP D6 Pin"
-            range 0 56
-            default 46
-
-        config EXAMPLE_DVP_D7_PIN
-            int "DVP D7 Pin"
-            range 0 56
-            default 47
-    endif
-
     if FORMAT_MJPEG_CAM1
         config EXAMPLE_JPEG_COMPRESSION_QUALITY
-            int "JPEG Compression Quality"
+            int "JPEG compression quality (%)"
             default 80
             range 1 100
             help
-                JPEG compression quality, higher value means higher output
-                image quality.
+                JPEG compression quality percentage (1-100).
+
+                Higher values produce better image quality but larger data streams:
+                - 90-100: Excellent quality, high bandwidth usage
+                - 70-90: Good quality, moderate bandwidth (recommended for UVC)
+                - 50-70: Acceptable quality, lower bandwidth
+                - 1-50: Poor quality, minimal bandwidth
+
+                For UVC streaming, consider the USB bandwidth limitations
+                and host system capabilities when choosing quality level.
+
+                Recommended: 80 for balanced quality and performance.
     endif
 
     if FORMAT_H264_CAM1
         config EXAMPLE_H264_I_PERIOD
-            int "H.264 Intra Frame period"
+            int "H.264 Intra Frame period (frames)"
             default 120
             range 1 120
             help
-                H.264 I-Frame period.
-        
+                Number of frames between Intra (I) frames in the H.264 stream.
+
+                I-frames are complete, independently decodable frames that serve
+                as reference points for the video stream.
+
+                Smaller values (10-30):
+                - Better seek performance and error recovery
+                - Higher bandwidth usage
+                - Better for streaming applications with packet loss
+
+                Larger values (60-120):
+                - Better compression efficiency
+                - Lower bandwidth usage
+                - Suitable for stable connections
+
+                For UVC streaming, moderate values (60-120) balance compression
+                efficiency with error recovery capabilities.
+
         config EXAMPLE_H264_BITRATE
-            int "H.264 Bitrate"
+            int "H.264 Target bitrate (bps)"
             default 1000000
             range 25000 2500000
             help
-                H.264 bitrate.
-        
+                Target bitrate for H.264 encoding in bits per second.
+
+                Bitrate directly affects both quality and bandwidth usage:
+                - 500,000 bps (500 kbps): Low quality, minimal bandwidth
+                - 1,000,000 bps (1 Mbps): Good quality, moderate bandwidth (recommended)
+                - 2,000,000 bps (2 Mbps): High quality, higher bandwidth
+                - 5,000,000+ bps (5+ Mbps): Very high quality, maximum bandwidth
+
+                Consider USB bandwidth limitations:
+                - USB 2.0: ~35 MB/s theoretical, ~20 MB/s practical
+                - USB 3.0+: Much higher bandwidth available
+
+                Choose based on your USB interface and host capabilities.
+
         config EXAMPLE_H264_MIN_QP
-            int "H.264 Minimum Quality"
+            int "H.264 Minimum quantization parameter (QP)"
             default 25
             range 1 51
             help
-                H.264 minimum quality, the value should be less than H.264 maximum quality.
+                Minimum quantization parameter for H.264 encoding.
+
+                Lower QP values produce higher quality (and larger bitrates).
+                This sets the highest quality limit the encoder can achieve.
+
+                Quantization scale:
+                - 1-18: Lossless to very high quality
+                - 19-23: High quality (recommended minimum for streaming)
+                - 24-28: Good quality
+                - 29+: Lower quality
+
+                For UVC streaming, values 18-25 provide good quality while
+                maintaining reasonable bandwidth requirements.
+
+                Must be less than maximum QP value.
 
         config EXAMPLE_H264_MAX_QP
-            int "H.264 Maximum Quality"
+            int "H.264 Maximum quantization parameter (QP)"
             default 26
             range 1 51
             help
-                H.264 maximum quality, the value should be larger than H.264 minimum quality.
+                Maximum quantization parameter for H.264 encoding.
+
+                Higher QP values produce lower quality (and smaller bitrates).
+                This sets the lowest quality limit to maintain target bitrate.
+
+                Quantization scale:
+                - 23-28: High to good quality
+                - 29-35: Good to acceptable quality (recommended maximum)
+                - 36-45: Acceptable to poor quality
+                - 46-51: Poor quality
+
+                For UVC streaming, the encoder will adjust QP between minimum
+                and maximum values to maintain the target bitrate while
+                preserving acceptable quality.
+
+                Must be greater than or equal to minimum QP value.
     endif
 endmenu

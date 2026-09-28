@@ -1,3 +1,6 @@
+| Supported Targets | ESP32-P4 | ESP32-S3 | ESP32-C3 | ESP32-C6 | ESP32-C61 | ESP32-C5 |
+| ----------------- | -------- | -------- | -------- | -------- | --------- | -------- |
+
 # Apply Custom Format In Video
 
 (See the [README.md](../README.md) file in the upper level [examples](../) directory for more information about examples.)
@@ -7,7 +10,7 @@ This example demonstrates how to initialize the video system using a custom form
 1. The camera sensor can only work properly when the developer provides the correct register configuration. Therefore, the correct initializer list needs to be provided:
 
    ```c
-   const sc2336_reginfo_t init_reglist_custom_MIPI_2lane_800x800_raw8_30fps[] = {
+   const sc2336_reginfo_t app_sc2336_mipi_2lane_24Minput_800x800_raw8_30fps[] = {
        {0x0103, 0x01},
        {0x0100, 0x00}, // sleep en
        ...
@@ -24,8 +27,8 @@ This example demonstrates how to initialize the video system using a custom form
        .xclk = 24000000,
        .width = 800,
        .height = 800,
-       .regs = init_reglist_custom_MIPI_2lane_800x800_raw8_30fps,
-       .regs_size = ARRAY_SIZE(init_reglist_custom_MIPI_2lane_800x800_raw8_30fps),
+       .regs = app_sc2336_mipi_2lane_24Minput_800x800_raw8_30fps,
+       .regs_size = ARRAY_SIZE(app_sc2336_mipi_2lane_24Minput_800x800_raw8_30fps),
        .fps = 30,
        .isp_info = &custom_fmt_isp_info,
        .mipi_info = {
@@ -54,41 +57,39 @@ This example demonstrates how to initialize the video system using a custom form
 
 ### Configure the Project
 
-Configure camera hardware data interface based on development kit:
+Please refer to the example video initialization configuration [document](../common_components/example_video_common/README.md) for more details about the board-level configuration, including the camera sensor interface, GPIO pins, clock frequency, and so on.
+
+Select and configure camera sensor based on development kit:
 
 #### MIPI-CSI Development Kit
 
 ```
-Example Configuration  --->
-    Camera sensor interface (MIPI-CSI)  --->
-        (X) MIPI-CSI
-    (0) MIPI CSI SCCB I2C Port Number
-    (8) MIPI CSI SCCB I2C SCL Pin
-    (7) MIPI CSI SCCB I2C SDA Pin
-
 Component config  --->
     Espressif Camera Sensors Configurations  --->
         [ ] OV2640  --->
         [*] SC2336  ----
 ```
 
-#### DVP Development Kit
+#### SPI Development Kit
+
+```
+Component config  --->
+    Espressif Camera Sensors Configurations  --->
+        [*] BF3901  --->
+            Auto detect BF3901  --->
+                [*] Detect for SPI interface sensor
+```
+
+#### Choose the format you want to use
 
 ```
 Example Configuration  --->
-    Camera sensor interface (DVP)  --->
-        (X) DVP
-    (1) DVP SCCB I2C Port Number (NEW)
-    (33) DVP SCCB I2C SCL Pin (NEW)
-    (32) DVP SCCB I2C SDA Pin (NEW)
-
-Component config  --->
-    Espressif Camera Sensors Configurations  --->
-        [*] OV2640  --->
-        [ ] SC2336  ----
+    Choose supported format  --->
+        (X) (BF3901) SPI 1-bit, 24M input, 120x160 10fps, YUV422(UYVY)
+        ( ) (BF3901) SPI 1-bit, 24M input, 120x160 10fps, YUV422(YUYV)
+        ( ) (BF3901) SPI 1-bit, 24M input, 240x320 15fps, RGB565(LE)
+        ( ) (SC2336) MIPI 2-lane, 24M input,  800x800  30fps, RAW8
 ```
-Note: For custom development boards, please update the I2C pins configuration in the `Example Configuration` menu.
-
 ### Build and Flash
 Build the project and flash it to the board, then run monitor tool to view serial output:
 
@@ -128,4 +129,29 @@ I (4847) example:       height: 800
 I (4847) example:       size:   1280000
 I (4857) example:       FPS:    30
 I (4857) main_task: Returned from app_main()
+```
+
+#### SPI Development Kit
+
+```
+...
+I (779) main_task: Calling app_main()
+I (779) example_init_video: SPI camera sensor I2C port=1, scl_pin=5, sda_pin=4, freq=100000
+I (799) bf3901: Detected Camera sensor PID=0x3901
+I (859) example: version: 1.0.0
+I (859) example: driver:  SPI
+I (859) example: card:    SPI
+I (859) example: bus:     esp32s3:SPI
+I (859) example: capabilities:
+I (869) example:        VIDEO_CAPTURE
+I (869) example:        STREAMING
+I (869) example: device capabilities:
+I (869) example:        VIDEO_CAPTURE
+I (879) example:        STREAMING
+I (939) example: Capture RGB 5-6-5 format frames for 3 seconds:
+I (3999) example:       width:  240
+I (3999) example:       height: 320
+I (3999) example:       size:   153600
+I (3999) example:       FPS:    12
+I (3999) main_task: Returned from app_main()
 ```

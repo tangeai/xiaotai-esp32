@@ -18,8 +18,6 @@
 extern "C" {
 #endif
 
-#define BUF_ALIGN_SIZE(s, a)                (((s) + (a) - 1) & (~((a) - 1)))
-
 #define ESP_VIDEO_BUFFER_ELEMENT(vb, i)     (&(vb)->element[i])
 #define ELEMENT_SIZE(e)                     ((e)->video_buffer->info.size)
 #define ELEMENT_BUFFER(e)                   ((e)->buffer)
@@ -33,12 +31,12 @@ struct esp_video_buffer_element;
 /**
  * @brief Video buffer element.
  */
-typedef SLIST_ENTRY(esp_video_buffer_element) esp_video_buffer_node_t;
+typedef TAILQ_ENTRY(esp_video_buffer_element) esp_video_buffer_node_t;
 
 /**
  * @brief Video buffer list.
  */
-typedef SLIST_HEAD(esp_video_buffer_list, esp_video_buffer_element) esp_video_buffer_list_t;
+typedef TAILQ_HEAD(esp_video_buffer_list, esp_video_buffer_element) esp_video_buffer_list_t;
 
 
 struct esp_video_buffer;
@@ -63,10 +61,11 @@ struct esp_video_buffer_element {
     esp_video_buffer_node_t node;                     /*!< List node */
     struct esp_video_buffer *video_buffer;            /*!< Source buffer object */
     uint32_t index;                                   /*!< List node index */
-    uint32_t sequence;                                /*!< Stream completion sequence */
     uint8_t *buffer;                                  /*!< Buffer space to fill data */
 
     uint32_t valid_size;                              /*!< Valid data size */
+
+    void *priv_data;                                  /*!< Private data */
 };
 
 /**
@@ -79,6 +78,9 @@ struct esp_video_buffer {
 
 /**
  * @brief Create video buffer object.
+ *
+ * @note The buffer size is aligned to the alignment size, so the actual
+ *       buffer size maybe not equal to the size in given parameter.
  *
  * @param info Buffer information pointer.
  *

@@ -1,7 +1,7 @@
 /*
  * 工程组合根：只负责初始化基础设施、组装模块和持有启动任务。
  *
- * 启动顺序：NVS -> V1.0.1 媒体适配器 -> 产品 UI -> Wi-Fi -> 后台上线任务。
+ * 启动顺序：NVS -> Hosted/Wi-Fi 驱动 -> 媒体适配器 -> 产品 UI -> 后台上线任务。
  * 后台任务等待网络及校时、完成必要的首次绑定，优先为 TiRTC 保留连续内部堆；
  * TiRTC bootstrap 后异步初始化专用唤醒，再运行平台 MQTT/TLS 和开发控制任务。
  * 当前启动编排并非离线唤醒产品。H5/AI/语音呼叫顺序由 starter_runtime
@@ -16,6 +16,7 @@
 #include <time.h>
 
 #include "esp_app_desc.h"
+#include "c6_updater.h"
 #include "esp_attr.h"
 #include "esp_chip_info.h"
 #include "esp_heap_caps.h"
@@ -33,6 +34,7 @@
 #include "platform_client.h"
 #include "runtime_config.h"
 #include "starter_button.h"
+#include "starter_at.h"
 #include "starter_console.h"
 #include "starter_media.h"
 #include "starter_product.h"
@@ -400,6 +402,7 @@ static void starter_start_task(void *argument)
      * 先启动会话状态任务并注册回调，再启动可能产生回调的 TiRTC。
      * 这是必须保持的顺序。
      */
+    ESP_LOGI(TAG, "device identity=%s", s_tirtc_config.device_id);
     err = starter_runtime_start(s_tirtc_config.device_id);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "session runtime unavailable: %s", esp_err_to_name(err));
@@ -582,6 +585,49 @@ static void init_nvs(void)
     ESP_ERROR_CHECK(err);
 }
 
+static void c6_bootstrap_task(void *argument)
+{
+    (void)argument;
+    bool manual_retry = false;
+    for (;;) {
+        if (c6_updater_run(manual_retry) == ESP_OK) break;
+        while (!starter_product_take_c6_retry())
+            vTaskDelay(pdMS_TO_TICKS(100));
+        manual_retry = true;
+    }
+    starter_at_c6_ready();
+    esp_err_t err = wifi_manager_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Wi-Fi startup failed after C6 check: %s", esp_err_to_name(err));
+        starter_product_set_c6_update(STARTER_C6_UPDATE_RECOVERY, 0, err);
+        vTaskDelete(NULL);
+        return;
+    }
+    log_heap_snapshot("post-wifi-start");
+    if (xTaskCreate(starter_start_task,
+                    "starter_start",
+                    STARTER_TASK_STACK_BYTES,
+                    NULL,
+                    4,
+                    NULL) != pdPASS) {
+        ESP_LOGE(TAG, "cannot create startup task");
+        starter_product_set_c6_update(STARTER_C6_UPDATE_RECOVERY, 0, ESP_ERR_NO_MEM);
+        vTaskDelete(NULL);
+        return;
+    }
+    s_tirtc_internal_reserve = heap_caps_malloc(
+        TIRTC_INTERNAL_RESERVE_BYTES,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (s_tirtc_internal_reserve == NULL) {
+        ESP_LOGW(TAG, "could not reserve contiguous internal heap for TiRTC");
+    } else {
+        ESP_LOGI(TAG,
+                 "reserved %u internal bytes for later TiRTC bootstrap",
+                 TIRTC_INTERNAL_RESERVE_BYTES);
+    }
+    vTaskDelete(NULL);
+}
+
 void app_main(void)
 {
     /* app_main 保持短小且不等待网络，耗时启动工作交给 starter_start_task。 */
@@ -615,38 +661,14 @@ void app_main(void)
     ESP_LOGI(TAG, "TiRTC version: %s", starter_tirtc_version());
     ESP_LOGI(TAG, "TiRTC build: %s", starter_tirtc_build_info());
 
+    ESP_ERROR_CHECK(starter_at_start());
+    /* Display the coprocessor check before starting Wi-Fi or any RTC work.
+     * Hosted's auto-init owns SDIO enumeration; the updater waits for it. */
     ESP_ERROR_CHECK(starter_media_init());
     log_heap_snapshot("post-media");
     ESP_ERROR_CHECK(starter_product_start());
     log_heap_snapshot("post-product-ui");
-    /* 本地语音模型在 TiRTC TLS 建立后加载，避免两个启动峰值竞争内部 SRAM。 */
-    ESP_ERROR_CHECK(wifi_manager_start());
-    log_heap_snapshot("post-wifi-start");
-    /* NTP_SYNC_BACKGROUND_TASK: SNTP/HMAC waits never block app_main or LVGL. */
-    /* Keep the existing bootstrap stack placement in this storage-only change.
-     * NVS writes now use nvs_store; moving the bootstrap itself requires a
-     * separate audit of SDK and driver initialization, not just NVS removal. */
-    if (xTaskCreate(starter_start_task,
-                    "starter_start",
-                    STARTER_TASK_STACK_BYTES,
-                    NULL,
-                    4,
-                    NULL) != pdPASS) {
-        ESP_LOGE(TAG, "cannot create startup task");
-    }
-    /*
-     * Wi-Fi and starter_start own long-lived internal stacks. Reserve the
-     * TiRTC bootstrap block only after both allocations have succeeded; the
-     * startup task is still waiting for a station IP at this point.
-     */
-    s_tirtc_internal_reserve = heap_caps_malloc(
-        TIRTC_INTERNAL_RESERVE_BYTES,
-        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (s_tirtc_internal_reserve == NULL) {
-        ESP_LOGW(TAG, "could not reserve contiguous internal heap for TiRTC");
-    } else {
-        ESP_LOGI(TAG,
-                 "reserved %u internal bytes for later TiRTC bootstrap",
-                 TIRTC_INTERNAL_RESERVE_BYTES);
-    }
+    /* SDIO enumeration and OTA RPC can block; they must not run on main_task. */
+    if (xTaskCreate(c6_bootstrap_task, "c6_bootstrap", 8192, NULL, 4, NULL) != pdPASS)
+        ESP_LOGE(TAG, "cannot create C6 bootstrap task");
 }

@@ -710,9 +710,13 @@ lv_display_t *bsp_display_start_with_config(const bsp_display_cfg_t *cfg)
 
     BSP_ERROR_CHECK_RETURN_NULL(bsp_display_brightness_init());
 
-    BSP_NULL_CHECK(disp = bsp_display_lcd_init(cfg), NULL);
-
-    BSP_NULL_CHECK(disp_indev = bsp_display_indev_init(disp), NULL);
+    /* lvgl_port_init starts its task. Register display and touch under one
+     * lock so it cannot flush a half-initialized SPI panel. */
+    if (!lvgl_port_lock(1000)) return NULL;
+    disp = bsp_display_lcd_init(cfg);
+    if (disp != NULL) disp_indev = bsp_display_indev_init(disp);
+    lvgl_port_unlock();
+    if (disp == NULL || disp_indev == NULL) return NULL;
 
     return disp;
 }

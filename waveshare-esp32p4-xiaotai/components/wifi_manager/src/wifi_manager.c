@@ -957,8 +957,8 @@ static esp_err_t configure_p4_realtime_wifi(void)
      * Country/channel and rate-dependent PHY power caps remain driver-owned. */
     ESP_LOGI(TAG, "P4 Wi-Fi perf: ps=%u bw_limit=20MHz proto_cfg=0x%02x sdio_max_khz=%u lines=%u",
              (unsigned)power_save, (unsigned)protocol,
-             (unsigned)CONFIG_ESP_HOSTED_SDIO_CLOCK_FREQ_KHZ,
-             (unsigned)CONFIG_ESP_HOSTED_SDIO_BUS_WIDTH);
+             (unsigned)CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ,
+             (unsigned)CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH);
     return ESP_OK;
 }
 #endif

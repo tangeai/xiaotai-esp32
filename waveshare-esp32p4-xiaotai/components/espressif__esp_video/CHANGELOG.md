@@ -1,3 +1,261 @@
+## Unreleased
+
+- Added `V4L2_CID_USER_ESP_ISP_DPC_DYNAMIC` and ISP pipeline control to apply IPA DPC metadata to hardware
+
+## 2.5.0
+
+- Added ISP pipeline APIs to enumerate and switch IPA JSON configurations at runtime
+    - ``esp_video_isp_pipeline_enum_ipa_configs()`` enumerates configurations of the same sensor
+    - ``esp_video_isp_pipeline_set_ipa_config()`` rebuilds the live IPA pipeline from a new configuration
+- Added ``VIDIOC_ENUM_SENSOR_FMT`` to enumerate camera sensor output formats
+    - Recommended flow: enumerate/set sensor format first, then use standard ``VIDIOC_ENUM_FMT`` / ``VIDIOC_S_FMT`` for device output formats and capture
+    - ``VIDIOC_S_SENSOR_FMT`` now fails with ``ESP_ERR_INVALID_STATE`` (``EBUSY``) if video buffers are allocated; free them with ``VIDIOC_REQBUFS`` count=0 first
+- Added DVP YUV422 YUYV to RGB565 format conversion via ``VIDIOC_ENUM_FMT`` / ``VIDIOC_S_FMT``
+    - Conversion is supported only when the sensor output is YUV422 YUYV, not UYVY
+    - Converted RGB565 is big-endian (``V4L2_PIX_FMT_RGB565X``), not little-endian (``V4L2_PIX_FMT_RGB565``)
+    - The feature is disabled if the `CAM_CTRL_DVP_ENABLE` option is selected and ESP-IDF version >= 5.5.2
+- Added functions to get IPA environment variables as int32_t or float
+- Added options to enable or disable MIPI-CSI event handling and configure the behavior for different targets
+- Added automatic transformation of YUV sensor data to the target YUV format
+- Added an option to use a customized esp_h264 version instead of the version defined in `esp_video/idf_component.yml`
+
+- Updated to use esp_cam_sensor v2.6.x
+- Updated to use esp_ipa v2.4.x
+- Updated to use esp_h264 v1.4.x
+
+- Disabled MIPI-CSI event handling by default in the example_video_common component
+    - Some sensors or video transform modules do not support stopping and restarting the stream, so this feature cannot be enabled by default. Unexpected events may restart these components and prevent some users from receiving images.
+    - If you use MIPI-CSI event handling, please enable the related options manually or add them to sdkconfig.defaults
+
+## 2.4.1
+
+- Fixed ISP driver compatibility when `ESP_VIDEO_DISABLE_ISP_ERROR_INTERRUPT` is enabled
+- Fixed unclear error codes returned by some functions
+- Fixed compilation warning in ISP video device
+- Improved compatibility with different versions of the MIPI-CSI driver
+    - If the esp-idf version does not support MIPI-CSI error events, the commands VIDIOC_SUBSCRIBE_EVENT, VIDIOC_UNSUBSCRIBE_EVENT, and VIDIOC_DQEVENT are not available.
+      Therefore, applications should avoid calling these commands or any related functions.
+    - In esp-idf v5.5.6 and certain earlier intermediate versions, the MIPI-CSI driver was refactored to add support for format transformation. As a result, the capability macro `ESP_VIDEO_CSI_DEVICE_CONV_FORMAT` should be enabled in these versions.
+
+## 2.4.0
+
+- H.264 video device now supports setting parameters after streaming has started
+- Added a control ID to enable or disable ISP bypass mode when both the input and output formats are RAW8
+- Added functions to enable or disable AGC and to retrieve the current AGC status
+- Added spiram no encryption used when flash encryption used
+- Added support for configuring and retrieving the frames per second (FPS) setting on the H.264 video device
+- Added support for the VIDIOC_SUBSCRIBE_EVENT, VIDIOC_UNSUBSCRIBE_EVENT, and VIDIOC_DQEVENT commands.
+    - Supports the V4L2_EVENT_ESP_MIPI_CSI_ERROR event type
+    - Provided common example functions for event tracing
+    - Only MIPI-CSI video device support this command
+- Added VIDIOC_RESTART commands to restart video device if some hardware issues trigger
+    - Only MIPI-CSI video device support this command
+- Added the `ESP_VIDEO_DISABLE_ISP_ERROR_INTERRUPT` option to help prevent unwanted hardware watchdog resets caused by frequent ISP error interrupts
+- Added a function to dump ISP statistics data while the IPA task is running
+- Added a function to configure the AWB, AE, AF, and Histogram windows
+- Added functions to set and retrieve the minimum and maximum exposure values
+
+- Fixed a warning related to the ISP AWB subwindow during initialization
+- Update to use esp_cam_sensor v2.4.x
+
+## 2.3.0
+
+- Added information about the document system to README.md.
+- Added a common camera interface module to manage MIPI-CSI, DVP, and SPI video devices globally
+- Added an M2M example to demonstrate the performance of capture and M2M video devices. This example implements three test cases:
+    - Capture a video stream and encode it using either the JPEG or H.264 encoder
+    - Capture a JPEG stream and decode it using the JPEG decoder
+    - Capture a video stream, decode it using the JPEG decoder, and then encode it using the H.264 encoder
+- Added JPEG hardware decode video device
+
+- MIPI-CSI video device now supports swapping the endianness for 32-bit (u32) data
+- Use function calls instead of relying on global data
+    - Enabling the options `CAMERA_SENSOR_MOTOR_DETECT_METHOD_STATIC_STORE` and `ESP_IPA_DETECT_METHOD_STATIC_STORE` now prevents unused functions from being linked into the firmware
+
+- Fixed a compilation issue with the ioctl macro definitions in certain cases
+- Fixed ISP processor clock frequency being hardcoded to 80 MHz regardless of the selected clock source; `clk_hz` is now derived from `clk_src` (XTAL → 40 MHz, PLL160 → 160 MHz, PLL240 → 240 MHz) to prevent FIFO overflow errors
+- Fixed an issue where USB UVC video device queue buffers were not handled correctly after streaming was stopped.
+
+## 2.2.0
+
+- The ISP video device now utilizes the sensor's full resolution for statistical analysis
+- Added support for the ESP32-S31 Korvo board
+- The Data0 pin assignment for the SPI camera sensor varies depending on the selected sensor.
+
+- Fixed AWB subwindow validation failure on ESP32-P4 chip revision >= 3.0 (ECO4)
+- Fixed a compatibility issue with the DVP driver for ESP-IDF v6.0 and later versions
+- Fixed a compilation issue with the ESP-IDF master branch
+- Fixed an issue in esp_video_init where the motor SCCB was not released during de-initialization
+- Fixed frame size and frame interval enumeration when callers leave the V4L2 enum type response field unset
+- Fixed VIDIOC_REQBUFS count=0 handling to release video buffers
+
+## 2.1.0
+
+- ISP pipeline controller supports the sensor without gain control
+- Refactor `esp_video_init` and `esp_video_deinit` functions
+- Added `esp_video_init_with_flags` and `esp_video_deinit_with_flags` functions
+- Added the `V4L2_CID_USER_ESP_ISP_GAMMA_EXT` command to allow separate configuration of each gamma channel
+- The MIPI-CSI video device supports hardware swapping of short-type data in the YUV422 format
+    - Supported only on esp-idf v6.1.0 and later
+    - Supported only on ESP32-P4 ECO5 and later
+    - This feature automatically replaces the `ESP_VIDEO_ENABLE_SWAP_SHORT` software swapping functionality
+- Added support for 4-bit data mode in SPI video devices
+- Added storage support to the example_video_common component, providing the following features:
+    - Mounting and unmounting FATFS on SPI Flash
+    - Mounting and unmounting FATFS on SD/MMC cards
+    - Mounting and unmounting USB MSC on SPI Flash
+    - Mounting and unmounting USB MSC on SD/MMC cards
+- Added frame size enumeration functionality for CSI, DVP, and SPI video devices
+- Added command query functionality for JPEG and H.264 video devices
+- Added descriptive name strings for supported V4L2 commands
+- Added an example for V4L2 commands with partial functionality, supporting the following commands:
+    - **v4l2-ctl**: Main command for controlling V4L2 video devices (listing devices, querying information, setting controls, capturing frames, and performing format conversion)
+    - **v4l2-bf**: Controls the Bayer filter (BF) on ISP devices
+    - **v4l2-ccm**: Controls the color correction matrix (CCM) on ISP devices
+    - **v4l2-gamma**: Controls gamma correction on ISP devices
+
+  Note:
+  - USB MSC support requires `espressif/esp_tinyusb` version 2.1.x
+  - SD/MMC configuration has been moved from example-specific Kconfig to
+    `example_video_common` component for unified configuration
+  - Added `example_storage_handle_t` type for storage operations
+  - See `example_video_common/README.md` for usage details
+
+- Fix an issue where the video buffer size was not aligned with the cache size
+- Fix an issue where the simple_video_server example used the incorrect configuration macro.
+
+## 2.0.1
+
+- Improve ISP driver compatibility with the new peripheral drivers introduced in ESP-IDF v6.0 and later
+    - Resolve compilation issues
+    - Use the SPI slave driver provided by ESP-IDF v6.0 and later, replacing the `spi_slave.c` from `esp_cam_sensor`
+    - Add support for image pixel format conversion for ESP32-P4 ECO5 and newer
+
+## 2.0.0
+
+- Update to use YUV422 and RGB565 image data formats with byte order
+  - YUV422 supports two byte orders: YUYV and UYVY, represented by `V4L2_PIX_FMT_YUYV` and `V4L2_PIX_FMT_UYVY` respectively; RGB565 supports two byte orders: RGB565_LE and RGB565_BE, represented by `V4L2_PIX_FMT_RGB565` and `V4L2_PIX_FMT_RGB565X` respectively.
+  - `V4L2_PIX_FMT_YUV422P` format is no longer used in the application; replace it with formats `V4L2_PIX_FMT_YUYV` or `V4L2_PIX_FMT_UYVY`.
+
+- Add configurable UVC device initialization timeout via menuconfig (CONFIG_USB_UVC_INIT_TIMEOUT_MS)
+- Add support for 2-bit data I/O mode on SPI video device when using parallel I/O interface
+- Add set/get DQBUF timeout value
+- Add sensor output data clock frequency checking for SPI video devices when using the parallel I/O port
+
+- Fix USB UVC device initialization timeout issue when devices are already enumerated
+- Fix USB UVC device closing issue when some captured frames have not yet been queued into the buffer
+- Fix USB UVC device and ISP compatibility issues for ESP32-P4 ECO5
+- Fix the WBG stop issue after starting the WBG module twice
+- Fix the ISP driver compatibility for the new version ISP driver
+
+### Breaking change
+
+- The RGB565 format is now separated into little-endian and big-endian options. Please ensure you select the correct format for your application:
+
+    - Little-endian: V4L2_PIX_FMT_RGB565
+    - Big-endian: V4L2_PIX_FMT_RGB565X
+
+- The `V4L2_PIX_FMT_YUV422P` configuration for YUV422 has been removed. YUV422 is now categorized by byte order, and users should choose the appropriate format:
+
+    - YUYV byte order: V4L2_PIX_FMT_YUYV
+    - UYVY byte order: V4L2_PIX_FMT_UYVY
+
+## 1.4.1
+
+- Update to use esp_cam_sensor v1.7.x
+
+## 1.4.0
+
+- Add USB Host peripheral selection map configuration for USB Cameras
+- Add the initialization parameter "dont_init_ldo" to disable LDO initialization for the MIPI-CSI video device
+- Add WBG(white balance gain) ioctl command to ISP video device
+- Add BLC(Black level correction) ioctl command to ISP video device
+- Add crop function to MIPI-CSI video device
+- JPEG video device supports YUV420 and YUV444 for ESP32-P4 ECO5
+- Add the parameter "intf" to select SPI or parallel I/O for the SPI interface camera sensor
+- Use "sizeimage" of structure "v4l2_pix_format" to set video frame buffer size
+- Fixed USB video device deinitialization error when the USB video device has not initialized
+
+## 1.3.1
+
+- Fix array bounds check failure in destroy_sccb_device() when compile option is PTIMIZATION_SIZE
+
+## 1.3.0
+
+- Add RISC-V software swap byte function for DVP video device
+- Add the customized video class to call esp_cam_sensor ioctl commands directly
+- Add the second SPI video device
+- Add camera sensor exposure parameter to statistics
+- Improve AEC controller time precision
+- Fix the CSI video device initializes twice when starting up
+- Update to use esp_cam_sensor v1.4.x
+- Update to use esp_ipa v1.2.x
+- Update to use newer version of usb_host_uvc 2.3.x
+
+## 1.2.0
+
+- Add multiple camera web server
+- Add multiple camera sensor option in menuconfig
+- Add FPS calculation to DVP and SPI video device
+- Add support for USB UVC streams
+  - The USB camera should be plugged in before the APPs call the function to open the USB UVC video device, and should be unplugged after the APPs call the function to close the UVC video device
+- Example encode function supports multiple resolutions
+- Example simple_video_server uses a new web interface to display and control camera streams
+- Fix compilation error when enabling DVP and MIPI-CSI detection of one sensor
+- Fix MIPI-CSI video device RAW Bayer order mapping issue
+- Fix sdkconfig.default.esp32s3 for better image bandwidth
+- Modify GPIO pin type from int8_t to gpio_num_t
+- Compatible with ESP-IDF v5.4.x(x ≥ 3), v5.5.1, and the later versions of the ESP-IDF DVP CAM driver
+- Initialize the video device first in the web example to avoid sensor detection failure.
+
+## 1.1.0
+
+- Add SPI video device and board-level configuration
+- Add ESP32-S3/C3/C5/C6/C61 platforms
+- Fix open function crashes after failing to initialize the video device
+- Fix video buffer sequence error
+- Fix esp_video_deinit error when using a sensor that has an internal ISP
+- Enhance the clarity and readability of prompt and help descriptions in Kconfig file
+
+### Enhancements
+
+- ESP32-C3/C5/C6/C61 only support SPI video device
+- ESP32-S3 supports the SPI and LCD_CAM DVP video devices, but only IDF v6.0.0 and later versions support LCD_CAM DVP for ESP32-S3
+
+## 1.0.0
+
+- Add statistics region configuration to ISP pipeline controller
+- Add byte swap functionality for DVP video device to swap RGB565 pixel byte sequence
+- Add example common component to simplify the esp_video board-level configuration and initialization
+- Add camera motor control to ISP pipeline controller to implement auto-focus
+- Add V4L2 command VIDIOC_S_PARM and VIDIOC_G_PARM
+- Add software frame skipping to MIPI-CSI video device
+- Fix the esp_video_deinit function issue when esp_video initialize with application I2C handle
+- Fix the esp_video close issue when one video device is open and closed multiple times
+- Fix the issue that the V4L2 command VIDIOC_ENUM_FMT can't get the correct value by input index when the sensor output format is RAW10
+- Change AE sample point to AFTER_DEMOSAIC
+- Update to use esp_cam_sensor v1.1.x
+
+## 0.9.1
+
+- Add a new port for stream url in simple web example
+- V4L2 command VIDIOC_S_FMT returns -1 when the APP sets an invalid resolution(width or height is invalid)
+
+## 0.9.0
+
+- Add esp_video_deinit to free esp_video resource
+- Add option ISP_PIPELINE_CONTROLLER_TASK_STACK_USE_PSRAM to make ISP controller task use PSRAM as task stack
+- Add LSC auto-configuration in the ISP controller
+- Add sensor AE target auto-configuration in the ISP controller
+- Add autofocus(AF) ioctl command
+- Add auto white balance(AWB) statistics ioctl command
+- Add video owner to free video buffer when CSI video device is closed by users
+- Add I2C initialization in the capture example
+- Add image storage examples, including SD card and USB MSC device
+- Add short data swapping feature for ESP32-P4 MIPI-CSI video device
+- ISP supports output RAW10 and RAW12 stream
+- esp_video v0.9.x is fixed to using esp_cam_sensor v1.0.x and esp_ipa v0.3.x
+
 ## 0.8.0~1
 
 - esp-video v0.8.x is fixed to using esp_cam_sensor v0.8.x and esp_ipa v0.2.x

@@ -135,12 +135,7 @@ static esp_h264_err_t h264_hw_enc_gop_mode_process(esp_h264_hw_handle_t *hw_hd, 
 #endif
 
     /** Configure slice header */
-    slice_nal_len += esp_h264_enc_hw_set_slice((uint8_t *)slice_start_code,
-                                               out_frame_size - (slice_nal_len >> 3),
-                                               !hw_hd->frame_num,
-                                               hw_hd->frame_num,
-                                               qp_delta,
-                                               true);
+    slice_nal_len += esp_h264_enc_hw_set_slice((uint8_t *)slice_start_code, out_frame_size - (slice_nal_len >> 3), !hw_hd->frame_num, hw_hd->frame_num, qp_delta, true);
     /** The descriptor's buffer must aligned 8 byte. */
     uint8_t *bs = esp_h264_enc_hw_slice_header_align8(out_frame, slice_nal_len, &hw_hd->h264_hal);
     int out_frame_len = (bs - out_frame);

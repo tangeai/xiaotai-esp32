@@ -5,12 +5,19 @@
  */
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "esp_codec_dev_os.h"
 #include "esp_idf_version.h"
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 #include "driver/i2s_std.h"
 #include "driver/i2s_tdm.h"
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+#include "hal/i2s_ll.h"
+#endif  /* ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0) */
 #include "soc/soc_caps.h"
 #if SOC_I2S_SUPPORTS_PDM_TX
 #include "driver/i2s_pdm.h"
@@ -35,6 +42,11 @@
 
 #define TAG  "CODEC_DEV_UT"
 
+#define MIRROR_READ_SIZE   (512)
+#define MIRROR_BUF_SIZE    (512)
+#define MIRROR_TIMEOUT_MS  (1000)
+#define MIRROR_TASK_STACK  (configMINIMAL_STACK_SIZE * 4)
+
 typedef struct {
     int16_t  scl;
     int16_t  sda;
@@ -48,9 +60,23 @@ typedef struct {
     int16_t  din;
 } codec_i2s_pin_t;
 
+typedef struct {
+    esp_codec_dev_handle_t  record_dev;
+    esp_codec_dev_handle_t  play_dev;
+    SemaphoreHandle_t       done;
+    volatile bool           stop;
+    int                     total_read;
+    int                     ret;
+    bool                    saw_active_data;
+} mirror_ctx_t;
+
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 
+#ifdef SOC_I2S_NUM
 #define I2S_MAX_KEEP  SOC_I2S_NUM
+#else
+#define I2S_MAX_KEEP  I2S_LL_GET(INST_NUM)
+#endif  /* SOC_I2S_NUM */
 
 typedef struct {
     i2s_chan_handle_t  tx_handle;
@@ -316,6 +342,44 @@ static void codec_max_sample(uint8_t *data, int size, int *max_value, int *min_v
     *min_value = min;
 }
 
+static void mirror_task(void *arg)
+{
+    mirror_ctx_t *ctx = (mirror_ctx_t *)arg;
+    uint8_t *mirror_buf = (uint8_t *)malloc(MIRROR_READ_SIZE);
+    if (mirror_buf == NULL) {
+        ctx->ret = ESP_CODEC_DEV_NO_MEM;
+        xSemaphoreGive(ctx->done);
+        vTaskDelete(NULL);
+    }
+    ctx->ret = ESP_CODEC_DEV_OK;
+    while (!ctx->stop) {
+        int bytes_read = 0;
+        int ret = esp_codec_dev_mirror_read(ctx->record_dev, mirror_buf, MIRROR_READ_SIZE,
+                                            MIRROR_TIMEOUT_MS, &bytes_read);
+        if (ret == ESP_CODEC_DEV_OK) {
+            ctx->total_read += bytes_read;
+            int max_sample = 0;
+            int min_sample = 0;
+            codec_max_sample(mirror_buf, bytes_read, &max_sample, &min_sample);
+            if (max_sample > min_sample) {
+                ctx->saw_active_data = true;
+            }
+            ret = esp_codec_dev_write(ctx->play_dev, mirror_buf, bytes_read);
+            TEST_ESP_OK(ret);
+        } else if (ret == ESP_CODEC_DEV_TIMEOUT) {
+            continue;
+        } else if (ret == ESP_CODEC_DEV_WRONG_STATE && ctx->stop) {
+            break;
+        } else {
+            ctx->ret = ret;
+            break;
+        }
+    }
+    free(mirror_buf);
+    xSemaphoreGive(ctx->done);
+    vTaskDelete(NULL);
+}
+
 #if SOC_I2S_SUPPORTS_XTAL && CONFIG_PM_ENABLE
 static void esp_enable_pm_with_freq(int min_freq, int max_freq)
 {
@@ -357,6 +421,7 @@ static void test_codec_dev_using_s3_board(bool use_xtal)
     audio_codec_i2c_cfg_t i2c_cfg = {.addr = ES8311_CODEC_DEFAULT_ADDR};
 #ifdef USE_IDF_I2C_MASTER
     i2c_cfg.bus_handle = i2c_bus_handle;
+    i2c_cfg.clock_speed_hz = 400000;
 #endif  /* USE_IDF_I2C_MASTER */
     const audio_codec_ctrl_if_t *out_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
     TEST_ASSERT_NOT_NULL(out_ctrl_if);
@@ -413,14 +478,24 @@ static void test_codec_dev_using_s3_board(bool use_xtal)
 
     ret = esp_codec_dev_open(record_dev, &fs);
     TEST_ESP_OK(ret);
+    ret = esp_codec_dev_mirror_cfg(record_dev, MIRROR_BUF_SIZE);
+    TEST_ESP_OK(ret);
+    mirror_ctx_t mirror_ctx = {
+        .record_dev = record_dev,
+        .play_dev = play_dev,
+        .done = xSemaphoreCreateBinary(),
+        .ret = ESP_CODEC_DEV_OK,
+    };
+    TEST_ASSERT_NOT_NULL(mirror_ctx.done);
+    BaseType_t task_ret = xTaskCreate(mirror_task, "codec_mirror", MIRROR_TASK_STACK, &mirror_ctx,
+                                      tskIDLE_PRIORITY + 1, NULL);
+    TEST_ASSERT_EQUAL(pdPASS, task_ret);
     uint8_t *data = (uint8_t *)malloc(512);
     int limit_size = 10 * fs.sample_rate * fs.channel * (fs.bits_per_sample >> 3);
     int got_size = 0;
     // Playback the recording content directly
     while (got_size < limit_size) {
         ret = esp_codec_dev_read(record_dev, data, 512);
-        TEST_ESP_OK(ret);
-        ret = esp_codec_dev_write(play_dev, data, 512);
         TEST_ESP_OK(ret);
         int max_sample, min_sample;
         codec_max_sample(data, 512, &max_sample, &min_sample);
@@ -429,6 +504,12 @@ static void test_codec_dev_using_s3_board(bool use_xtal)
         got_size += 512;
     }
     free(data);
+    mirror_ctx.stop = true;
+    TEST_ASSERT_EQUAL(pdTRUE, xSemaphoreTake(mirror_ctx.done, pdMS_TO_TICKS(5000)));
+    vSemaphoreDelete(mirror_ctx.done);
+    TEST_ESP_OK(mirror_ctx.ret);
+    TEST_ASSERT_GREATER_THAN(0, mirror_ctx.total_read);
+    TEST_ASSERT_TRUE(mirror_ctx.saw_active_data);
 
     ret = esp_codec_dev_close(play_dev);
     TEST_ESP_OK(ret);

@@ -1,6 +1,6 @@
 # HW Acceleration using SIMD assembly instructions
 
-Test app accommodates two types of tests: [`functionality test`](#functionality-test) and [`benchmark test`](#benchmark-test). Both tests are provided per each function written in assembly (typically per each assembly file). Both test apps use a hard copy of LVGL blending API, representing an ANSI implementation of the LVGL blending functions. The hard copy is present in [`lv_blend`](main/lv_blend/) folder.
+Test app accommodates two types of tests: [`functionality test`](#Functionality-test) and [`benchmark test`](#Benchmark-test). Both tests are provided per each function written in assembly (typically per each assembly file). Both test apps use a hard copy of LVGL blending API, representing an ANSI implementation of the LVGL blending functions. The hard copy is present in [`lv_blend`](main/lv_blend/) folder.
 
 Assembly source files could be found in the [`lvgl_port`](../../src/lvgl9/simd/) component. Header file with the assembly function prototypes is provided into the LVGL using Kconfig option `LV_DRAW_SW_ASM_CUSTOM_INCLUDE` and can be found in the [`lvgl_port/include`](../../include/esp_lvgl_port_lv_blend.h)
 
@@ -58,11 +58,11 @@ The test app is intended to be used only with esp32 and esp32s3
 ```
 I (302) main_task: Started on CPU0
 I (322) main_task: Calling app_main()
-______  _____ ______   _               _   
-|  _  \/  ___|| ___ \ | |             | |  
-| | | |\ `--. | |_/ / | |_   ___  ___ | |_ 
+______  _____ ______   _               _
+|  _  \/  ___|| ___ \ | |             | |
+| | | |\ `--. | |_/ / | |_   ___  ___ | |_
 | | | | `--. \|  __/  | __| / _ \/ __|| __|
-| |/ / /\__/ /| |     | |_ |  __/\__ \| |_ 
+| |/ / /\__/ /| |     | |_ |  __/\__ \| |_
 |___/  \____/ \_|      \__| \___||___/ \__|
 
 
@@ -88,8 +88,8 @@ Running Test fill functionality ARGB8888...
 I (81512) LV Fill Functionality: running test for ARGB8888 color format
 I (84732) LV Fill Functionality: test combinations: 31824
 
-MALLOC_CAP_8BIT usage: Free memory delta: 0 Leak threshold: -800 
-MALLOC_CAP_32BIT usage: Free memory delta: 0 Leak threshold: -800 
+MALLOC_CAP_8BIT usage: Free memory delta: 0 Leak threshold: -800
+MALLOC_CAP_32BIT usage: Free memory delta: 0 Leak threshold: -800
 ./main/test_lv_fill_functionality.c:102:Test fill functionality ARGB8888:PASS
 Test ran in 3242ms
 ```
@@ -107,9 +107,9 @@ I (163572) LV Fill Benchmark:  ASM corner case: 7868.724 cycles for 127x127 matr
 I (163732) LV Fill Benchmark:  ANSI ideal case: 26219.137 cycles for 128x128 matrix, 1.600 cycles per sample
 I (163902) LV Fill Benchmark:  ANSI corner case: 25762.178 cycles for 127x127 matrix, 1.597 cycles per sample
 
-MALLOC_CAP_8BIT usage: Free memory delta: -220 Leak threshold: -800 
+MALLOC_CAP_8BIT usage: Free memory delta: -220 Leak threshold: -800
 MALLOC_CAP_8BIT potential leak: Before 393820 bytes free, After 393600 bytes free (delta 220)
-MALLOC_CAP_32BIT usage: Free memory delta: -220 Leak threshold: -800 
+MALLOC_CAP_32BIT usage: Free memory delta: -220 Leak threshold: -800
 MALLOC_CAP_32BIT potential leak: Before 393820 bytes free, After 393600 bytes free (delta 220)
 ./main/test_lv_fill_benchmark.c:69:LV Fill benchmark ARGB8888:PASS
 Test ran in 458ms

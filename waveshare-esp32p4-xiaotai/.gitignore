@@ -1,7 +1,7 @@
 build*/
 .vscode/
 .agents/
-firmware/
+/firmware/
 managed_components/
 logs/
 sdkconfig.old
@@ -47,3 +47,6 @@ Thumbs.db
 /port/
 /docs/history/
 /components/espressif__esp_hosted/.gitmodules
+
+# Vendor component input directory, not generated device flash packages.
+!/components/espressif__esp_codec_dev/device/zl38063/firmware/

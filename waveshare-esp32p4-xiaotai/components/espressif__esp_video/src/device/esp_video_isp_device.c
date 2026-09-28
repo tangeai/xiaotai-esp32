@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: ESPRESSIF MIT
  */
@@ -22,6 +22,7 @@
 #include "esp_video_device.h"
 #include "esp_video_isp_ioctl.h"
 #include "esp_video_device_internal.h"
+#include "esp_video_device_common.h"
 
 /**
  * IDF-9706
@@ -33,40 +34,23 @@
 #define ISP_DMA_ALIGN_BYTES         4
 #define ISP_MEM_CAPS                MALLOC_CAP_8BIT
 
-#define ISP_INPUT_DATA_SRC          ISP_INPUT_DATA_SOURCE_CSI
-
-/* AEG-1489 */
-#define ISP_CLK_SRC                 ISP_CLK_SRC_DEFAULT
-#define ISP_CLK_FREQ_HZ             (80 * 1000 * 1000)
-
 #define ISP_BRIGHTNESS_DEFAULT      0
 #define ISP_CONTRAST_DEFAULT        128
 #define ISP_SATURATION_DEFAULT      128
 #define ISP_HUE_DEFAULT             0
 
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
-#define ISP_LOCK(i)                 xSemaphoreTake((i)->mutex, portMAX_DELAY)
-#define ISP_UNLOCK(i)               xSemaphoreGive((i)->mutex)
-#else
-#define ISP_LOCK(i)
-#define ISP_UNLOCK(i)
-#endif
+#define ISP_LOCK(i)                 xSemaphoreTakeRecursive((i)->mutex, portMAX_DELAY)
+#define ISP_UNLOCK(i)               xSemaphoreGiveRecursive((i)->mutex)
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(x)               sizeof(x) / sizeof((x)[0])
 #endif
 
-#define ISP_REGION_START            (0.2)
-#define ISP_REGION_END              (0.8)
-
-#define ISP_RGB_RG_L                0.5040
-#define ISP_RGB_RG_H                0.8899
-
-#define ISP_RGB_BG_L                0.4838
-#define ISP_RGB_BG_H                0.7822
-
-#define ISP_AWB_MAX_LUM             395
-#define ISP_AWB_MIN_LUM             185
+/**
+ * Use the full resolution of the sensor for statistics.
+ */
+#define ISP_REGION_START            (0)
+#define ISP_REGION_END              (1)
 
 #define ISP_STARTED(iv)             ((iv)->isp_proc != NULL)
 
@@ -74,20 +58,40 @@
 #define ISP_STATS_AE_FLAG           ESP_VIDEO_ISP_STATS_FLAG_AE
 #define ISP_STATS_HIST_FLAG         ESP_VIDEO_ISP_STATS_FLAG_HIST
 #define ISP_STATS_SHARPEN_FLAG      ESP_VIDEO_ISP_STATS_FLAG_SHARPEN
+#define ISP_STATS_AF_FLAG           ESP_VIDEO_ISP_STATS_FLAG_AF
 
-#define ISP_STATS_FLAGS             (ISP_STATS_AE_FLAG | ISP_STATS_AWB_FLAG | ISP_STATS_HIST_FLAG)
+#define ISP_STATS_FLAGS             (ISP_STATS_AE_FLAG | ISP_STATS_HIST_FLAG)
 
 #define ISP_LSC_GET_GRIDS(res)      (((res) - 1) / 2 / ISP_LL_LSC_GRID_HEIGHT + 2)
+
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+#define ISP_CHECK_RETURN(ret)      (ret != ESP_OK)
+#else
+#define ISP_CHECK_RETURN(ret)      (ret != ESP_ERR_INVALID_STATE)
+#endif
+
+#define ISP_CONFIGURE_HANDLE(call, module_name)                                     \
+do {                                                                                \
+    esp_err_t __ret = (call);                                                       \
+    if (__ret != ESP_OK) {                                                          \
+        if (ISP_CHECK_RETURN(__ret)) {                                              \
+            ESP_RETURN_ON_ERROR(__ret, TAG, "failed to configure %s", module_name); \
+        }                                                                           \
+        else {                                                                      \
+            ESP_LOGW(TAG, "%s has been configured, skip this step", module_name);   \
+        }                                                                           \
+    }                                                                               \
+} while (0)
 
 struct isp_video {
     isp_proc_handle_t isp_proc;
 
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
     struct esp_video *video;
 
     isp_awb_ctlr_t awb_ctlr;
     isp_ae_ctlr_t ae_ctlr;
     isp_hist_ctlr_t hist_ctlr;
+    isp_af_ctlr_t af_ctlr;
 
     portMUX_TYPE spinlock;
     SemaphoreHandle_t mutex;
@@ -118,7 +122,7 @@ struct isp_video {
 
     /* GAMMA Configuration */
 
-    esp_video_isp_gamma_point_t gamma_points[ISP_GAMMA_CURVE_POINTS_NUM];
+    esp_video_isp_gamma_ext_t gamma;
 
     /* Demosaic Configuration */
 
@@ -128,12 +132,34 @@ struct isp_video {
 
     esp_isp_color_config_t color_config;
 
+    /* Auto white balance statistics range configuration */
+
+    esp_video_isp_awb_t awb;
+
 #if ESP_VIDEO_ISP_DEVICE_LSC
     /* LSC Configuration */
 
     size_t lsc_gain_size;
     esp_isp_lsc_gain_array_t lsc_gain_array;
 #endif
+
+#if ESP_VIDEO_ISP_DEVICE_BLC
+    /* BLC Configuration */
+
+    esp_video_isp_blc_t blc_config;
+#endif
+
+#if ESP_VIDEO_ISP_DEVICE_DPC
+    /* DPC dynamic Configuration */
+
+    esp_video_isp_dpc_dynamic_t dpc_config;
+#endif
+
+    esp_video_isp_af_t af_config;
+
+    esp_video_isp_ae_t ae_config;
+
+    esp_video_isp_hist_t hist_config;
 
     /* Application command target */
 
@@ -142,7 +168,6 @@ struct isp_video {
     uint8_t bf_enable               : 1;
     uint8_t ccm_enable              : 1;
     uint8_t sharpen_enable          : 1;
-    uint8_t gamma_enable            : 1;
     uint8_t demosaic_enable         : 1;
 
 #if ESP_VIDEO_ISP_DEVICE_LSC
@@ -151,28 +176,59 @@ struct isp_video {
 
     /* ISP pipeline state */
 
+    uint8_t ae_started              : 1;
+    uint8_t hist_started            : 1;
     uint8_t bf_started              : 1;
     uint8_t ccm_started             : 1;
     uint8_t sharpen_started         : 1;
     uint8_t gamma_started           : 1;
     uint8_t demosaic_started        : 1;
+    uint8_t awb_started             : 1;
+
+#if ESP_VIDEO_ISP_DEVICE_WBG
+    uint8_t wbg_started             : 1;
+#endif
 
 #if ESP_VIDEO_ISP_DEVICE_LSC
     uint8_t lsc_started             : 1;
 #endif
 
+#if ESP_VIDEO_ISP_DEVICE_BLC
+    uint8_t blc_started             : 1;
+#endif
+
+#if ESP_VIDEO_ISP_DEVICE_DPC
+    uint8_t dpc_started             : 1;
+#endif
+
+    uint8_t af_started              : 1;
+
+#if ESP_VIDEO_ISP_DEVICE_CROP
+    uint8_t crop_started            : 1;
+#endif
+
+    /**
+     * Output format dependence:
+     *
+     *   when output format is RAW8/10/12, AF can't be enable
+     */
+
+    uint8_t af_support              : 1;
+
     /* Meta capture state */
 
-    bool capture_meta;
+    uint8_t capture_meta            : 1;
+    uint8_t rect_set                : 1;
+
+    /* ISP bypass mode */
+    uint8_t isp_raw_bypass           : 1;
 
     /* Statistics data */
 
     uint64_t seq;
     esp_video_isp_stats_t *stats_buffer;
-#endif
 };
 
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
 static const struct v4l2_query_ext_ctrl s_isp_qctrl[] = {
     {
         .id = V4L2_CID_RED_BALANCE,
@@ -241,6 +297,17 @@ static const struct v4l2_query_ext_ctrl s_isp_qctrl[] = {
         .name = "gamma",
     },
     {
+        .id = V4L2_CID_USER_ESP_ISP_GAMMA_EXT,
+        .type = V4L2_CTRL_TYPE_U8,
+        .maximum = UINT8_MAX,
+        .minimum = 0,
+        .step = 1,
+        .elems = sizeof(esp_video_isp_gamma_ext_t),
+        .nr_of_dims = 1,
+        .default_value = 0,
+        .name = "gamma_ext",
+    },
+    {
         .id = V4L2_CID_USER_ESP_ISP_DEMOSAIC,
         .type = V4L2_CTRL_TYPE_U8,
         .maximum = UINT8_MAX,
@@ -306,6 +373,17 @@ static const struct v4l2_query_ext_ctrl s_isp_qctrl[] = {
         .default_value = ISP_HUE_DEFAULT,
         .name = "hue",
     },
+    {
+        .id = V4L2_CID_USER_ESP_ISP_AWB,
+        .type = V4L2_CTRL_TYPE_U8,
+        .maximum = UINT8_MAX,
+        .minimum = 0,
+        .step = 1,
+        .elems = sizeof(esp_video_isp_awb_t),
+        .nr_of_dims = 1,
+        .default_value = 0,
+        .name = "AWB",
+    },
 #if ESP_VIDEO_ISP_DEVICE_LSC
     {
         .id = V4L2_CID_USER_ESP_ISP_LSC,
@@ -319,72 +397,85 @@ static const struct v4l2_query_ext_ctrl s_isp_qctrl[] = {
         .name = "LSC",
     },
 #endif
-};
+#if ESP_VIDEO_ISP_DEVICE_BLC
+    {
+        .id = V4L2_CID_USER_ESP_ISP_BLC,
+        .type = V4L2_CTRL_TYPE_U8,
+        .maximum = UINT8_MAX,
+        .minimum = 0,
+        .step = 1,
+        .elems = sizeof(esp_video_isp_blc_t),
+        .nr_of_dims = 1,
+        .default_value = 0,
+        .name = "BLC",
+    },
 #endif
-static const char *TAG = "isp_video";
-
-static const uint32_t s_isp_isp_format[] = {
-    V4L2_PIX_FMT_SBGGR8,
-    V4L2_PIX_FMT_RGB565,
-    V4L2_PIX_FMT_RGB24,
-    V4L2_PIX_FMT_YUV420,
-    V4L2_PIX_FMT_YUV422P,
+#if ESP_VIDEO_ISP_DEVICE_DPC
+    {
+        .id = V4L2_CID_USER_ESP_ISP_DPC_DYNAMIC,
+        .type = V4L2_CTRL_TYPE_U8,
+        .maximum = UINT8_MAX,
+        .minimum = 0,
+        .step = 1,
+        .elems = sizeof(esp_video_isp_dpc_dynamic_t),
+        .nr_of_dims = 1,
+        .default_value = 0,
+        .name = "DPC Dynamic",
+    },
+#endif
+    {
+        .id = V4L2_CID_USER_ESP_ISP_AF,
+        .type = V4L2_CTRL_TYPE_U8,
+        .maximum = UINT8_MAX,
+        .minimum = 0,
+        .step = 1,
+        .elems = sizeof(esp_video_isp_af_t),
+        .nr_of_dims = 1,
+        .default_value = 0,
+        .name = "AF",
+    },
+    {
+        .id = V4L2_CID_USER_ESP_ISP_AE,
+        .type = V4L2_CTRL_TYPE_U8,
+        .maximum = UINT8_MAX,
+        .minimum = 0,
+        .step = 1,
+        .elems = sizeof(esp_video_isp_ae_t),
+        .nr_of_dims = 1,
+        .default_value = 0,
+        .name = "AE",
+    },
+    {
+        .id = V4L2_CID_USER_ESP_ISP_HIST,
+        .type = V4L2_CTRL_TYPE_U8,
+        .maximum = UINT8_MAX,
+        .minimum = 0,
+        .step = 1,
+        .elems = sizeof(esp_video_isp_hist_t),
+        .nr_of_dims = 1,
+        .default_value = 0,
+        .name = "HIST",
+    },
 };
-static const int s_isp_isp_format_nums = ARRAY_SIZE(s_isp_isp_format);
+static const int s_isp_qctrl_nums = ARRAY_SIZE(s_isp_qctrl);
+static const char *TAG = "isp_video";
 
 static struct isp_video s_isp_video;
 
-static esp_err_t isp_get_input_frame_type(cam_ctlr_color_t ctlr_color, isp_color_t *isp_color)
+static bool isp_color_is_raw_type(isp_color_t color)
 {
-    esp_err_t ret = ESP_OK;
-
-    switch (ctlr_color) {
-    case CAM_CTLR_COLOR_RAW8:
-        *isp_color = ISP_COLOR_RAW8;
-        break;
-    case CAM_CTLR_COLOR_RAW10:
-        *isp_color = ISP_COLOR_RAW10;
-        break;
-    case CAM_CTLR_COLOR_RAW12:
-        *isp_color = ISP_COLOR_RAW12;
-        break;
+    switch (color) {
+    case ISP_COLOR_RAW8:
+        return true;
+    case ISP_COLOR_RAW10:
+        return true;
+    case ISP_COLOR_RAW12:
+        return true;
     default:
-        ret = ESP_ERR_NOT_SUPPORTED;
-        break;
+        return false;
     }
-
-    return ret;
 }
 
-static esp_err_t isp_get_output_frame_type(cam_ctlr_color_t ctlr_color, isp_color_t *isp_color)
-{
-    esp_err_t ret = ESP_OK;
-
-    switch (ctlr_color) {
-    case CAM_CTLR_COLOR_RAW8:
-        *isp_color = ISP_COLOR_RAW8;
-        break;
-    case CAM_CTLR_COLOR_RGB565:
-        *isp_color = ISP_COLOR_RGB565;
-        break;
-    case CAM_CTLR_COLOR_RGB888:
-        *isp_color = ISP_COLOR_RGB888;
-        break;
-    case CAM_CTLR_COLOR_YUV420:
-        *isp_color = ISP_COLOR_YUV420;
-        break;
-    case CAM_CTLR_COLOR_YUV422:
-        *isp_color = ISP_COLOR_YUV422;
-        break;
-    default:
-        ret = ESP_ERR_NOT_SUPPORTED;
-        break;
-    }
-
-    return ret;
-}
-
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
 static esp_err_t isp_stats_done(struct isp_video *isp_video, const void *buffer, uint32_t flags)
 {
     esp_err_t ret = ESP_OK;
@@ -414,6 +505,9 @@ static esp_err_t isp_stats_done(struct isp_video *isp_video, const void *buffer,
         esp_isp_awb_evt_data_t *awb_stats = &isp_video->stats_buffer->awb;
 
         *awb_stats = *edata;
+#if ESP_VIDEO_ISP_DEVICE_AWB_SUBWIN
+        isp_video->stats_buffer->flags |= ESP_VIDEO_ISP_STATS_FLAG_AWB_SUBWIN;
+#endif
         break;
     }
     case ISP_STATS_AE_FLAG: {
@@ -437,6 +531,13 @@ static esp_err_t isp_stats_done(struct isp_video *isp_video, const void *buffer,
         *sharpen_stats = *edata;
         break;
     }
+    case ISP_STATS_AF_FLAG: {
+        const esp_isp_af_env_detector_evt_data_t *edata = (const esp_isp_af_env_detector_evt_data_t *)buffer;
+        esp_isp_af_env_detector_evt_data_t *af_stats = &isp_video->stats_buffer->af;
+
+        *af_stats = *edata;
+        break;
+    }
     default:
         ESP_EARLY_LOGE(TAG, "flags=%" PRIx32 " is not supported", flags);
         ret = ESP_ERR_INVALID_ARG;
@@ -446,6 +547,12 @@ static esp_err_t isp_stats_done(struct isp_video *isp_video, const void *buffer,
     isp_video->stats_buffer->flags |= flags;
     if (isp_video->sharpen_started) {
         target_flags |= ISP_STATS_SHARPEN_FLAG;
+    }
+    if (isp_video->af_started) {
+        target_flags |= ISP_STATS_AF_FLAG;
+    }
+    if (isp_video->awb_started) {
+        target_flags |= ISP_STATS_AWB_FLAG;
     }
     if ((isp_video->stats_buffer->flags & target_flags) == target_flags) {
         isp_video->stats_buffer->seq = isp_video->seq++;
@@ -470,15 +577,18 @@ static bool isp_hist_stats_done(isp_hist_ctlr_t hist_ctlr, const esp_isp_hist_ev
 
 static esp_err_t isp_start_hist(struct isp_video *isp_video)
 {
+    if (isp_video->hist_started) {
+        return ESP_OK;
+    }
+
     esp_err_t ret;
-    uint32_t width = META_VIDEO_GET_FORMAT_WIDTH(isp_video->video);
-    uint32_t height = META_VIDEO_GET_FORMAT_HEIGHT(isp_video->video);
     esp_isp_hist_config_t hist_config = {
-        .window = {
-            .top_left = {.x = width * ISP_REGION_START, .y = height * ISP_REGION_START},
-            .btm_right = {.x = width * ISP_REGION_END, .y = height * ISP_REGION_END},
-        },
+#if CONFIG_ESP_VIDEO_ISP_DEVICE_HIST_SAMPLING_YUV_Y
         .hist_mode = ISP_HIST_SAMPLING_YUV_Y,
+#else /* CONFIG_ESP_VIDEO_ISP_DEVICE_HIST_SAMPLING_YUV_Y */
+        .hist_mode = ISP_HIST_SAMPLING_RGB,
+#endif /* CONFIG_ESP_VIDEO_ISP_DEVICE_HIST_SAMPLING_YUV_Y */
+        .window = isp_video->hist_config.windows[0],
         .rgb_coefficient = {
             .coeff_b = {{85, 0}},
             .coeff_g = {{85, 0}},
@@ -503,6 +613,8 @@ static esp_err_t isp_start_hist(struct isp_video *isp_video)
     ESP_GOTO_ON_ERROR(esp_isp_hist_controller_enable(isp_video->hist_ctlr), fail_0, TAG, "failed to enable histogram");
     ESP_GOTO_ON_ERROR(esp_isp_hist_controller_start_continuous_statistics(isp_video->hist_ctlr), fail_1, TAG, "failed to start histogram");
 
+    isp_video->hist_started = true;
+
     return ESP_OK;
 
 fail_1:
@@ -515,11 +627,24 @@ fail_0:
 
 static esp_err_t isp_stop_hist(struct isp_video *isp_video)
 {
+    if (!isp_video->hist_started) {
+        return ESP_OK;
+    }
+
     ESP_RETURN_ON_ERROR(esp_isp_hist_controller_stop_continuous_statistics(isp_video->hist_ctlr), TAG, "failed to stop histogram");
     ESP_RETURN_ON_ERROR(esp_isp_hist_controller_disable(isp_video->hist_ctlr), TAG, "failed to disable histogram");
     ESP_RETURN_ON_ERROR(esp_isp_del_hist_controller(isp_video->hist_ctlr), TAG, "failed to delete histogram");
 
     isp_video->hist_ctlr = NULL;
+    isp_video->hist_started = false;
+
+    return ESP_OK;
+}
+
+static esp_err_t isp_reconfigure_hist(struct isp_video *isp_video)
+{
+    ESP_RETURN_ON_ERROR(isp_stop_hist(isp_video), TAG, "failed to stop HIST");
+    ESP_RETURN_ON_ERROR(isp_start_hist(isp_video), TAG, "failed to start HIST");
 
     return ESP_OK;
 }
@@ -534,32 +659,67 @@ static bool isp_awb_stats_done(isp_awb_ctlr_t awb_ctlr, const esp_isp_awb_evt_da
     return ret == ESP_OK ? true : false;
 }
 
+static void isp_init_awb_param(struct isp_video *isp_video, esp_isp_awb_config_t *awb_config)
+{
+    esp_video_isp_awb_t *awb = &isp_video->awb;
+
+    memset(awb_config, 0, sizeof(esp_isp_awb_config_t));
+
+#if ESP_VIDEO_ISP_DRIVER_NEW_AWB_SAMPLE_POINT
+    awb_config->sample_point = ISP_AWB_SAMPLE_POINT_0;
+#else
+    awb_config->sample_point = ISP_AWB_SAMPLE_POINT_BEFORE_CCM;
+#endif
+
+    awb_config->white_patch.luminance.max = (float)awb->green_max * (1 + awb->rg_max + awb->bg_max);
+    awb_config->white_patch.luminance.min = (float)awb->green_min * (1 + awb->rg_min + awb->bg_min);
+
+    awb_config->white_patch.red_green_ratio.max = awb->rg_max;
+    awb_config->white_patch.red_green_ratio.min = awb->rg_min;
+
+    awb_config->white_patch.blue_green_ratio.max = awb->bg_max;
+    awb_config->white_patch.blue_green_ratio.min = awb->bg_min;
+
+    awb_config->window = awb->windows[0];
+#if ESP_VIDEO_ISP_DEVICE_AWB_SUBWIN
+    /* Align subwindow to AWB grid and keep it within the main window. */
+    awb_config->subwindow = awb->windows[0];
+    awb_config->subwindow.top_left.x = (awb_config->subwindow.top_left.x + ISP_AWB_WINDOW_X_NUM - 1) /
+                                       ISP_AWB_WINDOW_X_NUM * ISP_AWB_WINDOW_X_NUM;
+    awb_config->subwindow.top_left.y = (awb_config->subwindow.top_left.y + ISP_AWB_WINDOW_Y_NUM - 1) /
+                                       ISP_AWB_WINDOW_Y_NUM * ISP_AWB_WINDOW_Y_NUM;
+    awb_config->subwindow.btm_right.x = awb_config->subwindow.btm_right.x / ISP_AWB_WINDOW_X_NUM *
+                                        ISP_AWB_WINDOW_X_NUM - 1;
+    awb_config->subwindow.btm_right.y = awb_config->subwindow.btm_right.y / ISP_AWB_WINDOW_Y_NUM *
+                                        ISP_AWB_WINDOW_Y_NUM - 1;
+#endif
+}
+
 static esp_err_t isp_start_awb(struct isp_video *isp_video)
 {
     esp_err_t ret;
-    uint32_t width = META_VIDEO_GET_FORMAT_WIDTH(isp_video->video);
-    uint32_t height = META_VIDEO_GET_FORMAT_HEIGHT(isp_video->video);
-    esp_isp_awb_config_t awb_config = {
-        .sample_point = ISP_AWB_SAMPLE_POINT_BEFORE_CCM,
-        .window = {
-            .top_left = {.x = width * ISP_REGION_START, .y = height * ISP_REGION_START},
-            .btm_right = {.x = width * ISP_REGION_END, .y = height * ISP_REGION_END},
-        },
-        .white_patch = {
-            .luminance = {.min = ISP_AWB_MIN_LUM, .max = ISP_AWB_MAX_LUM},
-            .red_green_ratio = {.min = ISP_RGB_RG_L, .max = ISP_RGB_RG_H},
-            .blue_green_ratio = {.min = ISP_RGB_BG_L, .max = ISP_RGB_BG_H},
-        },
-    };
+    /* Zero-init so subwindow stays all-zero (= disabled) when
+     * isp_init_awb_param() does not populate it. Otherwise random stack
+     * data in subwindow trips the rev>=3.0 "subwindow exceeds window range"
+     * validation in s_esp_isp_awb_config_hardware. */
+    esp_isp_awb_config_t awb_config = {0};
     esp_isp_awb_cbs_t awb_cb = {
         .on_statistics_done = isp_awb_stats_done,
     };
+
+    if (isp_video->awb_started) {
+        return ESP_OK;
+    }
+
+    isp_init_awb_param(isp_video, &awb_config);
 
     ESP_RETURN_ON_ERROR(esp_isp_new_awb_controller(isp_video->isp_proc, &awb_config, &isp_video->awb_ctlr), TAG, "failed to new AWB");
 
     ESP_GOTO_ON_ERROR(esp_isp_awb_register_event_callbacks(isp_video->awb_ctlr, &awb_cb, isp_video), fail_0, TAG, "failed to register AWB callback");
     ESP_GOTO_ON_ERROR(esp_isp_awb_controller_enable(isp_video->awb_ctlr), fail_0, TAG, "failed to enable AWB");
     ESP_GOTO_ON_ERROR(esp_isp_awb_controller_start_continuous_statistics(isp_video->awb_ctlr), fail_1, TAG, "failed to start AWB");
+
+    isp_video->awb_started = true;
 
     return ESP_OK;
 
@@ -571,13 +731,37 @@ fail_0:
     return ret;
 }
 
+static esp_err_t isp_reconfigure_awb(struct isp_video *isp_video)
+{
+    if (isp_video->awb_started) {
+        /* Zero-init: see comment in isp_start_awb() above. */
+        esp_isp_awb_config_t awb_config = {0};
+
+        isp_init_awb_param(isp_video, &awb_config);
+
+        ESP_RETURN_ON_ERROR(esp_isp_awb_controller_stop_continuous_statistics(isp_video->awb_ctlr), TAG, "failed to stop AWB");
+        ESP_RETURN_ON_ERROR(esp_isp_awb_controller_reconfig(isp_video->awb_ctlr, &awb_config), TAG, "failed to reconfig AWB");
+        ESP_RETURN_ON_ERROR(esp_isp_awb_controller_start_continuous_statistics(isp_video->awb_ctlr), TAG, "failed to start AWB");
+    } else {
+        ESP_RETURN_ON_ERROR(isp_start_awb(isp_video), TAG, "failed to start AWB in reconfigure stage");
+    }
+
+    return ESP_OK;
+}
+
 static esp_err_t isp_stop_awb(struct isp_video *isp_video)
 {
+    if (!isp_video->awb_started) {
+        return ESP_OK;
+    }
+
     ESP_RETURN_ON_ERROR(esp_isp_awb_controller_stop_continuous_statistics(isp_video->awb_ctlr), TAG, "failed to stop AWB");
     ESP_RETURN_ON_ERROR(esp_isp_awb_controller_disable(isp_video->awb_ctlr), TAG, "failed to disable AWB");
     ESP_RETURN_ON_ERROR(esp_isp_del_awb_controller(isp_video->awb_ctlr), TAG, "failed to delete AWB");
 
     isp_video->awb_ctlr = NULL;
+
+    isp_video->awb_started = false;
 
     return ESP_OK;
 }
@@ -595,9 +779,13 @@ static esp_err_t isp_start_bf(struct isp_video *isp_video)
         .padding_line_tail_valid_end_pixel = 0,
     };
 
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+    bf_config.flags.update_once_configured = true;
+#endif
+
     memcpy(bf_config.bf_template, isp_video->bf_matrix, sizeof(bf_config.bf_template));
 
-    ESP_RETURN_ON_ERROR(esp_isp_bf_configure(isp_video->isp_proc, &bf_config), TAG, "failed to configure BF");
+    ISP_CONFIGURE_HANDLE(esp_isp_bf_configure(isp_video->isp_proc, &bf_config), "BF");
     ESP_RETURN_ON_ERROR(esp_isp_bf_enable(isp_video->isp_proc), TAG, "failed to enable BF");
     isp_video->bf_started = true;
 
@@ -621,9 +809,13 @@ static void isp_init_ccm_param(struct isp_video *isp_video, esp_isp_ccm_config_t
     memset(ccm_config, 0, sizeof(esp_isp_ccm_config_t));
     ccm_config->saturation = true;
 
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+    ccm_config->flags.update_once_configured = true;
+#endif
+
+#ifndef ESP_VIDEO_ISP_DEVICE_WBG
     if (isp_video->ccm_enable) {
         memcpy(ccm_config->matrix, isp_video->ccm_matrix, sizeof(ccm_config->matrix));
-
         /* Apply red and blue balance */
         for (int i = 0; i < ISP_CCM_DIMENSION; i++) {
             if (isp_video->red_balance_enable) {
@@ -635,20 +827,21 @@ static void isp_init_ccm_param(struct isp_video *isp_video, esp_isp_ccm_config_t
             }
         }
     } else {
+        ccm_config->matrix[0][0] = 1.0;
+        ccm_config->matrix[1][1] = 1.0;
+        ccm_config->matrix[2][2] = 1.0;
         if (isp_video->red_balance_enable) {
             ccm_config->matrix[0][0] = isp_video->red_balance_gain;
-        } else {
-            ccm_config->matrix[0][0] = 1.0;
         }
-
-        ccm_config->matrix[1][1] = 1.0;
-
         if (isp_video->blue_balance_enable) {
             ccm_config->matrix[2][2] = isp_video->blue_balance_gain;
-        } else {
-            ccm_config->matrix[2][2] = 1.0;
         }
     }
+#else // ISP_DEVICE_WBG
+    if (isp_video->ccm_enable) {
+        memcpy(ccm_config->matrix, isp_video->ccm_matrix, sizeof(ccm_config->matrix));
+    }
+#endif
 }
 
 static esp_err_t isp_start_ccm(struct isp_video *isp_video)
@@ -660,19 +853,19 @@ static esp_err_t isp_start_ccm(struct isp_video *isp_video)
     }
 
     isp_init_ccm_param(isp_video, &ccm_config);
-    ESP_RETURN_ON_ERROR(esp_isp_ccm_configure(isp_video->isp_proc, &ccm_config), TAG, "failed to configure CCM");
+    ISP_CONFIGURE_HANDLE(esp_isp_ccm_configure(isp_video->isp_proc, &ccm_config), "CCM");
     ESP_RETURN_ON_ERROR(esp_isp_ccm_enable(isp_video->isp_proc), TAG, "failed to enable CCM");
     isp_video->ccm_started = true;
 
     return ESP_OK;
 }
 
-static esp_err_t isp_reconfig_ccm(struct isp_video *isp_video)
+static esp_err_t isp_reconfigure_ccm(struct isp_video *isp_video)
 {
     esp_isp_ccm_config_t ccm_config;
 
     isp_init_ccm_param(isp_video, &ccm_config);
-    ESP_RETURN_ON_ERROR(esp_isp_ccm_configure(isp_video->isp_proc, &ccm_config), TAG, "failed to configure CCM");
+    ISP_CONFIGURE_HANDLE(esp_isp_ccm_configure(isp_video->isp_proc, &ccm_config), "CCM");
     if (!isp_video->ccm_started) {
         ESP_RETURN_ON_ERROR(esp_isp_ccm_enable(isp_video->isp_proc), TAG, "failed to enable CCM");
         isp_video->ccm_started = true;
@@ -681,10 +874,12 @@ static esp_err_t isp_reconfig_ccm(struct isp_video *isp_video)
     return ESP_OK;
 }
 
-static esp_err_t isp_reconfigure_white_blance(struct isp_video *isp_video)
+#if !ESP_VIDEO_ISP_DEVICE_WBG
+static esp_err_t isp_reconfigure_white_balance(struct isp_video *isp_video)
 {
-    return isp_reconfig_ccm(isp_video);
+    return isp_reconfigure_ccm(isp_video);
 }
+#endif
 
 static esp_err_t isp_stop_ccm(struct isp_video *isp_video)
 {
@@ -710,35 +905,61 @@ static bool isp_ae_stats_done(isp_ae_ctlr_t ae_ctlr, const esp_isp_ae_env_detect
 
 static esp_err_t isp_start_ae(struct isp_video *isp_video)
 {
-    uint32_t width = META_VIDEO_GET_FORMAT_WIDTH(isp_video->video);
-    uint32_t height = META_VIDEO_GET_FORMAT_HEIGHT(isp_video->video);
+    esp_err_t ret = ESP_OK;
+
+    if (isp_video->ae_started) {
+        return ESP_OK;
+    }
+
     esp_isp_ae_config_t ae_config = {
-        .sample_point = ISP_AE_SAMPLE_POINT_AFTER_GAMMA,
-        .window = {
-            .top_left = {.x = width * ISP_REGION_START, .y = height * ISP_REGION_START},
-            .btm_right = {.x = width * ISP_REGION_END, .y = height * ISP_REGION_END},
-        },
+#if ESP_VIDEO_ISP_DRIVER_NEW_AE_SAMPLE_POINT
+        .sample_point = ISP_AE_SAMPLE_POINT_0,
+#else
+        .sample_point = ISP_AE_SAMPLE_POINT_AFTER_DEMOSAIC,
+#endif
         .intr_priority = 0,
+        .window = isp_video->ae_config.windows[0],
     };
     esp_isp_ae_env_detector_evt_cbs_t cbs = {
         .on_env_statistics_done = isp_ae_stats_done,
     };
 
-    ESP_ERROR_CHECK(esp_isp_new_ae_controller(isp_video->isp_proc, &ae_config, &isp_video->ae_ctlr));
+    ESP_RETURN_ON_ERROR(esp_isp_new_ae_controller(isp_video->isp_proc, &ae_config, &isp_video->ae_ctlr), TAG, "failed to new AE");
 
-    ESP_ERROR_CHECK(esp_isp_ae_env_detector_register_event_callbacks(isp_video->ae_ctlr, &cbs, isp_video));
-    ESP_ERROR_CHECK(esp_isp_ae_controller_enable(isp_video->ae_ctlr));
-    ESP_ERROR_CHECK(esp_isp_ae_controller_start_continuous_statistics(isp_video->ae_ctlr));
+    ESP_GOTO_ON_ERROR(esp_isp_ae_env_detector_register_event_callbacks(isp_video->ae_ctlr, &cbs, isp_video), fail_0, TAG, "failed to register AE callback");
+    ESP_GOTO_ON_ERROR(esp_isp_ae_controller_enable(isp_video->ae_ctlr), fail_0, TAG, "failed to enable AE");
+    ESP_GOTO_ON_ERROR(esp_isp_ae_controller_start_continuous_statistics(isp_video->ae_ctlr), fail_1, TAG, "failed to start AE");
+    isp_video->ae_started = true;
 
     return ESP_OK;
+
+fail_1:
+    esp_isp_ae_controller_disable(isp_video->ae_ctlr);
+fail_0:
+    esp_isp_del_ae_controller(isp_video->ae_ctlr);
+    isp_video->ae_ctlr = NULL;
+    return ret;
 }
 
 static esp_err_t isp_stop_ae(struct isp_video *isp_video)
 {
-    ESP_ERROR_CHECK(esp_isp_ae_controller_stop_continuous_statistics(isp_video->ae_ctlr));
-    ESP_ERROR_CHECK(esp_isp_ae_controller_disable(isp_video->ae_ctlr));
-    ESP_ERROR_CHECK(esp_isp_del_ae_controller(isp_video->ae_ctlr));
+    if (!isp_video->ae_started) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_ERROR(esp_isp_ae_controller_stop_continuous_statistics(isp_video->ae_ctlr), TAG, "failed to stop AE");
+    ESP_RETURN_ON_ERROR(esp_isp_ae_controller_disable(isp_video->ae_ctlr), TAG, "failed to disable AE");
+    ESP_RETURN_ON_ERROR(esp_isp_del_ae_controller(isp_video->ae_ctlr), TAG, "failed to delete AE");
     isp_video->ae_ctlr = NULL;
+    isp_video->ae_started = false;
+
+    return ESP_OK;
+}
+
+static esp_err_t isp_reconfigure_ae(struct isp_video *isp_video)
+{
+    ESP_RETURN_ON_ERROR(isp_stop_ae(isp_video), TAG, "failed to stop AE");
+    ESP_RETURN_ON_ERROR(isp_start_ae(isp_video), TAG, "failed to start AE");
 
     return ESP_OK;
 }
@@ -772,6 +993,10 @@ static void isp_init_sharpen_param(struct isp_video *isp_video, esp_isp_sharpen_
     sharpen_config->l_thresh = isp_video->l_thresh;
     sharpen_config->padding_mode = ISP_SHARPEN_EDGE_PADDING_MODE_SRND_DATA;
 
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+    sharpen_config->flags.update_once_configured = true;
+#endif
+
     for (int i = 0; i < ISP_SHARPEN_TEMPLATE_X_NUMS; i++) {
         for (int j = 0; j < ISP_SHARPEN_TEMPLATE_Y_NUMS; j++) {
             sharpen_config->sharpen_template[i][j] = isp_video->sharpen_matrix[i][j];
@@ -788,14 +1013,14 @@ static esp_err_t isp_start_sharpen(struct isp_video *isp_video)
     }
 
     isp_init_sharpen_param(isp_video, &sharpen_config);
-    ESP_RETURN_ON_ERROR(esp_isp_sharpen_configure(isp_video->isp_proc, &sharpen_config), TAG, "failed to configure sharpen");
+    ISP_CONFIGURE_HANDLE(esp_isp_sharpen_configure(isp_video->isp_proc, &sharpen_config), "sharpen");
     ESP_RETURN_ON_ERROR(esp_isp_sharpen_enable(isp_video->isp_proc), TAG, "failed to enable sharpen");
     isp_video->sharpen_started = true;
 
     return ESP_OK;
 }
 
-static esp_err_t isp_reconfig_sharpen(struct isp_video *isp_video)
+static esp_err_t isp_reconfigure_sharpen(struct isp_video *isp_video)
 {
     esp_isp_sharpen_config_t sharpen_config;
 
@@ -821,12 +1046,15 @@ static esp_err_t isp_stop_sharpen(struct isp_video *isp_video)
     return ESP_OK;
 }
 
-static void isp_init_gamma_param(struct isp_video *isp_video, isp_gamma_curve_points_t *gamma_config)
+static void isp_init_gamma_param(struct isp_video *isp_video, isp_gamma_curve_points_t *gamma_config, int channel)
 {
+    esp_video_isp_gamma_point_t *points = channel == 0 ? isp_video->gamma.red_points :
+                                          channel == 1 ? isp_video->gamma.green_points : isp_video->gamma.blue_points;
+
     memset(gamma_config, 0, sizeof(isp_gamma_curve_points_t));
     for (int i = 0; i < ISP_GAMMA_CURVE_POINTS_NUM; i++) {
-        gamma_config->pt[i].x = isp_video->gamma_points[i].x;
-        gamma_config->pt[i].y = isp_video->gamma_points[i].y;
+        gamma_config->pt[i].x = points[i].x;
+        gamma_config->pt[i].y = points[i].y;
     }
 }
 
@@ -838,11 +1066,21 @@ static esp_err_t isp_start_gamma(struct isp_video *isp_video)
         return ESP_OK;
     }
 
-    isp_init_gamma_param(isp_video, &gamma_config);
+    /**
+     * The first time to start GAMMA, we need to configure the GAMMA for all channels.
+     */
+
+    isp_init_gamma_param(isp_video, &gamma_config, 0);
     ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_R, &gamma_config), TAG, "failed to configure R GAMMA");
+
+    isp_init_gamma_param(isp_video, &gamma_config, 1);
     ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_G, &gamma_config), TAG, "failed to configure G GAMMA");
+
+    isp_init_gamma_param(isp_video, &gamma_config, 2);
     ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_B, &gamma_config), TAG, "failed to configure B GAMMA");
+
     ESP_RETURN_ON_ERROR(esp_isp_gamma_enable(isp_video->isp_proc), TAG, "failed to enable GAMMA");
+    isp_video->gamma.flags = 0; // Clear all flags
     isp_video->gamma_started = true;
 
     return ESP_OK;
@@ -852,10 +1090,26 @@ static esp_err_t isp_reconfigure_gamma(struct isp_video *isp_video)
 {
     isp_gamma_curve_points_t gamma_config;
 
-    isp_init_gamma_param(isp_video, &gamma_config);
-    ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_R, &gamma_config), TAG, "failed to configure R GAMMA");
-    ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_G, &gamma_config), TAG, "failed to configure G GAMMA");
-    ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_B, &gamma_config), TAG, "failed to configure B GAMMA");
+    /**
+     * If the GAMMA extension flags are set, we need to configure the GAMMA for the corresponding channel.
+     */
+
+    if (isp_video->gamma.flags & ESP_VIDEO_ISP_GAMMA_EXT_FLAG_RED) {
+        isp_init_gamma_param(isp_video, &gamma_config, 0);
+        ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_R, &gamma_config), TAG, "failed to configure R GAMMA");
+        isp_video->gamma.flags &= ~ESP_VIDEO_ISP_GAMMA_EXT_FLAG_RED;
+    }
+    if (isp_video->gamma.flags & ESP_VIDEO_ISP_GAMMA_EXT_FLAG_GREEN) {
+        isp_init_gamma_param(isp_video, &gamma_config, 1);
+        ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_G, &gamma_config), TAG, "failed to configure G GAMMA");
+        isp_video->gamma.flags &= ~ESP_VIDEO_ISP_GAMMA_EXT_FLAG_GREEN;
+    }
+    if (isp_video->gamma.flags & ESP_VIDEO_ISP_GAMMA_EXT_FLAG_BLUE) {
+        isp_init_gamma_param(isp_video, &gamma_config, 2);
+        ESP_RETURN_ON_ERROR(esp_isp_gamma_configure(isp_video->isp_proc, COLOR_COMPONENT_B, &gamma_config), TAG, "failed to configure B GAMMA");
+        isp_video->gamma.flags &= ~ESP_VIDEO_ISP_GAMMA_EXT_FLAG_BLUE;
+    }
+
     if (!isp_video->gamma_started) {
         ESP_RETURN_ON_ERROR(esp_isp_gamma_enable(isp_video->isp_proc), TAG, "failed to enable GAMMA");
         isp_video->gamma_started = true;
@@ -871,6 +1125,7 @@ static esp_err_t isp_stop_gamma(struct isp_video *isp_video)
     }
 
     ESP_RETURN_ON_ERROR(esp_isp_gamma_disable(isp_video->isp_proc), TAG, "failed to disable GAMMA");
+    isp_video->gamma.flags = 0; // Clear all flags
     isp_video->gamma_started = false;
 
     return ESP_OK;
@@ -930,7 +1185,11 @@ static esp_err_t isp_stop_demosaic(struct isp_video *isp_video)
 
 static esp_err_t isp_start_color(struct isp_video *isp_video)
 {
-    ESP_RETURN_ON_ERROR(esp_isp_color_configure(isp_video->isp_proc, &isp_video->color_config), TAG, "failed to configure color");
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+    isp_video->color_config.flags.update_once_configured = true;
+#endif
+
+    ISP_CONFIGURE_HANDLE(esp_isp_color_configure(isp_video->isp_proc, &isp_video->color_config), "color");
     ESP_RETURN_ON_ERROR(esp_isp_color_enable(isp_video->isp_proc), TAG, "failed to enable color");
 
     return ESP_OK;
@@ -938,7 +1197,11 @@ static esp_err_t isp_start_color(struct isp_video *isp_video)
 
 static esp_err_t isp_reconfigure_color(struct isp_video *isp_video)
 {
-    ESP_RETURN_ON_ERROR(esp_isp_color_configure(isp_video->isp_proc, &isp_video->color_config), TAG, "failed to configure color");
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+    isp_video->color_config.flags.update_once_configured = true;
+#endif
+
+    ISP_CONFIGURE_HANDLE(esp_isp_color_configure(isp_video->isp_proc, &isp_video->color_config), "color");
 
     return ESP_OK;
 }
@@ -949,6 +1212,68 @@ static esp_err_t isp_stop_color(struct isp_video *isp_video)
 
     return ESP_OK;
 }
+
+#if ESP_VIDEO_ISP_DEVICE_WBG
+static esp_err_t isp_start_wbg(struct isp_video *isp_video)
+{
+    if (isp_video->wbg_started) {
+        return ESP_OK;
+    }
+
+    uint32_t wbg_r = isp_video->red_balance_gain * (1 << ESP_VIDEO_ISP_WBG_DEC_BITS);
+    uint32_t wbg_b = isp_video->blue_balance_gain * (1 << ESP_VIDEO_ISP_WBG_DEC_BITS);
+
+    esp_isp_wbg_config_t wbg_cfg = {0};
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+    wbg_cfg.flags.update_once_configured = true;
+#endif
+    ISP_CONFIGURE_HANDLE(esp_isp_wbg_configure(isp_video->isp_proc, &wbg_cfg), "WBG");
+    ESP_RETURN_ON_ERROR(esp_isp_wbg_enable(isp_video->isp_proc), TAG, "failed to enable wbg");
+
+    isp_wbg_gain_t wbg_gain = {
+        .gain_r = wbg_r,
+        .gain_g = (1 << ESP_VIDEO_ISP_WBG_DEC_BITS),
+        .gain_b = wbg_b,
+    };
+
+    ISP_CONFIGURE_HANDLE(esp_isp_wbg_set_wb_gain(isp_video->isp_proc, wbg_gain), "WBG");
+
+    isp_video->wbg_started = true;
+    return ESP_OK;
+}
+
+static esp_err_t isp_reconfigure_wbg(struct isp_video *isp_video)
+{
+    if (!isp_video->wbg_started) {
+        return isp_start_wbg(isp_video);
+    }
+
+    uint32_t wbg_r = isp_video->red_balance_gain * (1 << ESP_VIDEO_ISP_WBG_DEC_BITS);
+    uint32_t wbg_b = isp_video->blue_balance_gain * (1 << ESP_VIDEO_ISP_WBG_DEC_BITS);
+
+    isp_wbg_gain_t wbg_gain = {
+        .gain_r = wbg_r,
+        .gain_g = (1 << ESP_VIDEO_ISP_WBG_DEC_BITS),
+        .gain_b = wbg_b,
+    };
+
+    ISP_CONFIGURE_HANDLE(esp_isp_wbg_set_wb_gain(isp_video->isp_proc, wbg_gain), "WBG");
+
+    return ESP_OK;
+}
+
+static esp_err_t isp_stop_wbg(struct isp_video *isp_video)
+{
+    if (!isp_video->wbg_started) {
+        return ESP_OK;
+    }
+
+    // If all the gains are 1.0f, disable the wbg
+    ESP_RETURN_ON_ERROR(esp_isp_wbg_disable(isp_video->isp_proc), TAG, "failed to disable wbg");
+    isp_video->wbg_started = false;
+    return ESP_OK;
+}
+#endif
 
 #if ESP_VIDEO_ISP_DEVICE_LSC
 static esp_err_t isp_start_lsc(struct isp_video *isp_video)
@@ -1004,6 +1329,245 @@ static esp_err_t isp_stop_lsc(struct isp_video *isp_video)
 }
 #endif
 
+#if ESP_VIDEO_ISP_DEVICE_BLC
+static esp_err_t isp_start_blc(struct isp_video *isp_video)
+{
+    if (isp_video->blc_started) {
+        return ESP_OK;
+    }
+
+    bool stretch_en = isp_video->blc_config.stretch_enable;
+
+    esp_isp_blc_config_t blc_config = {
+        .window = {
+            .top_left = {
+                .x = 0,
+                .y = 0,
+            },
+            .btm_right = {
+                .x = META_VIDEO_GET_FORMAT_WIDTH(isp_video->video), // Note: No need to subtract 1
+                .y = META_VIDEO_GET_FORMAT_HEIGHT(isp_video->video), // Note: No need to subtract 1
+            },
+        },
+        .filter_threshold = {
+            .top_left_chan_thresh = 0,
+            .top_right_chan_thresh = 0,
+            .bottom_left_chan_thresh = 0,
+            .bottom_right_chan_thresh = 0
+        },
+        .filter_enable = false,
+        .stretch = {
+            .top_left_chan_stretch_en = stretch_en,
+            .top_right_chan_stretch_en = stretch_en,
+            .bottom_left_chan_stretch_en = stretch_en,
+            .bottom_right_chan_stretch_en = stretch_en
+        }
+    };
+
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+    blc_config.flags.update_once_configured = true;
+#endif
+
+    ISP_CONFIGURE_HANDLE(esp_isp_blc_configure(isp_video->isp_proc, &blc_config), "BLC");
+    ESP_RETURN_ON_ERROR(esp_isp_blc_enable(isp_video->isp_proc), TAG, "failed to enable BLC");
+
+    esp_isp_blc_offset_t offset = {
+        .top_left_chan_offset = isp_video->blc_config.top_left_offset,
+        .top_right_chan_offset = isp_video->blc_config.top_right_offset,
+        .bottom_left_chan_offset = isp_video->blc_config.bottom_left_offset,
+        .bottom_right_chan_offset = isp_video->blc_config.bottom_right_offset
+    };
+
+    ESP_RETURN_ON_ERROR(esp_isp_blc_set_correction_offset(isp_video->isp_proc, &offset), TAG, "failed to set BLC correction offset");
+
+    isp_video->blc_started = true;
+
+    return ESP_OK;
+}
+
+static esp_err_t isp_reconfigure_blc(struct isp_video *isp_video)
+{
+    if (!isp_video->blc_started) {
+        return isp_start_blc(isp_video);
+    }
+
+    esp_isp_blc_offset_t offset = {
+        .top_left_chan_offset = isp_video->blc_config.top_left_offset,
+        .top_right_chan_offset = isp_video->blc_config.top_right_offset,
+        .bottom_left_chan_offset = isp_video->blc_config.bottom_left_offset,
+        .bottom_right_chan_offset = isp_video->blc_config.bottom_right_offset
+    };
+
+    ISP_CONFIGURE_HANDLE(esp_isp_blc_set_correction_offset(isp_video->isp_proc, &offset), "BLC");
+
+    return ESP_OK;
+}
+
+static esp_err_t isp_stop_blc(struct isp_video *isp_video)
+{
+    if (!isp_video->blc_started) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_ERROR(esp_isp_blc_disable(isp_video->isp_proc), TAG, "failed to disable BLC");
+    isp_video->blc_started = false;
+
+    return ESP_OK;
+}
+#endif
+
+#if ESP_VIDEO_ISP_DEVICE_DPC
+static esp_err_t isp_start_dpc(struct isp_video *isp_video)
+{
+    if (isp_video->dpc_started) {
+        return ESP_OK;
+    }
+
+    ISP_CONFIGURE_HANDLE(esp_isp_dpc_dynamic_configure(isp_video->isp_proc, &isp_video->dpc_config.dynamic), "DPC dynamic");
+
+    esp_isp_dpc_config_t common_config = {0};
+#if ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG
+    common_config.flags.update_once_configured = true;
+#endif
+    ISP_CONFIGURE_HANDLE(esp_isp_dpc_configure(isp_video->isp_proc, &common_config), "DPC");
+    ESP_RETURN_ON_ERROR(esp_isp_dpc_enable(isp_video->isp_proc), TAG, "failed to enable DPC");
+
+    isp_video->dpc_started = true;
+
+    return ESP_OK;
+}
+
+static esp_err_t isp_reconfigure_dpc(struct isp_video *isp_video)
+{
+    if (isp_video->dpc_started) {
+        ESP_RETURN_ON_ERROR(esp_isp_dpc_disable(isp_video->isp_proc), TAG, "failed to disable DPC");
+        isp_video->dpc_started = false;
+    }
+
+    return isp_start_dpc(isp_video);
+}
+
+static esp_err_t isp_stop_dpc(struct isp_video *isp_video)
+{
+    if (!isp_video->dpc_started) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_ERROR(esp_isp_dpc_disable(isp_video->isp_proc), TAG, "failed to disable DPC");
+    isp_video->dpc_started = false;
+
+    return ESP_OK;
+}
+#endif
+
+static bool isp_af_stats_done(isp_af_ctlr_t af_ctlr, const esp_isp_af_env_detector_evt_data_t *edata, void *user_data)
+{
+    esp_err_t ret;
+    struct isp_video *isp_video = (struct isp_video *)user_data;
+
+    ret = isp_stats_done(isp_video, edata, ISP_STATS_AF_FLAG);
+
+    return ret == ESP_OK ? true : false;
+}
+
+static esp_err_t isp_start_af(struct isp_video *isp_video)
+{
+    if (!isp_video->af_support || isp_video->af_started) {
+        return ESP_OK;
+    }
+
+    esp_err_t ret = ESP_OK;
+    esp_isp_af_config_t af_config = {0};
+    esp_isp_af_env_detector_evt_cbs_t af_cb = {
+        .on_env_statistics_done = isp_af_stats_done,
+        .on_env_change = NULL,
+    };
+
+    memcpy(af_config.window, isp_video->af_config.windows, sizeof(af_config.window));
+    af_config.edge_thresh = isp_video->af_config.edge_thresh;
+    ESP_RETURN_ON_ERROR(esp_isp_new_af_controller(isp_video->isp_proc, &af_config, &isp_video->af_ctlr), TAG, "failed to new AF");
+
+    ESP_GOTO_ON_ERROR(esp_isp_af_env_detector_register_event_callbacks(isp_video->af_ctlr, &af_cb, isp_video), fail_0, TAG, "failed to register cb");
+    ESP_GOTO_ON_ERROR(esp_isp_af_controller_enable(isp_video->af_ctlr), fail_0, TAG, "failed to enable AF");
+    ESP_GOTO_ON_ERROR(esp_isp_af_controller_start_continuous_statistics(isp_video->af_ctlr), fail_1, TAG, "failed to start AF");
+
+    isp_video->af_started = 1;
+
+    return ESP_OK;
+
+fail_1:
+    esp_isp_af_controller_disable(isp_video->af_ctlr);
+fail_0:
+    esp_isp_del_af_controller(isp_video->af_ctlr);
+    isp_video->af_ctlr = NULL;
+    return ret;
+}
+
+static esp_err_t isp_stop_af(struct isp_video *isp_video)
+{
+    if (!isp_video->af_support || !isp_video->af_started) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_ERROR(esp_isp_af_controller_stop_continuous_statistics(isp_video->af_ctlr), TAG, "failed to stop AF");
+    ESP_RETURN_ON_ERROR(esp_isp_af_controller_disable(isp_video->af_ctlr), TAG, "failed to disable AF");
+    ESP_RETURN_ON_ERROR(esp_isp_del_af_controller(isp_video->af_ctlr), TAG, "failed to delete AF");
+    isp_video->af_ctlr = NULL;
+
+    isp_video->af_started = false;
+
+    return ESP_OK;
+}
+
+static esp_err_t isp_reconfigure_af(struct isp_video *isp_video)
+{
+    if (!isp_video->af_support) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_ERROR(isp_stop_af(isp_video), TAG, "failed to stop AF");
+    ESP_RETURN_ON_ERROR(isp_start_af(isp_video), TAG, "failed to start AF");
+
+    return ESP_OK;
+}
+
+static esp_err_t isp_start_crop(struct isp_video *isp_video, const struct v4l2_rect *crop_rect)
+{
+    esp_err_t ret = ESP_OK;
+#if ESP_VIDEO_ISP_DEVICE_CROP
+    esp_isp_crop_config_t crop_config = {
+        .window = {
+            .top_left = {
+                .x = crop_rect->left,
+                .y = crop_rect->top
+            },
+            .btm_right = {
+                .x = crop_rect->left + crop_rect->width - 1,
+                .y = crop_rect->top + crop_rect->height - 1
+            }
+        }
+    };
+
+    ESP_RETURN_ON_ERROR(esp_isp_crop_configure(isp_video->isp_proc, &crop_config), TAG, "failed to configure ISP crop");
+    ESP_RETURN_ON_ERROR(esp_isp_crop_enable(isp_video->isp_proc), TAG, "failed to enable ISP crop");
+
+    isp_video->crop_started = true;
+#endif
+    return ret;
+}
+
+static esp_err_t isp_stop_crop(struct isp_video *isp_video)
+{
+#if ESP_VIDEO_ISP_DEVICE_CROP
+    if (isp_video->crop_started) {
+        ESP_RETURN_ON_ERROR(esp_isp_crop_disable(isp_video->isp_proc), TAG, "failed to disable ISP crop");
+        isp_video->crop_started = false;
+    }
+#endif
+
+    return ESP_OK;
+}
+
 static esp_err_t isp_start_pipeline(struct isp_video *isp_video)
 {
     esp_err_t ret;
@@ -1015,15 +1579,23 @@ static esp_err_t isp_start_pipeline(struct isp_video *isp_video)
         ESP_GOTO_ON_ERROR(isp_start_bf(isp_video), fail_0, TAG, "failed to start BF");
     }
 
-    ESP_GOTO_ON_ERROR(isp_start_awb(isp_video), fail_1, TAG, "failed to start AWB");
-    ESP_GOTO_ON_ERROR(isp_start_ae(isp_video), fail_2, TAG, "failed to start AE");
-    ESP_GOTO_ON_ERROR(isp_start_hist(isp_video), fail_3, TAG, "failed to start histogram");
+    if (isp_video->awb.enable) {
+        ESP_GOTO_ON_ERROR(isp_start_awb(isp_video), fail_1, TAG, "failed to start AWB");
+    }
+
+    if (isp_video->ae_config.enable) {
+        ESP_GOTO_ON_ERROR(isp_start_ae(isp_video), fail_2, TAG, "failed to start AE");
+    }
+
+    if (isp_video->hist_config.enable) {
+        ESP_GOTO_ON_ERROR(isp_start_hist(isp_video), fail_3, TAG, "failed to start histogram");
+    }
 
     if (isp_video->sharpen_enable) {
         ESP_GOTO_ON_ERROR(isp_start_sharpen(isp_video), fail_4, TAG, "failed to start sharpen");
     }
 
-    if (isp_video->gamma_enable) {
+    if (isp_video->gamma.enable) {
         ESP_GOTO_ON_ERROR(isp_start_gamma(isp_video), fail_5, TAG, "failed to start GAMMA");
     }
 
@@ -1033,18 +1605,49 @@ static esp_err_t isp_start_pipeline(struct isp_video *isp_video)
 
     ESP_GOTO_ON_ERROR(isp_start_color(isp_video), fail_7, TAG, "failed to start color");
 
+    if (isp_video->af_config.enable) {
+        ESP_GOTO_ON_ERROR(isp_start_af(isp_video), fail_8, TAG, "failed to start AF");
+    }
+
 #if ESP_VIDEO_ISP_DEVICE_LSC
     if (isp_video->lsc_enable) {
         ESP_GOTO_ON_ERROR(isp_start_lsc(isp_video), fail_8, TAG, "failed to start LSC");
     }
 #endif
 
+#if ESP_VIDEO_ISP_DEVICE_WBG
+    ESP_GOTO_ON_ERROR(isp_start_wbg(isp_video), fail_8, TAG, "failed to start wbg");
+#endif
+
+#if ESP_VIDEO_ISP_DEVICE_BLC
+    if (isp_video->blc_config.enable) {
+        ESP_GOTO_ON_ERROR(isp_start_blc(isp_video), fail_8, TAG, "failed to start BLC");
+    }
+#endif
+
+#if ESP_VIDEO_ISP_DEVICE_DPC
+    if (isp_video->dpc_config.enable) {
+        ESP_GOTO_ON_ERROR(isp_start_dpc(isp_video), fail_8, TAG, "failed to start DPC");
+    }
+#endif
+
     return ESP_OK;
 
-#if ESP_VIDEO_ISP_DEVICE_LSC
 fail_8:
-    isp_stop_color(isp_video);
+#if ESP_VIDEO_ISP_DEVICE_DPC
+    isp_stop_dpc(isp_video);
 #endif
+#if ESP_VIDEO_ISP_DEVICE_BLC
+    isp_stop_blc(isp_video);
+#endif
+#if ESP_VIDEO_ISP_DEVICE_WBG
+    isp_stop_wbg(isp_video);
+#endif
+#if ESP_VIDEO_ISP_DEVICE_LSC
+    isp_stop_lsc(isp_video);
+#endif
+    isp_stop_af(isp_video);
+    isp_stop_color(isp_video);
 fail_7:
     isp_stop_demosaic(isp_video);
 fail_6:
@@ -1069,6 +1672,20 @@ static esp_err_t isp_stop_pipeline(struct isp_video *isp_video)
 #if ESP_VIDEO_ISP_DEVICE_LSC
     ESP_RETURN_ON_ERROR(isp_stop_lsc(isp_video), TAG, "failed to stop LSC");
 #endif
+
+#if ESP_VIDEO_ISP_DEVICE_WBG
+    ESP_RETURN_ON_ERROR(isp_stop_wbg(isp_video), TAG, "failed to stop wbg");
+#endif
+
+#if ESP_VIDEO_ISP_DEVICE_BLC
+    ESP_RETURN_ON_ERROR(isp_stop_blc(isp_video), TAG, "failed to stop BLC");
+#endif
+
+#if ESP_VIDEO_ISP_DEVICE_DPC
+    ESP_RETURN_ON_ERROR(isp_stop_dpc(isp_video), TAG, "failed to stop DPC");
+#endif
+
+    ESP_RETURN_ON_ERROR(isp_stop_af(isp_video), TAG, "failed to stop AF");
 
     ESP_RETURN_ON_ERROR(isp_stop_color(isp_video), TAG, "failed to stop color");
 
@@ -1217,7 +1834,7 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
                 }
 
                 if (ISP_STARTED(isp_video)) {
-                    ESP_GOTO_ON_ERROR(isp_reconfig_ccm(isp_video), exit, TAG, "failed to reconfigure CCM");
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_ccm(isp_video), exit, TAG, "failed to reconfigure CCM");
                 }
             } else {
                 if (ISP_STARTED(isp_video)) {
@@ -1227,6 +1844,19 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
             break;
         }
         case V4L2_CID_RED_BALANCE:
+#if ESP_VIDEO_ISP_DEVICE_WBG
+            isp_video->red_balance_gain = (float)ctrl->value / V4L2_CID_RED_BALANCE_DEN;
+            if (ctrl->value > 0) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_wbg(isp_video), exit, TAG, "failed to reconfigure WBG");
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    isp_video->red_balance_gain = 1.0f;
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_wbg(isp_video), exit, TAG, "failed to reconfigure WBG");
+                }
+            }
+#else
             if (ctrl->value > 0) {
                 isp_video->red_balance_gain = (float)ctrl->value / V4L2_CID_RED_BALANCE_DEN;
                 isp_video->red_balance_enable = true;
@@ -1235,10 +1865,24 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
             }
 
             if (ISP_STARTED(isp_video)) {
-                ESP_GOTO_ON_ERROR(isp_reconfig_ccm(isp_video), exit, TAG, "failed to reconfigure red balance");
+                ESP_GOTO_ON_ERROR(isp_reconfigure_ccm(isp_video), exit, TAG, "failed to reconfigure CCM");
             }
+#endif
             break;
         case V4L2_CID_BLUE_BALANCE:
+#if ESP_VIDEO_ISP_DEVICE_WBG
+            isp_video->blue_balance_gain = (float)ctrl->value / V4L2_CID_BLUE_BALANCE_DEN;
+            if (ctrl->value > 0) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_wbg(isp_video), exit, TAG, "failed to reconfigure WBG");
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    isp_video->blue_balance_gain = 1.0f;
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_wbg(isp_video), exit, TAG, "failed to reconfigure WBG");
+                }
+            }
+#else
             if (ctrl->value > 0) {
                 isp_video->blue_balance_gain = (float )ctrl->value / V4L2_CID_BLUE_BALANCE_DEN;
                 isp_video->blue_balance_enable = true;
@@ -1247,8 +1891,9 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
             }
 
             if (ISP_STARTED(isp_video)) {
-                ESP_GOTO_ON_ERROR(isp_reconfig_ccm(isp_video), exit, TAG, "failed to reconfigure blue balance");
+                ESP_GOTO_ON_ERROR(isp_reconfigure_ccm(isp_video), exit, TAG, "failed to reconfigure CCM");
             }
+#endif
             break;
         case V4L2_CID_USER_ESP_ISP_SHARPEN: {
             const esp_video_isp_sharpen_t *sharpen = (const esp_video_isp_sharpen_t *)ctrl->p_u8;
@@ -1266,7 +1911,7 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
                 }
 
                 if (ISP_STARTED(isp_video)) {
-                    ESP_GOTO_ON_ERROR(isp_reconfig_sharpen(isp_video), exit, TAG, "failed to reconfigure sharpen");
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_sharpen(isp_video), exit, TAG, "failed to reconfigure sharpen");
                 }
             } else {
                 if (ISP_STARTED(isp_video)) {
@@ -1278,13 +1923,39 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
         case V4L2_CID_USER_ESP_ISP_GAMMA: {
             const esp_video_isp_gamma_t *gamma = (const esp_video_isp_gamma_t *)ctrl->p_u8;
 
-            isp_video->gamma_enable = gamma->enable;
-            if (gamma->enable) {
-                for (int i = 0; i < ISP_GAMMA_CURVE_POINTS_NUM; i++) {
-                    isp_video->gamma_points[i].x = gamma->points[i].x;
-                    isp_video->gamma_points[i].y = gamma->points[i].y;
+            memcpy(&isp_video->gamma.red_points, gamma->points, sizeof(esp_video_isp_gamma_point_t) * ISP_GAMMA_CURVE_POINTS_NUM);
+            memcpy(&isp_video->gamma.green_points, gamma->points, sizeof(esp_video_isp_gamma_point_t) * ISP_GAMMA_CURVE_POINTS_NUM);
+            memcpy(&isp_video->gamma.blue_points, gamma->points, sizeof(esp_video_isp_gamma_point_t) * ISP_GAMMA_CURVE_POINTS_NUM);
+            isp_video->gamma.flags = ESP_VIDEO_ISP_GAMMA_EXT_FLAG_RED | ESP_VIDEO_ISP_GAMMA_EXT_FLAG_GREEN | ESP_VIDEO_ISP_GAMMA_EXT_FLAG_BLUE;
+            isp_video->gamma.enable = gamma->enable;
+            if (isp_video->gamma.enable) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_gamma(isp_video), exit, TAG, "failed to reconfigure GAMMA");
                 }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_stop_gamma(isp_video), exit, TAG, "failed to stop GAMMA");
+                }
+            }
+            break;
+        }
+        case V4L2_CID_USER_ESP_ISP_GAMMA_EXT: {
+            const esp_video_isp_gamma_ext_t *gamma_ext = (const esp_video_isp_gamma_ext_t *)ctrl->p_u8;
 
+            if (gamma_ext->flags & ESP_VIDEO_ISP_GAMMA_EXT_FLAG_RED) {
+                memcpy(&isp_video->gamma.red_points, gamma_ext->red_points, sizeof(esp_video_isp_gamma_point_t) * ISP_GAMMA_CURVE_POINTS_NUM);
+                isp_video->gamma.flags |= ESP_VIDEO_ISP_GAMMA_EXT_FLAG_RED;
+            }
+            if (gamma_ext->flags & ESP_VIDEO_ISP_GAMMA_EXT_FLAG_GREEN) {
+                memcpy(&isp_video->gamma.green_points, gamma_ext->green_points, sizeof(esp_video_isp_gamma_point_t) * ISP_GAMMA_CURVE_POINTS_NUM);
+                isp_video->gamma.flags |= ESP_VIDEO_ISP_GAMMA_EXT_FLAG_GREEN;
+            }
+            if (gamma_ext->flags & ESP_VIDEO_ISP_GAMMA_EXT_FLAG_BLUE) {
+                memcpy(&isp_video->gamma.blue_points, gamma_ext->blue_points, sizeof(esp_video_isp_gamma_point_t) * ISP_GAMMA_CURVE_POINTS_NUM);
+                isp_video->gamma.flags |= ESP_VIDEO_ISP_GAMMA_EXT_FLAG_BLUE;
+            }
+            isp_video->gamma.enable = gamma_ext->enable;
+            if (gamma_ext->enable) {
                 if (ISP_STARTED(isp_video)) {
                     ESP_GOTO_ON_ERROR(isp_reconfigure_gamma(isp_video), exit, TAG, "failed to reconfigure GAMMA");
                 }
@@ -1320,10 +1991,24 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
             if (wb->enable) {
                 isp_video->red_balance_gain = wb->red_gain;
                 isp_video->blue_balance_gain = wb->blue_gain;
-            }
 
-            if (ISP_STARTED(isp_video)) {
-                ESP_GOTO_ON_ERROR(isp_reconfigure_white_blance(isp_video), exit, TAG, "failed to reconfigure demosaic");
+                if (ISP_STARTED(isp_video)) {
+#if ESP_VIDEO_ISP_DEVICE_WBG
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_wbg(isp_video), exit, TAG, "failed to reconfigure WBG");
+#else
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_white_balance(isp_video), exit, TAG, "failed to reconfigure white balance");
+#endif
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    isp_video->red_balance_gain = 1.0f;
+                    isp_video->blue_balance_gain = 1.0f;
+#if ESP_VIDEO_ISP_DEVICE_WBG
+                    ESP_GOTO_ON_ERROR(isp_stop_wbg(isp_video), exit, TAG, "failed to stop WBG");
+#else
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_white_balance(isp_video), exit, TAG, "failed to reconfigure white balance");
+#endif
+                }
             }
             break;
         }
@@ -1355,6 +2040,39 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
             }
             break;
         }
+        case V4L2_CID_USER_ESP_ISP_AWB: {
+            const esp_video_isp_awb_t *awb = (const esp_video_isp_awb_t *)ctrl->p_u8;
+
+            if (awb->rg_min > awb->rg_max || awb->bg_min > awb->bg_max) {
+                ESP_LOGE(TAG, "Invalid ratio range");
+                break;
+            }
+            if (awb->green_min > awb->green_max) {
+                ESP_LOGE(TAG, "Invalid green value range");
+                break;
+            }
+
+            if (awb->windows->btm_right.x == 0 && awb->windows->btm_right.y == 0) {
+                ESP_LOGD(TAG, "Window is not set, use default window");
+
+                isp_window_t win_tmp = isp_video->awb.windows[0];
+                isp_video->awb = *awb;
+                isp_video->awb.windows[0] = win_tmp;
+            } else {
+                isp_video->awb = *awb;
+            }
+
+            if (awb->enable) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_awb(isp_video), exit, TAG, "failed to reconfigure AWB");
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_stop_awb(isp_video), exit, TAG, "failed to reconfigure AWB");
+                }
+            }
+            break;
+        }
 #if ESP_VIDEO_ISP_DEVICE_LSC
         case V4L2_CID_USER_ESP_ISP_LSC: {
             const esp_video_isp_lsc_t *lsc = (const esp_video_isp_lsc_t *)ctrl->p_u8;
@@ -1379,6 +2097,89 @@ static esp_err_t isp_video_set_ext_ctrl(struct esp_video *video, const struct v4
             break;
         }
 #endif
+#if ESP_VIDEO_ISP_DEVICE_BLC
+        case V4L2_CID_USER_ESP_ISP_BLC: {
+            esp_video_isp_blc_t *blc = (esp_video_isp_blc_t *)ctrl->p_u8;
+
+            isp_video->blc_config = *blc;
+            if (blc->enable) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_blc(isp_video), exit, TAG, "failed to reconfigure BLC");
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_stop_blc(isp_video), exit, TAG, "failed to stop BLC");
+                }
+            }
+            break;
+        }
+#endif
+#if ESP_VIDEO_ISP_DEVICE_DPC
+        case V4L2_CID_USER_ESP_ISP_DPC_DYNAMIC: {
+            esp_video_isp_dpc_dynamic_t *dpc = (esp_video_isp_dpc_dynamic_t *)ctrl->p_u8;
+
+            isp_video->dpc_config = *dpc;
+            if (dpc->enable) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_dpc(isp_video), exit, TAG, "failed to reconfigure DPC");
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_stop_dpc(isp_video), exit, TAG, "failed to stop DPC");
+                }
+            }
+            break;
+        }
+#endif
+        case V4L2_CID_USER_ESP_ISP_AF: {
+            esp_video_isp_af_t *af = (esp_video_isp_af_t *)ctrl->p_u8;
+
+            isp_video->af_config = *af;
+            if (af->enable) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_af(isp_video), exit, TAG, "failed to reconfigure AF");
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_stop_af(isp_video), exit, TAG, "failed to stop AF");
+                }
+            }
+            break;
+        }
+        case V4L2_CID_USER_ESP_ISP_RAW_BYPASS: {
+            isp_video->isp_raw_bypass = ctrl->value != 0 ? true : false;
+            break;
+        }
+        case V4L2_CID_USER_ESP_ISP_AE: {
+            esp_video_isp_ae_t *ae = (esp_video_isp_ae_t *)ctrl->p_u8;
+
+            isp_video->ae_config = *ae;
+            if (ae->enable) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_ae(isp_video), exit, TAG, "failed to reconfigure AE");
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_stop_ae(isp_video), exit, TAG, "failed to stop AE");
+                }
+            }
+            break;
+        }
+        case V4L2_CID_USER_ESP_ISP_HIST: {
+            esp_video_isp_hist_t *hist = (esp_video_isp_hist_t *)ctrl->p_u8;
+
+            isp_video->hist_config = *hist;
+            if (hist->enable) {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_reconfigure_hist(isp_video), exit, TAG, "failed to reconfigure HIST");
+                }
+            } else {
+                if (ISP_STARTED(isp_video)) {
+                    ESP_GOTO_ON_ERROR(isp_stop_hist(isp_video), exit, TAG, "failed to stop HIST");
+                }
+            }
+            break;
+        }
         default:
             ret = ESP_ERR_NOT_SUPPORTED;
             break;
@@ -1452,11 +2253,15 @@ static esp_err_t isp_video_get_ext_ctrl(struct esp_video *video, struct v4l2_ext
         case V4L2_CID_USER_ESP_ISP_GAMMA: {
             esp_video_isp_gamma_t *gamma = (esp_video_isp_gamma_t *)ctrl->p_u8;
 
-            gamma->enable = isp_video->gamma_enable;
-            for (int i = 0; i < ISP_GAMMA_CURVE_POINTS_NUM; i++) {
-                gamma->points[i].x = isp_video->gamma_points[i].x;
-                gamma->points[i].y = isp_video->gamma_points[i].y;
-            }
+            memcpy(gamma->points, isp_video->gamma.red_points, sizeof(esp_video_isp_gamma_point_t) * ISP_GAMMA_CURVE_POINTS_NUM);
+            gamma->enable = isp_video->gamma.enable;
+            ESP_LOGW(TAG, "Get red channel GAMMA configuration, it is suggested to use V4L2_CID_USER_ESP_ISP_GAMMA_EXT to get the GAMMA extension configuration");
+            break;
+        }
+        case V4L2_CID_USER_ESP_ISP_GAMMA_EXT: {
+            esp_video_isp_gamma_ext_t *gamma_ext = (esp_video_isp_gamma_ext_t *)ctrl->p_u8;
+
+            memcpy(gamma_ext, &isp_video->gamma, sizeof(esp_video_isp_gamma_ext_t));
             break;
         }
         case V4L2_CID_USER_ESP_ISP_DEMOSAIC: {
@@ -1490,6 +2295,10 @@ static esp_err_t isp_video_get_ext_ctrl(struct esp_video *video, struct v4l2_ext
             ctrl->value = isp_video->color_config.color_hue;
             break;
         }
+        case V4L2_CID_USER_ESP_ISP_AWB: {
+            memcpy(ctrl->p_u8, &isp_video->awb, sizeof(esp_video_isp_awb_t));
+            break;
+        }
 #if ESP_VIDEO_ISP_DEVICE_LSC
         case V4L2_CID_USER_ESP_ISP_LSC: {
             esp_video_isp_lsc_t *lsc = (esp_video_isp_lsc_t *)ctrl->p_u8;
@@ -1503,6 +2312,44 @@ static esp_err_t isp_video_get_ext_ctrl(struct esp_video *video, struct v4l2_ext
             break;
         }
 #endif
+#if ESP_VIDEO_ISP_DEVICE_BLC
+        case V4L2_CID_USER_ESP_ISP_BLC: {
+            esp_video_isp_blc_t *blc = (esp_video_isp_blc_t *)ctrl->p_u8;
+
+            *blc = isp_video->blc_config;
+            break;
+        }
+#endif
+#if ESP_VIDEO_ISP_DEVICE_DPC
+        case V4L2_CID_USER_ESP_ISP_DPC_DYNAMIC: {
+            esp_video_isp_dpc_dynamic_t *dpc = (esp_video_isp_dpc_dynamic_t *)ctrl->p_u8;
+
+            *dpc = isp_video->dpc_config;
+            break;
+        }
+#endif
+        case V4L2_CID_USER_ESP_ISP_AF: {
+            esp_video_isp_af_t *af = (esp_video_isp_af_t *)ctrl->p_u8;
+
+            *af = isp_video->af_config;
+            break;
+        }
+        case V4L2_CID_USER_ESP_ISP_RAW_BYPASS: {
+            ctrl->value = isp_video->isp_raw_bypass ? 1 : 0;
+            break;
+        }
+        case V4L2_CID_USER_ESP_ISP_AE: {
+            esp_video_isp_ae_t *ae = (esp_video_isp_ae_t *)ctrl->p_u8;
+
+            *ae = isp_video->ae_config;
+            break;
+        }
+        case V4L2_CID_USER_ESP_ISP_HIST: {
+            esp_video_isp_hist_t *hist = (esp_video_isp_hist_t *)ctrl->p_u8;
+
+            *hist = isp_video->hist_config;
+            break;
+        }
         default:
             ret = ESP_ERR_NOT_SUPPORTED;
             break;
@@ -1519,50 +2366,79 @@ static esp_err_t isp_video_get_ext_ctrl(struct esp_video *video, struct v4l2_ext
 
 static esp_err_t isp_video_query_ext_ctrl(struct esp_video *video, struct v4l2_query_ext_ctrl *qctrl)
 {
-    int num = -1;
-    int id = qctrl->id;
-    int isp_qctrl_cnt = ARRAY_SIZE(s_isp_qctrl);
-    esp_err_t ret = ESP_ERR_NOT_SUPPORTED;
+    return esp_video_device_common_query_ext_ctrl(s_isp_qctrl, s_isp_qctrl_nums, qctrl);
+}
 
-    if (id & V4L2_CTRL_FLAG_NEXT_CTRL) {
-        int new_id = -1;
+static esp_err_t isp_video_set_selection(struct esp_video *video, struct v4l2_selection *selection)
+{
+    struct isp_video *isp_video = VIDEO_PRIV_DATA(struct isp_video *, video);
 
-        id &= ~V4L2_CTRL_FLAG_NEXT_CTRL;
-        if (id == 0) {
-            new_id = s_isp_qctrl[0].id;
-            num = 0;
-        } else {
-            for (int i = 0; i < isp_qctrl_cnt; i++) {
-                if (id == s_isp_qctrl[i].id) {
-                    if (i < (isp_qctrl_cnt - 1)) {
-                        new_id = s_isp_qctrl[i + 1].id;
-                        num = i + 1;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (new_id < 0) {
-            return ESP_ERR_NOT_SUPPORTED;
-        }
-
-        qctrl->id = new_id;
-    } else {
-        for (int i = 0; i < isp_qctrl_cnt; i++) {
-            if (id == s_isp_qctrl[i].id) {
-                num = i;
-                break;
-            }
-        }
+    if (isp_video->isp_proc) {
+        ESP_LOGE(TAG, "MIPI-CSI or ISP-DVP should be stream off");
+        return ESP_ERR_INVALID_STATE;
     }
 
-    if (num >= 0) {
-        memcpy(qctrl, &s_isp_qctrl[num], sizeof(struct v4l2_query_ext_ctrl));
-        ret = ESP_OK;
-    }
+    isp_video->rect_set = true;
 
-    return ret;
+    return ESP_OK;
+}
+
+static void isp_init_stats_windows(struct isp_video *isp_video, uint32_t left, uint32_t top, uint32_t right, uint32_t bottom)
+{
+    isp_window_t window = {
+        .top_left = {
+            .x = left,
+            .y = top,
+        },
+        .btm_right = {
+            .x = right,
+            .y = bottom,
+        },
+    };
+
+#if ESP_VIDEO_ISP_DEVICE_AWB_SUBWIN
+    window.top_left.x = (window.top_left.x + ISP_AWB_WINDOW_X_NUM - 1) / ISP_AWB_WINDOW_X_NUM * ISP_AWB_WINDOW_X_NUM;
+    window.top_left.y = (window.top_left.y + ISP_AWB_WINDOW_Y_NUM - 1) / ISP_AWB_WINDOW_Y_NUM * ISP_AWB_WINDOW_Y_NUM;
+
+    window.btm_right.x = window.btm_right.x / ISP_AWB_WINDOW_X_NUM * ISP_AWB_WINDOW_X_NUM - 1;
+    window.btm_right.y = window.btm_right.y / ISP_AWB_WINDOW_Y_NUM * ISP_AWB_WINDOW_Y_NUM - 1;
+
+    ESP_LOGD(TAG, "window: x=[%" PRIu32 " %" PRIu32 "], y=[%" PRIu32 " %" PRIu32 "]", window.top_left.x, window.btm_right.x, window.top_left.y, window.btm_right.y);
+#endif
+
+    for (int i = 0; i < ISP_HIST_WINDOW_NUM; i++) {
+        isp_video->hist_config.windows[i] = window;
+    }
+    for (int i = 0; i < ISP_AWB_WINDOW_NUM; i++) {
+        isp_video->awb.windows[i] = window;
+    }
+    for (int i = 0; i < ISP_AE_WINDOW_NUM; i++) {
+        isp_video->ae_config.windows[i] = window;
+    }
+    for (int i = 0; i < ISP_AF_WINDOW_NUM; i++) {
+        isp_video->af_config.windows[i] = window;
+    }
+}
+
+static void isp_init_params(struct isp_video *isp_video)
+{
+    /* Keep AE/HIST enabled by default to preserve previous pipeline behavior. */
+    isp_video->ae_config.enable = true;
+    isp_video->hist_config.enable = true;
+
+    isp_video->red_balance_gain = 1.0;
+    isp_video->blue_balance_gain = 1.0;
+
+    isp_video->ccm_matrix[0][0] = 1.0;
+    isp_video->ccm_matrix[1][1] = 1.0;
+    isp_video->ccm_matrix[2][2] = 1.0;
+
+    isp_video->color_config.color_contrast.val = ISP_CONTRAST_DEFAULT;
+    isp_video->color_config.color_saturation.val = ISP_SATURATION_DEFAULT;
+    isp_video->color_config.color_hue = ISP_HUE_DEFAULT;
+    isp_video->color_config.color_brightness = ISP_BRIGHTNESS_DEFAULT;
+
+    isp_video->isp_raw_bypass = true;
 }
 
 static const struct esp_video_ops s_isp_video_ops = {
@@ -1576,6 +2452,7 @@ static const struct esp_video_ops s_isp_video_ops = {
     .set_ext_ctrl   = isp_video_set_ext_ctrl,
     .get_ext_ctrl   = isp_video_get_ext_ctrl,
     .query_ext_ctrl = isp_video_query_ext_ctrl,
+    .set_selection  = isp_video_set_selection,
 };
 
 /**
@@ -1589,244 +2466,186 @@ static const struct esp_video_ops s_isp_video_ops = {
  */
 esp_err_t esp_video_create_isp_video_device(void)
 {
+    struct isp_video *isp_video = &s_isp_video;
     uint32_t device_caps = V4L2_CAP_META_CAPTURE | V4L2_CAP_EXT_PIX_FORMAT | V4L2_CAP_STREAMING;
     uint32_t caps = device_caps | V4L2_CAP_DEVICE_CAPS;
 
-    s_isp_video.mutex = xSemaphoreCreateRecursiveMutex();
-    if (!s_isp_video.mutex) {
+    isp_init_params(isp_video);
+
+    isp_video->mutex = xSemaphoreCreateRecursiveMutex();
+    if (!isp_video->mutex) {
         return ESP_ERR_NO_MEM;
     }
 
-    s_isp_video.spinlock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
+    isp_video->spinlock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
 
-    s_isp_video.video = esp_video_create(ISP_NAME, ESP_VIDEO_ISP1_DEVICE_ID, &s_isp_video_ops, &s_isp_video, caps, device_caps);
-    if (!s_isp_video.video) {
-        vSemaphoreDelete(s_isp_video.mutex);
+    isp_video->video = esp_video_create(ISP_NAME, ESP_VIDEO_ISP1_DEVICE_ID, &s_isp_video_ops, isp_video, caps, device_caps);
+    if (!isp_video->video) {
+        vSemaphoreDelete(isp_video->mutex);
         return ESP_FAIL;
     }
 
-    s_isp_video.red_balance_gain = 1.0;
-    s_isp_video.blue_balance_gain = 1.0;
-    s_isp_video.ccm_matrix[0][0] = 1.0;
-    s_isp_video.ccm_matrix[1][1] = 1.0;
-    s_isp_video.ccm_matrix[2][2] = 1.0;
-
-    s_isp_video.color_config.color_contrast.val = ISP_CONTRAST_DEFAULT;
-    s_isp_video.color_config.color_saturation.val = ISP_SATURATION_DEFAULT;
-    s_isp_video.color_config.color_hue = ISP_HUE_DEFAULT;
-    s_isp_video.color_config.color_brightness = ISP_BRIGHTNESS_DEFAULT;
-
     return ESP_OK;
 }
-#endif
 
 /**
- * @brief Start ISP process based on MIPI-CSI state
+ * @brief Destroy ISP video device
  *
- * @param state MIPI-CSI state object
- * @param state MIPI-CSI V4L2 capture format
+ * @param None
  *
  * @return
  *      - ESP_OK on success
  *      - Others if failed
  */
-esp_err_t esp_video_isp_start_by_csi(const esp_video_csi_state_t *state, const struct v4l2_format *format)
+esp_err_t esp_video_destroy_isp_video_device(void)
 {
     esp_err_t ret;
-    isp_color_t isp_in_color;
-    isp_color_t isp_out_color;
-    isp_color_range_t yuv_range;
-    isp_yuv_conv_std_t yuv_std;
+    struct esp_video *video;
+
+    video = esp_video_device_get_object(ISP_NAME);
+    if (!video) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    ret = esp_video_destroy(video);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    vSemaphoreDelete(s_isp_video.mutex);
+    memset(&s_isp_video, 0, sizeof(struct isp_video));
+
+    return ESP_OK;
+}
+
+esp_err_t esp_video_isp_video_device_add_isp_proc(isp_proc_handle_t isp_proc, uint32_t width, uint32_t height,
+        bool crop_required, const struct v4l2_rect *crop_rect,
+        const esp_video_csi_isp_in_out_format_t *in_out_format)
+{
+    esp_err_t ret = ESP_OK;
+
+    assert(isp_proc);
+    assert(width > 0);
+    assert(height > 0);
+    assert(in_out_format);
+    if (crop_required) {
+        assert(crop_rect);
+    }
+
+    ISP_LOCK(&s_isp_video);
+
     struct isp_video *isp_video = &s_isp_video;
-    uint32_t width = format->fmt.pix.width;
-    uint32_t height = format->fmt.pix.height;
+    isp_video->isp_proc = isp_proc;
 
-    if ((format->fmt.pix.quantization == V4L2_QUANTIZATION_DEFAULT) ||
-            (format->fmt.pix.quantization == V4L2_QUANTIZATION_FULL_RANGE)) {
-        yuv_range = COLOR_RANGE_FULL;
-    } else if (format->fmt.pix.quantization == V4L2_QUANTIZATION_LIM_RANGE) {
-        yuv_range = ISP_COLOR_RANGE_LIMIT;
-    } else {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
+    CAPTURE_VIDEO_SET_FORMAT(isp_video->video, width, height, V4L2_META_FMT_ESP_ISP_STATS);
 
-    if ((format->fmt.pix.ycbcr_enc == V4L2_YCBCR_ENC_DEFAULT) ||
-            (format->fmt.pix.ycbcr_enc == V4L2_YCBCR_ENC_601)) {
-        yuv_std = ISP_YUV_CONV_STD_BT601;
-    } else if (format->fmt.pix.ycbcr_enc == V4L2_YCBCR_ENC_709) {
-        yuv_std = ISP_YUV_CONV_STD_BT709;
-    } else {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-
-    if (state->bypass_isp) {
-        isp_in_color = ISP_COLOR_RAW8;
-        isp_out_color = ISP_COLOR_RGB565;
-    } else {
-        ESP_RETURN_ON_ERROR(isp_get_input_frame_type(state->in_color, &isp_in_color), TAG, "invalid ISP in format");
-        ESP_RETURN_ON_ERROR(isp_get_output_frame_type(state->out_color, &isp_out_color), TAG, "invalid ISP out format");
-    }
-
-    esp_isp_processor_cfg_t isp_config = {
-        .clk_src = ISP_CLK_SRC,
-        .input_data_source = ISP_INPUT_DATA_SRC,
-        .has_line_start_packet = state->line_sync,
-        .has_line_end_packet = state->line_sync,
-        .h_res = width,
-        .v_res = height,
-        .yuv_range = yuv_range,
-        .yuv_std = yuv_std,
-        .clk_hz = ISP_CLK_FREQ_HZ,
-        .input_data_color_type = isp_in_color,
-        .output_data_color_type = isp_out_color,
-        .bayer_order = state->bayer_order
-    };
-
-    ISP_LOCK(isp_video);
-
-    ESP_GOTO_ON_ERROR(esp_isp_new_processor(&isp_config, &isp_video->isp_proc), fail_0, TAG, "failed to new ISP");
-
-    if (state->bypass_isp) {
-        /**
-         * IDF-9706
-         */
-
-        ISP.frame_cfg.hadr_num = ceil((float)(isp_config.h_res * 16) / 32.0) - 1;
-        ISP.frame_cfg.vadr_num = isp_config.v_res - 1;
-        ISP.cntl.isp_en = 0;
-    } else {
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
-        esp_isp_evt_cbs_t cbs = {
-            .on_sharpen_frame_done = isp_sharpen_stats_done
+    if (!isp_video->rect_set) {
+        struct v4l2_rect rect = {
+            .left = width * ISP_REGION_START,
+            .top = height * ISP_REGION_START,
+            .height = height * (ISP_REGION_END - ISP_REGION_START),
+            .width = width * (ISP_REGION_END - ISP_REGION_START),
         };
 
-        ESP_GOTO_ON_ERROR(esp_isp_register_event_callbacks(isp_video->isp_proc, &cbs, isp_video), fail_1, TAG, "failed to register sharpen callback");
-#endif
-
-        ESP_GOTO_ON_ERROR(esp_isp_enable(isp_video->isp_proc), fail_2, TAG, "failed to enable ISP");
-
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
-        META_VIDEO_SET_FORMAT(isp_video->video, width, height, V4L2_META_FMT_ESP_ISP_STATS);
-        ESP_GOTO_ON_ERROR(isp_start_pipeline(isp_video), fail_3, TAG, "failed to start ISP pipeline");
-#endif
+        META_VIDEO_SET_RECT(isp_video->video, &rect);
     }
 
-    ISP_UNLOCK(isp_video);
+    {
+        struct v4l2_rect *r = META_VIDEO_GET_RECT(isp_video->video);
+
+        isp_init_stats_windows(isp_video, r->left, r->top,
+                               r->left + r->width - 1, r->top + r->height - 1);
+    }
+
+    /* This should be done before start ISP pipeline */
+    esp_isp_evt_cbs_t cbs = {
+        .on_sharpen_frame_done = isp_sharpen_stats_done
+    };
+    ESP_GOTO_ON_ERROR(esp_isp_register_event_callbacks(isp_proc, &cbs, isp_video), fail_0, TAG, "failed to register sharpen callback");
+
+    if (crop_required) {
+        ESP_GOTO_ON_ERROR(isp_start_crop(isp_video, crop_rect), fail_1, TAG, "failed to configure ISP crop");
+    }
+
+    if ((isp_color_is_raw_type(in_out_format->isp_input_fmt)) && !isp_color_is_raw_type(in_out_format->isp_output_fmt)) {
+        isp_video->af_support = 1;
+    } else {
+        isp_video->af_support = 0;
+    }
+
+    ESP_GOTO_ON_ERROR(isp_start_pipeline(isp_video), fail_2, TAG, "failed to start ISP pipeline");
+
+    ISP_UNLOCK(&s_isp_video);
     return ESP_OK;
 
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
-fail_3:
-    esp_isp_disable(isp_video->isp_proc);
 fail_2:
-    esp_isp_evt_cbs_t cbs = {0};
-    esp_isp_register_event_callbacks(isp_video->isp_proc, &cbs, NULL);
+    if (crop_required) {
+        isp_stop_crop(isp_video);
+    }
 fail_1:
-#else
-fail_2:
-#endif
-    esp_isp_del_processor(isp_video->isp_proc);
-    isp_video->isp_proc = NULL;
+    cbs.on_sharpen_frame_done = NULL;
+    esp_isp_register_event_callbacks(isp_proc, &cbs, NULL);
 fail_0:
-    ISP_UNLOCK(isp_video);
+    isp_video->isp_proc = NULL;
+    ISP_UNLOCK(&s_isp_video);
+    return ret;
+}
+
+esp_err_t esp_video_isp_video_device_remove_isp_proc(isp_proc_handle_t isp_proc)
+{
+    esp_err_t ret = ESP_OK;
+
+    ISP_LOCK(&s_isp_video);
+
+    ESP_GOTO_ON_FALSE(isp_proc == s_isp_video.isp_proc, ESP_ERR_INVALID_ARG, fail_0, TAG, "ISP processor is not the same as the one in the video device");
+
+    struct isp_video *isp_video = &s_isp_video;
+
+    ESP_GOTO_ON_ERROR(isp_stop_pipeline(isp_video), fail_0, TAG, "failed to stop ISP pipeline");
+
+    ESP_GOTO_ON_ERROR(isp_stop_crop(isp_video), fail_0, TAG, "failed to stop ISP crop");
+
+    esp_isp_evt_cbs_t cbs = {0};
+    ESP_GOTO_ON_ERROR(esp_isp_register_event_callbacks(isp_video->isp_proc, &cbs, NULL), fail_0, TAG, "failed to unregister sharpen callback");
+
+    isp_video->isp_proc = NULL;
+
+    ISP_UNLOCK(&s_isp_video);
+    return ESP_OK;
+
+fail_0:
+    ISP_UNLOCK(&s_isp_video);
     return ret;
 }
 
 /**
- * @brief Stop ISP process
+ * @brief Check if the ISP bypass mode is enabled
  *
- * @param state MIPI-CSI state object
+ * @return true if the ISP bypass mode is enabled, false otherwise
+ */
+bool esp_video_isp_video_device_is_raw_bypass(void)
+{
+    return s_isp_video.isp_raw_bypass;
+}
+
+/**
+ * @brief Set ISP statistics windows
+ *
+ * @param left The left coordinate of the window
+ * @param top The top coordinate of the window
+ * @param right The right coordinate of the window
+ * @param bottom The bottom coordinate of the window
  *
  * @return
  *      - ESP_OK on success
  *      - Others if failed
  */
-esp_err_t esp_video_isp_stop(const esp_video_csi_state_t *state)
+esp_err_t esp_video_isp_video_device_set_stats_windows(uint32_t left, uint32_t top, uint32_t right, uint32_t bottom)
 {
     esp_err_t ret = ESP_OK;
     struct isp_video *isp_video = &s_isp_video;
 
-    ISP_LOCK(isp_video);
+    isp_init_stats_windows(isp_video, left, top, right, bottom);
 
-    if (!state->bypass_isp) {
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
-        ESP_GOTO_ON_ERROR(isp_stop_pipeline(isp_video), exit, TAG, "failed to stop ISP pipeline");
-#endif
-
-        ESP_GOTO_ON_ERROR(esp_isp_disable(isp_video->isp_proc), exit, TAG, "failed to disable ISP");
-
-#if CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
-        esp_isp_evt_cbs_t cbs = {0};
-        ESP_GOTO_ON_ERROR(esp_isp_register_event_callbacks(isp_video->isp_proc, &cbs, NULL), exit, TAG, "failed to free ISP event");
-#endif
-    }
-
-    ESP_GOTO_ON_ERROR(esp_isp_del_processor(isp_video->isp_proc), exit, TAG, "failed to delete ISP");
-    isp_video->isp_proc = NULL;
-
-exit:
-    ISP_UNLOCK(isp_video);
     return ret;
-}
-
-/**
- * @brief Enumerate ISP supported output pixel format
- *
- * @param index        Enumerated number index
- * @param pixel_format Supported output pixel format
- *
- * @return
- *      - ESP_OK on success
- *      - Others if failed
- */
-esp_err_t esp_video_isp_enum_format(uint32_t index, uint32_t *pixel_format)
-{
-    if (index >= s_isp_isp_format_nums) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    *pixel_format = s_isp_isp_format[index];
-
-    return ESP_OK;
-}
-
-/**
- * @brief Check if input format is valid
- *
- * @param format V4L2 format object
- *
- * @return
- *      - ESP_OK on success
- *      - Others if failed
- */
-esp_err_t esp_video_isp_check_format(const struct v4l2_format *format)
-{
-    bool found = false;
-
-    for (int i = 0; i < s_isp_isp_format_nums; i++) {
-        if (format->fmt.pix.pixelformat == s_isp_isp_format[i]) {
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-
-    if ((format->fmt.pix.pixelformat == V4L2_PIX_FMT_YUV420) ||
-            (format->fmt.pix.pixelformat == V4L2_PIX_FMT_YUV422P)) {
-        if ((format->fmt.pix.ycbcr_enc != V4L2_YCBCR_ENC_DEFAULT) &&
-                (format->fmt.pix.ycbcr_enc != V4L2_YCBCR_ENC_601) &&
-                (format->fmt.pix.ycbcr_enc != V4L2_YCBCR_ENC_709)) {
-            return ESP_ERR_NOT_SUPPORTED;
-        }
-
-        if ((format->fmt.pix.quantization != V4L2_QUANTIZATION_DEFAULT) &&
-                (format->fmt.pix.quantization != V4L2_QUANTIZATION_FULL_RANGE) &&
-                (format->fmt.pix.quantization != V4L2_QUANTIZATION_LIM_RANGE)) {
-            return ESP_ERR_NOT_SUPPORTED;
-        }
-    }
-
-    return ESP_OK;
 }

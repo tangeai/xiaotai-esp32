@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: ESPRESSIF MIT
  */
@@ -15,6 +15,28 @@
 #define BUF_OFF(type, element_index)        (((uint32_t)type << 24) + element_index)
 #define BUF_OFF_2_INDEX(buf_off)            ((buf_off) & 0x00ffffff)
 #define BUF_OFF_2_TYPE(buf_off)             ((buf_off) >> 24)
+
+#if ESP_VIDEO_CSI_DRIVER_HAS_EVENT
+static esp_err_t esp_video_ioctl_subscribe_event(struct esp_video *video, struct v4l2_event_subscription *sub)
+{
+    return esp_video_subscribe_event(video, sub);
+}
+
+static esp_err_t esp_video_ioctl_unsubscribe_event(struct esp_video *video, struct v4l2_event_subscription *sub)
+{
+    return esp_video_unsubscribe_event(video, sub);
+}
+
+static esp_err_t esp_video_ioctl_get_events(struct esp_video *video, struct v4l2_event *event)
+{
+    return esp_video_get_event(video, event);
+}
+
+static esp_err_t esp_video_ioctl_set_event_callback(struct esp_video *video, struct v4l2_event_callback *callback)
+{
+    return esp_video_set_event_callback(video, callback);
+}
+#endif /* ESP_VIDEO_CSI_DRIVER_HAS_EVENT */
 
 static esp_err_t esp_video_ioctl_querycap(struct esp_video *video, struct v4l2_capability *cap)
 {
@@ -82,6 +104,10 @@ static esp_err_t esp_video_ioctl_reqbufs(struct esp_video *video, struct v4l2_re
 {
     esp_err_t ret;
 
+    if (req_bufs->count == 0) {
+        return esp_video_release_buffer(video, req_bufs->type);
+    }
+
     if ((req_bufs->memory != V4L2_MEMORY_MMAP) &&
             (req_bufs->memory != V4L2_MEMORY_USERPTR) ) {
         return ESP_ERR_INVALID_ARG;
@@ -119,6 +145,7 @@ static esp_err_t esp_video_ioctl_querybuf(struct esp_video *video, struct v4l2_b
 static esp_err_t esp_video_ioctl_mmap(struct esp_video *video, struct esp_video_ioctl_mmap *ioctl_mmap)
 {
     esp_err_t ret;
+    uint8_t *payload;
     struct esp_video_buffer_info info;
     uint8_t type = BUF_OFF_2_TYPE(ioctl_mmap->offset);
     int index = BUF_OFF_2_INDEX(ioctl_mmap->offset);
@@ -134,7 +161,11 @@ static esp_err_t esp_video_ioctl_mmap(struct esp_video *video, struct esp_video_
         return ESP_ERR_INVALID_ARG;
     }
 
-    ioctl_mmap->mapped_ptr = esp_video_get_element_index_payload(video, type, index);
+    ret = esp_video_get_element_index_payload(video, type, index, &payload);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ioctl_mmap->mapped_ptr = payload;
 
     return ESP_OK;
 }
@@ -171,9 +202,9 @@ static esp_err_t esp_video_ioctl_qbuf(struct esp_video *video, struct v4l2_buffe
 static esp_err_t esp_video_ioctl_dqbuf(struct esp_video *video, struct v4l2_buffer *vbuf)
 {
     esp_err_t ret;
-    uint32_t ticks = portMAX_DELAY;
     struct esp_video_buffer_info info;
     struct esp_video_buffer_element *element;
+    uint32_t ticks = video->dqbuf_timeout_ticks;
 
     ret = esp_video_get_buffer_info(video, vbuf->type, &info);
     if (ret != ESP_OK) {
@@ -184,14 +215,13 @@ static esp_err_t esp_video_ioctl_dqbuf(struct esp_video *video, struct v4l2_buff
         return ESP_ERR_INVALID_ARG;
     }
 
-    element = esp_video_recv_element(video, vbuf->type, ticks);
-    if (!element) {
-        return ESP_FAIL;
+    ret = esp_video_recv_element(video, vbuf->type, ticks, &element);
+    if (ret != ESP_OK) {
+        return ret;
     }
 
     vbuf->flags     = 0;
     vbuf->index     = element->index;
-    vbuf->sequence  = element->sequence;
     vbuf->bytesused = element->valid_size;
     if (!vbuf->bytesused) {
         vbuf->flags |= V4L2_BUF_FLAG_ERROR;
@@ -231,9 +261,76 @@ static inline esp_err_t esp_video_ioctl_get_sensor_format(struct esp_video *vide
     return esp_video_get_sensor_format(video, format);
 }
 
+static inline esp_err_t esp_video_ioctl_enum_sensor_format(struct esp_video *video, struct v4l2_sensor_format_enum *enum_fmt)
+{
+    return esp_video_enum_sensor_format(video, enum_fmt);
+}
+
 static inline esp_err_t esp_video_ioctl_query_menu(struct esp_video *video, struct v4l2_querymenu *qmenu)
 {
     return esp_video_query_menu(video, qmenu);
+}
+
+static inline esp_err_t esp_video_ioctl_set_owner(struct esp_video *video, int *value)
+{
+    return esp_video_set_owner(video, *value);
+}
+
+static inline esp_err_t esp_video_ioctl_set_selection(struct esp_video *video, struct v4l2_selection *selection)
+{
+    return esp_video_set_selection(video, selection);
+}
+
+static inline esp_err_t esp_video_ioctl_get_selection(struct esp_video *video, struct v4l2_selection *selection)
+{
+    return esp_video_get_selection(video, selection);
+}
+
+#if CONFIG_ESP_VIDEO_ENABLE_CAMERA_MOTOR_CONTROLLER
+static inline esp_err_t esp_video_ioctl_set_motor_format(struct esp_video *video, const esp_cam_motor_format_t *format)
+{
+    return esp_video_set_motor_format(video, format);
+}
+
+static inline esp_err_t esp_video_ioctl_get_motor_format(struct esp_video *video, esp_cam_motor_format_t *format)
+{
+    return esp_video_get_motor_format(video, format);
+}
+#endif
+
+static inline esp_err_t esp_video_ioctl_set_parm(struct esp_video *video, struct v4l2_streamparm *stream_parm)
+{
+    return esp_video_set_parm(video, stream_parm);
+}
+
+static inline esp_err_t esp_video_ioctl_get_parm(struct esp_video *video, struct v4l2_streamparm *stream_parm)
+{
+    return esp_video_get_parm(video, stream_parm);
+}
+
+static inline esp_err_t esp_video_ioctl_enum_framesizes(struct esp_video *video, struct v4l2_frmsizeenum *frmsize)
+{
+    return esp_video_enum_framesizes(video, frmsize);
+}
+
+static inline esp_err_t esp_video_ioctl_enum_frameintervals(struct esp_video *video, struct v4l2_frmivalenum *frmival)
+{
+    return esp_video_enum_frameintervals(video, frmival);
+}
+
+static inline esp_err_t esp_video_ioctl_set_dqbuf_timeout(struct esp_video *video, const struct timeval *timeout)
+{
+    return esp_video_set_dqbuf_timeout(video, timeout);
+}
+
+static inline esp_err_t esp_video_ioctl_get_dqbuf_timeout(struct esp_video *video, struct timeval *timeout)
+{
+    return esp_video_get_dqbuf_timeout(video, timeout);
+}
+
+static inline esp_err_t esp_video_ioctl_restart(struct esp_video *video, struct v4l2_restart_config *config)
+{
+    return esp_video_restart(video, config);
 }
 
 esp_err_t esp_video_ioctl(struct esp_video *video, int cmd, va_list args)
@@ -297,8 +394,63 @@ esp_err_t esp_video_ioctl(struct esp_video *video, int cmd, va_list args)
     case VIDIOC_G_SENSOR_FMT:
         ret = esp_video_ioctl_get_sensor_format(video, (esp_cam_sensor_format_t *)arg_ptr);
         break;
+    case VIDIOC_ENUM_SENSOR_FMT:
+        ret = esp_video_ioctl_enum_sensor_format(video, (struct v4l2_sensor_format_enum *)arg_ptr);
+        break;
     case VIDIOC_QUERYMENU:
         ret = esp_video_ioctl_query_menu(video, (struct v4l2_querymenu *)arg_ptr);
+        break;
+    case VIDIOC_SET_OWNER:
+        ret = esp_video_ioctl_set_owner(video, (int *)arg_ptr);
+        break;
+    case VIDIOC_S_SELECTION:
+        ret = esp_video_ioctl_set_selection(video, (struct v4l2_selection *)arg_ptr);
+        break;
+    case VIDIOC_G_SELECTION:
+        ret = esp_video_ioctl_get_selection(video, (struct v4l2_selection *)arg_ptr);
+        break;
+#if CONFIG_ESP_VIDEO_ENABLE_CAMERA_MOTOR_CONTROLLER
+    case VIDIOC_S_MOTOR_FMT:
+        ret = esp_video_ioctl_set_motor_format(video, (const esp_cam_motor_format_t *)arg_ptr);
+        break;
+    case VIDIOC_G_MOTOR_FMT:
+        ret = esp_video_ioctl_get_motor_format(video, (esp_cam_motor_format_t *)arg_ptr);
+        break;
+#endif
+    case VIDIOC_S_PARM:
+        ret = esp_video_ioctl_set_parm(video, (struct v4l2_streamparm *)arg_ptr);
+        break;
+    case VIDIOC_G_PARM:
+        ret = esp_video_ioctl_get_parm(video, (struct v4l2_streamparm *)arg_ptr);
+        break;
+    case VIDIOC_ENUM_FRAMESIZES:
+        ret = esp_video_ioctl_enum_framesizes(video, (struct v4l2_frmsizeenum *)arg_ptr);
+        break;
+    case VIDIOC_ENUM_FRAMEINTERVALS:
+        ret = esp_video_ioctl_enum_frameintervals(video, (struct v4l2_frmivalenum *)arg_ptr);
+        break;
+    case VIDIOC_S_DQBUF_TIMEOUT:
+        ret = esp_video_ioctl_set_dqbuf_timeout(video, (struct timeval *)arg_ptr);
+        break;
+    case VIDIOC_G_DQBUF_TIMEOUT:
+        ret = esp_video_ioctl_get_dqbuf_timeout(video, (struct timeval *)arg_ptr);
+        break;
+#if ESP_VIDEO_CSI_DRIVER_HAS_EVENT
+    case VIDIOC_SUBSCRIBE_EVENT:
+        ret = esp_video_ioctl_subscribe_event(video, (struct v4l2_event_subscription *)arg_ptr);
+        break;
+    case VIDIOC_UNSUBSCRIBE_EVENT:
+        ret = esp_video_ioctl_unsubscribe_event(video, (struct v4l2_event_subscription *)arg_ptr);
+        break;
+    case VIDIOC_DQEVENT:
+        ret = esp_video_ioctl_get_events(video, (struct v4l2_event *)arg_ptr);
+        break;
+    case VIDIOC_S_EVENT_CALLBACK:
+        ret = esp_video_ioctl_set_event_callback(video, (struct v4l2_event_callback *)arg_ptr);
+        break;
+#endif /* ESP_VIDEO_CSI_DRIVER_HAS_EVENT */
+    case VIDIOC_RESTART:
+        ret = esp_video_ioctl_restart(video, (struct v4l2_restart_config *)arg_ptr);
         break;
     default:
         ret = ESP_ERR_INVALID_ARG;

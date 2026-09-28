@@ -133,12 +133,7 @@ static inline esp_h264_err_t h264_hw_enc_frame_mode_process(esp_h264_hw_handle_t
         slice_nal_len += nal_bit_len;
     }
     /** Configure slice header */
-    slice_nal_len += esp_h264_enc_hw_set_slice((uint8_t *)slice_start_code,
-                                               out_frame_size - (slice_nal_len >> 3),
-                                               !hw_hd->frame_num,
-                                               hw_hd->frame_num,
-                                               qp_delta,
-                                               true);
+    slice_nal_len += esp_h264_enc_hw_set_slice((uint8_t *)slice_start_code, out_frame_size - (slice_nal_len >> 3), !hw_hd->frame_num, hw_hd->frame_num, qp_delta, true);
     uint8_t *bs = esp_h264_enc_hw_slice_header_align8(out_frame, slice_nal_len, &hw_hd->h264_hal);
     int out_frame_len = (bs - out_frame);
     esp_h264_cache_check_and_writeback(out_frame, (slice_nal_len + 7) >> 3);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: ESPRESSIF MIT
  */
@@ -13,7 +13,10 @@
 #include "esp_heap_caps.h"
 #include "esp_video.h"
 #include "esp_video_vfs.h"
+#include "esp_video_device.h"
 #include "esp_cam_sensor.h"
+#include "esp_video_ioctl.h"
+#include "esp_private/esp_cache_private.h"
 
 #include "freertos/portmacro.h"
 
@@ -33,9 +36,12 @@
 #define CHECK_PARAM(...)
 #endif
 
+#define EVENT_QUEUE_SIZE                    10
+
 struct esp_video_format_desc_map {
     uint32_t pixel_format;
     char desc_string[30];
+    uint8_t bpp;
 };
 
 static _lock_t s_video_lock;
@@ -44,27 +50,94 @@ static const char *TAG = "esp_video";
 
 static const struct esp_video_format_desc_map esp_video_format_desc_maps[] = {
     {
-        V4L2_PIX_FMT_SBGGR8, "RAW8 BGGR",
+        V4L2_PIX_FMT_SBGGR8, "RAW8 BGGR", 8
     },
     {
-        V4L2_PIX_FMT_RGB565, "RGB 5-6-5",
+        V4L2_PIX_FMT_SBGGR10, "RAW10 BGGR", 10
     },
     {
-        V4L2_PIX_FMT_RGB24,  "RGB 8-8-8",
+        V4L2_PIX_FMT_SBGGR12, "RAW12 BGGR", 12
     },
     {
-        V4L2_PIX_FMT_YUV420, "YUV 4:2:0",
+        V4L2_PIX_FMT_RGB565, "RGB 5-6-5 LE", 16
     },
     {
-        V4L2_PIX_FMT_YUV422P, "YVU 4:2:2 planar"
+        V4L2_PIX_FMT_BGR565, "BGR 5-6-5 LE", 16
     },
     {
-        V4L2_PIX_FMT_JPEG,   "JPEG"
+        V4L2_PIX_FMT_RGB565X, "RGB 5-6-5 BE", 16
     },
     {
-        V4L2_PIX_FMT_GREY,   "Grey 8"
+        V4L2_PIX_FMT_RGB24, "RGB 8-8-8", 24
+    },
+    {
+        V4L2_PIX_FMT_BGR24, "BGR 8-8-8", 24
+    },
+    {
+        V4L2_PIX_FMT_YUV420, "YUV 4:2:0", 12
+    },
+    {
+        V4L2_PIX_FMT_UYVY, "YUV 4:2:2 UYVY", 16
+    },
+    {
+        V4L2_PIX_FMT_VYUY, "YUV 4:2:2 VYUY", 16
+    },
+    {
+        V4L2_PIX_FMT_YUYV, "YUV 4:2:2 YUYV", 16
+    },
+    {
+        V4L2_PIX_FMT_YVYU, "YUV 4:2:2 YVYU", 16
+    },
+    {
+        V4L2_PIX_FMT_YUV444, "YUV 4:4:4", 24
+    },
+    {
+        V4L2_PIX_FMT_JPEG, "JPEG", 8
+    },
+    {
+        V4L2_PIX_FMT_H264, "H264", 8
+    },
+    {
+        V4L2_PIX_FMT_GREY, "Grey 8", 8
     },
 };
+
+const char *esp_video_usb_uvc_device_name[] = {
+    ESP_VIDEO_USB_UVC_NAME(0),
+    ESP_VIDEO_USB_UVC_NAME(1),
+    ESP_VIDEO_USB_UVC_NAME(2),
+    ESP_VIDEO_USB_UVC_NAME(3),
+    ESP_VIDEO_USB_UVC_NAME(4),
+    ESP_VIDEO_USB_UVC_NAME(5),
+    ESP_VIDEO_USB_UVC_NAME(6),
+    ESP_VIDEO_USB_UVC_NAME(7),
+    ESP_VIDEO_USB_UVC_NAME(8),
+    ESP_VIDEO_USB_UVC_NAME(9),
+};
+
+static void esp_video_release_stream_buffer(struct esp_video_stream *stream)
+{
+    if (!stream) {
+        return;
+    }
+
+    /* Reset queue state before destroying buffer storage. */
+    TAILQ_INIT(&stream->queued_list);
+    TAILQ_INIT(&stream->done_list);
+
+    if (stream->ready_sem) {
+        vSemaphoreDelete(stream->ready_sem);
+        stream->ready_sem = NULL;
+    }
+
+    if (stream->buffer) {
+        esp_video_buffer_destroy(stream->buffer);
+        stream->buffer = NULL;
+    }
+
+    stream->started = false;
+    stream->buf_info.count = 0;
+}
 
 /**
  * @brief Get pixel format description string
@@ -348,6 +421,7 @@ struct esp_video *esp_video_create(const char *name, uint8_t id, const struct es
     video->id = id;
     video->caps = caps;
     video->device_caps = device_caps;
+    video->inited = 0;
     SLIST_INSERT_HEAD(&s_video_list, video, node);
 
     ret = snprintf(vfs_name, sizeof(vfs_name), "video%d", id);
@@ -398,13 +472,11 @@ esp_err_t esp_video_destroy(struct esp_video *video)
         return ESP_ERR_NO_MEM;
     }
 
-    ret = esp_video_vfs_dev_unregister(vfs_name);
-    if (ret <= 0) {
-        ESP_LOGE(TAG, "Failed to unregister video VFS dev name=%s", vfs_name);
-        return ESP_ERR_NO_MEM;
-    }
-
     _lock_acquire(&s_video_lock);
+    ESP_GOTO_ON_FALSE(video->reference == 0, ESP_ERR_NOT_ALLOWED, fail_0, TAG, "video device %s is opened", vfs_name);
+
+    ESP_GOTO_ON_ERROR(esp_video_vfs_dev_unregister(vfs_name), fail_0, TAG, "Failed to unregister video VFS dev name=%s", vfs_name);
+
     SLIST_REMOVE(&s_video_list, video, esp_video, node);
     _lock_release(&s_video_lock);
 
@@ -413,20 +485,23 @@ esp_err_t esp_video_destroy(struct esp_video *video)
     heap_caps_free(video);
 
     return ESP_OK;
+
+fail_0:
+    _lock_release(&s_video_lock);
+    return ret;
 }
 
 /**
  * @brief Open a video device, this function will initialize hardware.
  *
  * @param name video device name
+ * @param video_ret video object pointer
  *
- * @return
- *      - Video object pointer on success
- *      - NULL if failed
+ * @return ESP_OK on success, others if failed
  */
-struct esp_video *esp_video_open(const char *name)
+esp_err_t esp_video_open(const char *name, struct esp_video **video_ret)
 {
-    esp_err_t ret;
+    esp_err_t ret = ESP_OK;
     bool found = false;
     struct esp_video *video;
 
@@ -441,44 +516,66 @@ struct esp_video *esp_video_open(const char *name)
 
     if (!found) {
         ESP_LOGE(TAG, "Not find video=%s", name);
-        return NULL;
+        return ESP_ERR_INVALID_ARG;
     }
 
     xSemaphoreTake(video->mutex, portMAX_DELAY);
 
-    assert(video->reference <= UINT8_MAX);
+    assert(video->reference < UINT8_MAX);
     video->reference++;
     if (video->reference > 1) {
         goto exit_0;
     }
 
-    if (video->ops->init) {
-        /* video device operation "init" sets buffer information and video format */
+    /**
+     * Only initialize the video device although reference is 1, because the
+     * reference can be set by other tasks.
+     */
+    if (!video->inited) {
+        if (video->ops->init) {
+            /* video device operation "init" sets buffer information and video format */
 
-        ret = video->ops->init(video);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "video->ops->init=%x", ret);
-            video = NULL;
-        } else {
-            int stream_count = video->caps & V4L2_CAP_VIDEO_M2M ? 2 : 1;
+            ret = video->ops->init(video);
+            if (ret != ESP_OK) {
+                if (ret != ESP_ERR_NOT_FOUND) {
+                    ESP_LOGE(TAG, "video->ops->init=%x", ret);
+                }
+                goto exit_0;
+            } else {
+                int stream_count = video->caps & V4L2_CAP_VIDEO_M2M ? 2 : 1;
 
-            portMUX_INITIALIZE(&video->stream_lock);
-            for (int i = 0; i < stream_count; i++) {
-                struct esp_video_stream *stream = &video->stream[i];
+                portMUX_INITIALIZE(&video->stream_lock);
+                for (int i = 0; i < stream_count; i++) {
+                    struct esp_video_stream *stream = &video->stream[i];
 
-                stream->buffer = NULL;
-                stream->next_sequence = 0;
-                SLIST_INIT(&stream->queued_list);
-                SLIST_INIT(&stream->done_list);
+                    stream->buffer = NULL;
+                    memset(&stream->param, 0, sizeof(struct esp_video_param));
+                    TAILQ_INIT(&stream->queued_list);
+                    TAILQ_INIT(&stream->done_list);
+                }
+
+                video->inited = 1;
+                memset(&video->event, 0, sizeof(struct v4l2_event));
+                memset(&video->event_sub, 0, sizeof(struct v4l2_event_subscription));
+                video->event_queue = NULL;
             }
+        } else {
+            ESP_LOGD(TAG, "video->ops->init=NULL");
+            ret = ESP_ERR_NOT_SUPPORTED;
         }
-    } else {
-        ESP_LOGD(TAG, "video->ops->init=NULL");
     }
 
 exit_0:
+    if (ret != ESP_OK) {
+        video->reference--;
+    } else {
+        *video_ret = video;
+
+        video->dqbuf_timeout_ticks = portMAX_DELAY;
+    }
     xSemaphoreGive(video->mutex);
-    return video;
+
+    return ret;
 }
 
 /**
@@ -498,35 +595,58 @@ esp_err_t esp_video_close(struct esp_video *video)
 
     xSemaphoreTake(video->mutex, portMAX_DELAY);
 
-    assert(video->reference > 0);
+    if (!video->reference) {
+        ESP_LOGD(TAG, "video->reference=0");
+        goto exit_0;
+    }
+
     video->reference--;
     if (video->reference > 0) {
         goto exit_0;
     }
 
-    if (video->ops->deinit) {
-        ret = video->ops->deinit(video);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "video->ops->deinit=%x", ret);
-        } else {
-            int stream_count = video->caps & V4L2_CAP_VIDEO_M2M ? 2 : 1;
-
-            for (int i = 0; i < stream_count; i++) {
-                struct esp_video_stream *stream = &video->stream[i];
-
-                if (stream->ready_sem) {
-                    vSemaphoreDelete(stream->ready_sem);
-                    stream->ready_sem = NULL;
-                }
-
-                if (stream->buffer) {
-                    esp_video_buffer_destroy(stream->buffer);
-                    stream->buffer = NULL;
-                }
-            }
+    /**
+     * Only deinitialize the video device although reference is 0, because the
+     * reference can be set by other tasks.
+     */
+    if (video->inited) {
+        /**
+         * If event subscription is not cleared, return error
+         */
+        if (video->event_sub.type) {
+            video->reference++;
+            ret = ESP_ERR_INVALID_STATE;
+            ESP_LOGE(TAG, "Event subscription is not cleared");
+            goto exit_0;
         }
-    } else {
-        ESP_LOGD(TAG, "video->ops->deinit=NULL");
+
+        if (video->ops->deinit) {
+            ret = video->ops->deinit(video);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "video->ops->deinit=%x", ret);
+                video->reference++;
+            } else {
+                int stream_count = video->caps & V4L2_CAP_VIDEO_M2M ? 2 : 1;
+
+                for (int i = 0; i < stream_count; i++) {
+                    esp_video_release_stream_buffer(&video->stream[i]);
+                }
+
+                video->inited = 0;
+            }
+        } else {
+            ESP_LOGD(TAG, "video->ops->deinit=NULL");
+            ret = ESP_ERR_NOT_SUPPORTED;
+            video->reference++;
+        }
+
+        /* The event queue can be deleted after application unsubscribed the event,
+         * and the event tracing task should exit after receiving the unsubscribed event.
+         */
+        if (video->event_queue) {
+            vQueueDelete(video->event_queue);
+            video->event_queue = NULL;
+        }
     }
 
 exit_0:
@@ -561,6 +681,13 @@ esp_err_t esp_video_start_capture(struct esp_video *video, uint32_t type)
     }
 
     if (video->ops->start) {
+        int stream_count = video->caps & V4L2_CAP_VIDEO_M2M ? 2 : 1;
+
+        for (int i = 0; i < stream_count; i++) {
+            struct esp_video_stream *stream = &video->stream[i];
+            stream->param.skip_count = 0;
+        }
+
         ret = video->ops->start(video, type);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "video->ops->start=%x", ret);
@@ -617,9 +744,8 @@ esp_err_t esp_video_stop_capture(struct esp_video *video, uint32_t type)
                     ret = xSemaphoreTake(stream->ready_sem, 0);
                 } while (ret == pdTRUE);
 
-                SLIST_INIT(&stream->queued_list);
-                SLIST_INIT(&stream->done_list);
-                stream->next_sequence = 0;
+                TAILQ_INIT(&stream->queued_list);
+                TAILQ_INIT(&stream->done_list);
 
                 esp_video_buffer_reset(stream->buffer);
             }
@@ -762,52 +888,24 @@ esp_err_t esp_video_setup_buffer(struct esp_video *video, uint32_t type, uint32_
     if (!stream) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (stream->started) {
+        ESP_LOGW(TAG, "Cannot setup buffers while stream is started");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     /* buffer_size is configured when setting format */
 
     info = &stream->buf_info;
-    if (count == 0) {
-        if (stream->started) {
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        SLIST_INIT(&stream->queued_list);
-        SLIST_INIT(&stream->done_list);
-        stream->next_sequence = 0;
-
-        if (stream->ready_sem) {
-            vSemaphoreDelete(stream->ready_sem);
-            stream->ready_sem = NULL;
-        }
-
-        if (stream->buffer) {
-            esp_video_buffer_destroy(stream->buffer);
-            stream->buffer = NULL;
-        }
-
-        info->count = 0;
-        info->memory_type = memory_type;
-        return ESP_OK;
-    }
-
     if (!info->size || !info->align_size || !info->caps) {
         ESP_LOGE(TAG, "Failed to check buffer information: size=%" PRIu32 " align=%" PRIu32 " cap=%" PRIx32,
                  info->size, info->align_size, info->caps);
         return ESP_ERR_INVALID_STATE;
     }
 
+    esp_video_release_stream_buffer(stream);
+
     info->count = count;
     info->memory_type = memory_type;
-
-    if (stream->ready_sem) {
-        vSemaphoreDelete(stream->ready_sem);
-        stream->ready_sem = NULL;
-    }
-
-    if (stream->buffer) {
-        esp_video_buffer_destroy(stream->buffer);
-        stream->buffer = NULL;
-    }
 
     stream->ready_sem = xSemaphoreCreateCounting(info->count, 0);
     if (!stream->ready_sem) {
@@ -823,6 +921,35 @@ esp_err_t esp_video_setup_buffer(struct esp_video *video, uint32_t type, uint32_
         return ESP_ERR_NO_MEM;
     }
 
+    return ESP_OK;
+}
+
+/**
+ * @brief Release video buffer.
+ *
+ * @param video Video object
+ * @param type  Video stream type
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_release_buffer(struct esp_video *video, uint32_t type)
+{
+    struct esp_video_stream *stream;
+
+    CHECK_VIDEO_OBJ(video);
+
+    stream = esp_video_get_stream(video, type);
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (stream->started) {
+        ESP_LOGW(TAG, "Cannot release buffers while stream is started");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_video_release_stream_buffer(stream);
     return ESP_OK;
 }
 
@@ -874,9 +1001,9 @@ struct esp_video_buffer_element *IRAM_ATTR esp_video_get_queued_element(struct e
     }
 
     portENTER_CRITICAL_SAFE(&video->stream_lock);
-    if (!SLIST_EMPTY(&stream->queued_list)) {
-        element = SLIST_FIRST(&stream->queued_list);
-        SLIST_REMOVE(&stream->queued_list, element, esp_video_buffer_element, node);
+    if (!TAILQ_EMPTY(&stream->queued_list)) {
+        element = TAILQ_FIRST(&stream->queued_list);
+        TAILQ_REMOVE(&stream->queued_list, element, node);
         ELEMENT_SET_FREE(element);
     }
     portEXIT_CRITICAL_SAFE(&video->stream_lock);
@@ -927,9 +1054,9 @@ struct esp_video_buffer_element *esp_video_get_done_element(struct esp_video *vi
     }
 
     portENTER_CRITICAL_SAFE(&video->stream_lock);
-    if (!SLIST_EMPTY(&stream->done_list)) {
-        element = SLIST_FIRST(&stream->done_list);
-        SLIST_REMOVE(&stream->done_list, element, esp_video_buffer_element, node);
+    if (!TAILQ_EMPTY(&stream->done_list)) {
+        element = TAILQ_FIRST(&stream->done_list);
+        TAILQ_REMOVE(&stream->done_list, element, node);
         ELEMENT_SET_FREE(element);
     }
     portEXIT_CRITICAL_SAFE(&video->stream_lock);
@@ -964,8 +1091,7 @@ esp_err_t IRAM_ATTR esp_video_done_element(struct esp_video *video, uint32_t typ
     }
 
     ELEMENT_SET_ALLOCATED(element);
-    element->sequence = stream->next_sequence++;
-    SLIST_INSERT_HEAD(&stream->done_list, element, node);
+    TAILQ_INSERT_TAIL(&stream->done_list, element, node);
     portEXIT_CRITICAL_SAFE(&video->stream_lock);
 
     if (xPortInIsrContext()) {
@@ -1032,7 +1158,6 @@ esp_err_t IRAM_ATTR esp_video_done_buffer(struct esp_video *video, uint32_t type
  */
 esp_err_t esp_video_queue_element(struct esp_video *video, uint32_t type, struct esp_video_buffer_element *element)
 {
-    uint32_t val = type;
     struct esp_video_stream *stream;
 
     stream = esp_video_get_stream(video, type);
@@ -1047,11 +1172,11 @@ esp_err_t esp_video_queue_element(struct esp_video *video, uint32_t type, struct
     }
 
     ELEMENT_SET_ALLOCATED(element);
-    SLIST_INSERT_HEAD(&stream->queued_list, element, node);
+    TAILQ_INSERT_TAIL(&stream->queued_list, element, node);
     portEXIT_CRITICAL_SAFE(&video->stream_lock);
 
     if (video->ops->notify) {
-        video->ops->notify(video, ESP_VIDEO_BUFFER_VALID, &val);
+        video->ops->notify(video, ESP_VIDEO_BUFFER_VALID, element);
     }
 
     return ESP_OK;
@@ -1115,9 +1240,17 @@ esp_err_t esp_video_queue_element_index_buffer(struct esp_video *video, uint32_t
     info = &stream->buffer->info;
 
     if ((info->memory_type != V4L2_MEMORY_USERPTR) ||
-            (((uintptr_t)buffer) % info->align_size) ||
-            (size < info->size)) {
+            (((uintptr_t)buffer) % info->align_size)) {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    /**
+     * For video output, the buffer is read only and maybe the size of the buffer is random, such JPEG decoder or H264 decoder, so we don't need to check the size.
+     */
+    if (V4L2_BUF_TYPE_VIDEO_OUTPUT != type) {
+        if (size < info->size) {
+            return ESP_ERR_INVALID_ARG;
+        }
     }
 
     if (info->caps & MALLOC_CAP_SPIRAM) {
@@ -1144,24 +1277,34 @@ esp_err_t esp_video_queue_element_index_buffer(struct esp_video *video, uint32_t
  * @param video Video object
  * @param type  Video stream type
  * @param index Video buffer element index
+ * @param payload Buffer element payload pointer
  *
  * @return
  *      - ESP_OK on success
  *      - Others if failed
  */
-uint8_t *esp_video_get_element_index_payload(struct esp_video *video, uint32_t type, int index)
+esp_err_t esp_video_get_element_index_payload(struct esp_video *video, uint32_t type, int index, uint8_t **payload)
 {
     struct esp_video_stream *stream;
     struct esp_video_buffer_element *element;
 
+    if (!payload) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     stream = esp_video_get_stream(video, type);
-    if (!stream) {
-        return NULL;
+    if (!stream || !stream->buffer) {
+        return ESP_ERR_INVALID_ARG;
     }
 
     element = ESP_VIDEO_BUFFER_ELEMENT(stream->buffer, index);
+    if (!element->buffer) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
-    return element->buffer;
+    *payload = element->buffer;
+
+    return ESP_OK;
 }
 
 /**
@@ -1170,25 +1313,28 @@ uint8_t *esp_video_get_element_index_payload(struct esp_video *video, uint32_t t
  * @param video Video object
  * @param type  Video stream type
  * @param ticks Wait OS tick
+ * @param element_ptr Video buffer element object pointer
  *
  * @return
- *      - Video buffer element object pointer on success
- *      - NULL if failed
+ *      - ESP_OK on success
+ *      - Others if failed
  */
-struct esp_video_buffer_element *esp_video_recv_element(struct esp_video *video, uint32_t type, uint32_t ticks)
+esp_err_t esp_video_recv_element(struct esp_video *video, uint32_t type, uint32_t ticks, struct esp_video_buffer_element **element_ptr)
 {
     BaseType_t ret;
     struct esp_video_stream *stream;
-    struct esp_video_buffer_element *element;
+    uint32_t val = type;
+
+    if (!element_ptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
     stream = esp_video_get_stream(video, type);
     if (!stream) {
-        return NULL;
+        return ESP_ERR_INVALID_ARG;
     }
 
     if (video->device_caps & V4L2_CAP_VIDEO_M2M) {
-        uint32_t val = type;
-
         /**
          * Software M2M device: this callback call can do real codec process.
          * Hardware M2M device: this callback call can start hardware if necessary.
@@ -1196,18 +1342,28 @@ struct esp_video_buffer_element *esp_video_recv_element(struct esp_video *video,
 
         ret = video->ops->notify(video, ESP_VIDEO_M2M_TRIGGER, &val);
         if (ret != ESP_OK) {
-            return NULL;
+            return ret;
         }
     }
 
     ret = xSemaphoreTake(stream->ready_sem, (TickType_t)ticks);
     if (ret != pdTRUE) {
-        return NULL;
+        return ESP_ERR_TIMEOUT;
     }
 
-    element = esp_video_get_done_element(video, type);
+#if CONFIG_ESP_VIDEO_ENABLE_DATA_PREPROCESSING
+    ret = video->ops->notify(video, ESP_VIDEO_DATA_PREPROCESSING, &val);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+#endif
 
-    return element;
+    *element_ptr = esp_video_get_done_element(video, type);
+    if (!*element_ptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return ESP_OK;
 }
 
 /**
@@ -1245,10 +1401,10 @@ esp_err_t esp_video_queue_m2m_elements(struct esp_video *video,
     portENTER_CRITICAL_SAFE(&video->stream_lock);
     if (ELEMENT_IS_FREE(src_element) && ELEMENT_IS_FREE(dst_element)) {
         ELEMENT_SET_ALLOCATED(src_element);
-        SLIST_INSERT_HEAD(&stream[0]->queued_list, src_element, node);
+        TAILQ_INSERT_TAIL(&stream[0]->queued_list, src_element, node);
 
         ELEMENT_SET_ALLOCATED(dst_element);
-        SLIST_INSERT_HEAD(&stream[1]->queued_list, dst_element, node);
+        TAILQ_INSERT_TAIL(&stream[1]->queued_list, dst_element, node);
 
         ret = ESP_OK;
     } else {
@@ -1295,10 +1451,10 @@ esp_err_t esp_video_done_m2m_elements(struct esp_video *video,
     portENTER_CRITICAL_SAFE(&video->stream_lock);
     if (ELEMENT_IS_FREE(src_element) && ELEMENT_IS_FREE(dst_element)) {
         ELEMENT_SET_ALLOCATED(src_element);
-        SLIST_INSERT_HEAD(&stream[0]->done_list, src_element, node);
+        TAILQ_INSERT_TAIL(&stream[0]->done_list, src_element, node);
 
         ELEMENT_SET_ALLOCATED(dst_element);
-        SLIST_INSERT_HEAD(&stream[1]->done_list, dst_element, node);
+        TAILQ_INSERT_TAIL(&stream[1]->done_list, dst_element, node);
 
         ret = ESP_OK;
     } else {
@@ -1361,18 +1517,18 @@ esp_err_t esp_video_get_m2m_queued_elements(struct esp_video *video,
     }
 
     portENTER_CRITICAL_SAFE(&video->stream_lock);
-    if (!SLIST_EMPTY(&stream[0]->queued_list) && !SLIST_EMPTY(&stream[1]->queued_list)) {
-        *src_element = SLIST_FIRST(&stream[0]->queued_list);
-        SLIST_REMOVE(&stream[0]->queued_list, *src_element, esp_video_buffer_element, node);
+    if (!TAILQ_EMPTY(&stream[0]->queued_list) && !TAILQ_EMPTY(&stream[1]->queued_list)) {
+        *src_element = TAILQ_FIRST(&stream[0]->queued_list);
+        TAILQ_REMOVE(&stream[0]->queued_list, *src_element, node);
         ELEMENT_SET_FREE(*src_element);
 
-        *dst_element = SLIST_FIRST(&stream[1]->queued_list);
-        SLIST_REMOVE(&stream[1]->queued_list, *dst_element, esp_video_buffer_element, node);
+        *dst_element = TAILQ_FIRST(&stream[1]->queued_list);
+        TAILQ_REMOVE(&stream[1]->queued_list, *dst_element, node);
         ELEMENT_SET_FREE(*dst_element);
 
         ret = ESP_OK;
     } else {
-        ret = ESP_ERR_NOT_FOUND;
+        ret = ESP_ERR_NO_MEM;
     }
     portEXIT_CRITICAL_SAFE(&video->stream_lock);
 
@@ -1598,6 +1754,11 @@ esp_err_t esp_video_set_sensor_format(struct esp_video *video, const esp_cam_sen
 
     CHECK_VIDEO_OBJ(video);
 
+    if (CAPTURE_VIDEO_STREAM(video) && CAPTURE_VIDEO_BUF_COUNT(video) > 0) {
+        ESP_LOGE(TAG, "Cannot set sensor format while buffers exist, please free buffers first (VIDIOC_REQBUFS count=0)");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (video->ops->set_sensor_format) {
         ret = video->ops->set_sensor_format(video, format);
         if (ret != ESP_OK) {
@@ -1643,6 +1804,36 @@ esp_err_t esp_video_get_sensor_format(struct esp_video *video, esp_cam_sensor_fo
 }
 
 /**
+ * @brief Enumerate sensor format
+ *
+ * @param video     Video object
+ * @param enum_fmt  Sensor format enumeration pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_enum_sensor_format(struct esp_video *video, struct v4l2_sensor_format_enum *enum_fmt)
+{
+    esp_err_t ret;
+
+    CHECK_VIDEO_OBJ(video);
+
+    if (video->ops->enum_sensor_format) {
+        ret = video->ops->enum_sensor_format(video, enum_fmt);
+        if (ret != ESP_OK) {
+            ESP_LOGD(TAG, "video->ops->enum_sensor_format=%x", ret);
+            return ret;
+        }
+    } else {
+        ESP_LOGD(TAG, "video->ops->enum_sensor_format=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return ESP_OK;
+}
+
+/**
  * @brief Query menu value
  *
  * @param video  Video object
@@ -1667,6 +1858,761 @@ esp_err_t esp_video_query_menu(struct esp_video *video, struct v4l2_querymenu *q
     } else {
         ESP_LOGD(TAG, "video->ops->query_menu=NULL");
         return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Set video owner
+ *
+ * @param video  Video object
+ * @param owner  non-zero: video reference adds by 1; 0: video reference subs by 1. Must be 0 or 1.
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_owner(struct esp_video *video, int owner)
+{
+    esp_err_t ret = ESP_ERR_INVALID_ARG;
+
+    CHECK_VIDEO_OBJ(video);
+
+    xSemaphoreTake(video->mutex, portMAX_DELAY);
+
+    if (owner) {
+        if (video->reference < (UINT8_MAX - 1)) {
+            video->reference += 1;
+            ret = ESP_OK;
+        }
+    } else {
+        if (video->reference > 0) {
+            video->reference -= 1;
+            ret = ESP_OK;
+        }
+    }
+
+    xSemaphoreGive(video->mutex);
+
+    return ret;
+}
+
+/**
+ * @brief Set V4L2 selection rectangles
+ *
+ * @param video     Video object
+ * @param selection Selection rectangles buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_selection(struct esp_video *video, struct v4l2_selection *selection)
+{
+    esp_err_t ret;
+    struct esp_video_stream *stream;
+
+    CHECK_VIDEO_OBJ(video);
+
+    stream = esp_video_get_stream(video, selection->type);
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (video->ops->set_selection) {
+        ret = video->ops->set_selection(video, selection);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "video->ops->set_selection=%x", ret);
+            return ret;
+        }
+    } else {
+        ESP_LOGD(TAG, "video->ops->set_selection=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    memcpy(&stream->rect, &selection->r, sizeof(struct v4l2_rect));
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Get V4L2 selection rectangles
+ *
+ * @param video     Video object
+ * @param selection Selection rectangles buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_selection(struct esp_video *video, struct v4l2_selection *selection)
+{
+    struct esp_video_stream *stream;
+
+    CHECK_VIDEO_OBJ(video);
+
+    stream = esp_video_get_stream(video, selection->type);
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    selection->flags = 0;
+    memcpy(&selection->r, &stream->rect, sizeof(struct v4l2_rect));
+
+    return ESP_OK;
+}
+
+#if CONFIG_ESP_VIDEO_ENABLE_CAMERA_MOTOR_CONTROLLER
+/**
+ * @brief Set format to motor
+ *
+ * @param video  Video object
+ * @param format Motor format pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_motor_format(struct esp_video *video, const esp_cam_motor_format_t *format)
+{
+    esp_err_t ret;
+
+    CHECK_VIDEO_OBJ(video);
+
+    if (video->ops->set_motor_format) {
+        ret = video->ops->set_motor_format(video, format);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "video->ops->set_motor_format=%x", ret);
+            return ret;
+        }
+    } else {
+        ESP_LOGD(TAG, "video->ops->set_motor_format=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Get format from motor
+ *
+ * @param video  Video object
+ * @param format Motor format pointer
+ * @brief Get V4L2 stream parameters
+ *
+ * @param video         Video object
+ * @param stream_parm   Stream parameters buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_motor_format(struct esp_video *video, esp_cam_motor_format_t *format)
+{
+    esp_err_t ret;
+
+    CHECK_VIDEO_OBJ(video);
+
+    if (video->ops->get_motor_format) {
+        ret = video->ops->get_motor_format(video, format);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "video->ops->get_motor_format=%x", ret);
+            return ret;
+        }
+    } else {
+        ESP_LOGD(TAG, "video->ops->get_motor_format=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return ESP_OK;
+}
+#endif
+
+/**
+ * @brief Set V4L2 stream parameters
+ *
+ * @param video         Video object
+ * @param stream_parm   Stream parameters buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_parm(struct esp_video *video, struct v4l2_streamparm *stream_parm)
+{
+    esp_err_t ret;
+    struct esp_video_stream *stream;
+
+    CHECK_VIDEO_OBJ(video);
+
+    stream = esp_video_get_stream(video, stream_parm->type);
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (video->ops->set_parm) {
+        ret = video->ops->set_parm(video, stream_parm, stream);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "video->ops->set_parm=%x", ret);
+            return ret;
+        }
+
+        /* Reset skip count after setting stream parameters */
+        stream->param.skip_count = 0;
+    } else {
+        ESP_LOGD(TAG, "video->ops->set_parm=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Get V4L2 stream parameters
+ *
+ * @param video         Video object
+ * @param stream_parm   Stream parameters buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_parm(struct esp_video *video, struct v4l2_streamparm *stream_parm)
+{
+    esp_err_t ret;
+    struct esp_video_stream *stream;
+
+    CHECK_VIDEO_OBJ(video);
+
+    stream = esp_video_get_stream(video, stream_parm->type);
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (video->ops->get_parm) {
+        ret = video->ops->get_parm(video, stream_parm, stream);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "video->ops->get_parm=%x", ret);
+            return ret;
+        }
+    } else {
+        ESP_LOGD(TAG, "video->ops->get_parm=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Skip video buffer
+ *
+ * @param video  Video object
+ * @param type   Video stream type
+ * @param buffer Video buffer pointer
+ *
+ * @return None
+ */
+void IRAM_ATTR esp_video_skip_buffer(struct esp_video *video, uint32_t type, uint8_t *buffer)
+{
+    struct esp_video_stream *stream;
+    struct esp_video_buffer_element *element;
+
+    stream = esp_video_get_stream(video, type);
+
+    element = esp_video_buffer_get_element_by_buffer(stream->buffer, buffer);
+
+    portENTER_CRITICAL_SAFE(&video->stream_lock);
+    if (!ELEMENT_IS_FREE(element)) {
+        portEXIT_CRITICAL_SAFE(&video->stream_lock);
+        return;
+    }
+
+    ELEMENT_SET_ALLOCATED(element);
+    TAILQ_INSERT_HEAD(&stream->queued_list, element, node);
+    portEXIT_CRITICAL_SAFE(&video->stream_lock);
+}
+
+static enum v4l2_buf_type esp_video_default_buf_type(struct esp_video *video)
+{
+    if (video->caps & V4L2_CAP_VIDEO_CAPTURE) {
+        return V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    }
+    if (video->caps & V4L2_CAP_VIDEO_OUTPUT) {
+        return V4L2_BUF_TYPE_VIDEO_OUTPUT;
+    }
+    if (video->caps & V4L2_CAP_VIDEO_M2M) {
+        return V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    }
+    if (video->caps & V4L2_CAP_META_CAPTURE) {
+        return V4L2_BUF_TYPE_META_CAPTURE;
+    }
+    return (enum v4l2_buf_type)0;
+}
+
+/**
+ * @brief Enumerate video frame sizes
+ *
+ * @param video     Video object
+ * @param frmsize   Frame size buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success or others if failed
+ */
+esp_err_t esp_video_enum_framesizes(struct esp_video *video, struct v4l2_frmsizeenum *frmsize)
+{
+    esp_err_t ret;
+    struct esp_video_stream *stream;
+
+    CHECK_VIDEO_OBJ(video);
+
+    stream = esp_video_get_stream(video, esp_video_default_buf_type(video));
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (video->ops->enum_framesizes) {
+        ret = video->ops->enum_framesizes(video, frmsize, stream);
+        if (ret != ESP_OK) {
+            ESP_LOGD(TAG, "video->ops->enum_framesizes=%x", ret);
+            return ret;
+        }
+    } else {
+        ESP_LOGD(TAG, "video->ops->enum_framesizes=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Enumerate video frame intervals
+ *
+ * @param video     Video object
+ * @param frmival   Frame interval buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success or others if failed
+ */
+esp_err_t esp_video_enum_frameintervals(struct esp_video *video, struct v4l2_frmivalenum *frmival)
+{
+    esp_err_t ret;
+    struct esp_video_stream *stream;
+
+    CHECK_VIDEO_OBJ(video);
+
+    stream = esp_video_get_stream(video, esp_video_default_buf_type(video));
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (video->ops->enum_frameintervals) {
+        ret = video->ops->enum_frameintervals(video, frmival, stream);
+        if (ret != ESP_OK) {
+            ESP_LOGD(TAG, "video->ops->enum_frameintervals=%x", ret);
+            return ret;
+        }
+    } else {
+        ESP_LOGD(TAG, "video->ops->enum_frameintervals=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Configure video stream buffer by given V4L2 format
+ *
+ * @param video     Video object
+ * @param format    Video format pointer
+ * @param frame_caps Frame buffer capabilities
+ *
+ * @return ESP_OK on success or others if failed
+ */
+esp_err_t esp_video_config_buffer(struct esp_video *video, const struct v4l2_format *format, uint32_t frame_caps)
+{
+    size_t alignments;
+    uint32_t buf_size;
+    const struct v4l2_pix_format *pix = &format->fmt.pix;
+    struct esp_video_stream *stream = esp_video_get_stream(video, format->type);
+
+    if (!stream) {
+        ESP_LOGE(TAG, "type=%" PRIu32 ", stream is not found", format->type);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+#if CONFIG_SPIRAM
+#if CONFIG_SPIRAM_ENC_EXEMPT
+    /**
+     * Test results show that enabling PSRAM encryption decreases PSRAM read and write performance.
+     *
+     * Therefore, if PSRAM encryption is enabled, the video buffer should be allocated in unencrypted regions
+     * to avoid reduced PSRAM read and write performance.
+     */
+    if (MALLOC_CAP_SPIRAM & frame_caps) {
+        frame_caps &= ~(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        frame_caps |= MALLOC_CAP_SPIRAM_NO_ENC;
+    }
+#endif
+
+    ESP_RETURN_ON_ERROR(esp_cache_get_alignment(frame_caps, &alignments), TAG, "failed to get cache alignment");
+#else
+    alignments = 4;
+#endif
+    ESP_LOGD(TAG, "alignments=%zu", alignments);
+
+    uint8_t bpp = 0;
+    for (int i = 0; i < ARRAY_SIZE(esp_video_format_desc_maps); i++) {
+        if (esp_video_format_desc_maps[i].pixel_format == pix->pixelformat) {
+            bpp = esp_video_format_desc_maps[i].bpp;
+            break;
+        }
+    }
+    if (bpp == 0) {
+        ESP_LOGE(TAG, "Unsupported pixel format: " V4L2_FMT_STR, V4L2_FMT_STR_ARG(pix->pixelformat));
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    if (pix->pixelformat == V4L2_PIX_FMT_JPEG || pix->pixelformat == V4L2_PIX_FMT_H264) {
+        /**
+         * When output format is JPEG or H264, try to use the sizeimage if it is larger than 0.
+         * If the sizeimage is not set, use the width, height and bpp to calculate the sizeimage.
+         */
+
+        if (pix->sizeimage > 0) {
+            buf_size = pix->sizeimage;
+        } else {
+            buf_size = pix->width * pix->height * bpp / 8;
+        }
+    } else {
+        /**
+         * When output format is not JPEG or H264, use the sizeimage if it is not less than the required size.
+         * If the sizeimage is not set, use the width, height and bpp to calculate the sizeimage.
+         */
+        buf_size = pix->width * pix->height * bpp / 8;
+        if (pix->sizeimage >= buf_size) {
+            buf_size = pix->sizeimage;
+        }
+    }
+
+    /**
+     * Align the buffer size to the alignment size.
+     * This is to ensure that the buffer size is a multiple of the alignment size.
+     */
+    buf_size = ESP_VIDEO_ALIGN(buf_size, alignments);
+
+    SET_STREAM_FORMAT_PIXEL_FORMAT(stream, pix->pixelformat);
+    SET_STREAM_FORMAT_WIDTH(stream, pix->width);
+    SET_STREAM_FORMAT_HEIGHT(stream, pix->height);
+    SET_STREAM_FORMAT_PIXEL_FORMAT(stream, pix->pixelformat);
+    stream->format.type = format->type;
+    SET_STREAM_BUF_INFO(stream, buf_size, alignments, frame_caps);
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Set DQBUF timeout
+ *
+ * @param video     Video object
+ * @param timeout   Timeout value, consider the FreeRTOS total timeout limit is portMAX_DELAY, so the too
+ *                  long timeout value will be treated as portMAX_DELAY
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_dqbuf_timeout(struct esp_video *video, const struct timeval *timeout)
+{
+    TickType_t ticks;
+    uint64_t timeout_ms;
+    uint64_t total_ticks;
+
+    CHECK_VIDEO_OBJ(video);
+    if (!timeout) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    timeout_ms = timeout->tv_sec * 1000 + timeout->tv_usec / 1000;
+    total_ticks = pdMS_TO_TICKS(timeout_ms);
+
+    if (total_ticks >= portMAX_DELAY) {
+        ticks = portMAX_DELAY;
+    } else {
+        ticks = (TickType_t)total_ticks;
+    }
+    video->dqbuf_timeout_ticks = ticks;
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Get DQBUF timeout
+ *
+ * @param video     Video object
+ * @param timeout   Timeout value
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_dqbuf_timeout(struct esp_video *video, struct timeval *timeout)
+{
+    CHECK_VIDEO_OBJ(video);
+
+    uint64_t timeout_ms = pdTICKS_TO_MS(video->dqbuf_timeout_ticks);
+    if (!timeout) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    timeout->tv_sec = timeout_ms / 1000;
+    timeout->tv_usec = (timeout_ms % 1000) * 1000;
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Subscribe video event
+ *
+ * @param video     Video object
+ * @param sub       Event subscription buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_subscribe_event(struct esp_video *video, struct v4l2_event_subscription *sub)
+{
+    esp_err_t ret;
+    bool queue_created = false;
+
+    CHECK_VIDEO_OBJ(video);
+
+    if (!sub || sub->type == V4L2_EVENT_ALL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!video->ops->subscribe_event) {
+        ESP_LOGD(TAG, "video->ops->subscribe_event=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    struct esp_video_stream *stream = video->stream;
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    /**
+     * If video is started, return error
+     */
+    if (stream->started) {
+        ESP_LOGE(TAG, "video is started or event queue is already created");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!video->event_queue) {
+        video->event_queue = xQueueCreate(EVENT_QUEUE_SIZE, sizeof(struct v4l2_event));
+        if (!video->event_queue) {
+            ESP_LOGE(TAG, "Failed to create event queue");
+            return ESP_ERR_NO_MEM;
+        }
+        queue_created = true;
+    }
+
+    ret = video->ops->subscribe_event(video, sub);
+    if (ret != ESP_OK) {
+        if (queue_created) {
+            vQueueDelete(video->event_queue);
+            video->event_queue = NULL;
+        }
+        ESP_LOGE(TAG, "video->ops->subscribe_event=%x", ret);
+        return ret;
+    }
+
+    video->event_sub = *sub;
+    return ESP_OK;
+}
+
+/**
+ * @brief Unsubscribe video event
+ *
+ * @param video     Video object
+ * @param sub       Event subscription buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_unsubscribe_event(struct esp_video *video, struct v4l2_event_subscription *sub)
+{
+    esp_err_t ret;
+
+    CHECK_VIDEO_OBJ(video);
+
+    if (!sub) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!video->ops->unsubscribe_event) {
+        ESP_LOGD(TAG, "video->ops->unsubscribe_event=NULL");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    struct esp_video_stream *stream = video->stream;
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    /**
+     * If video is started or event subscription is not set, return error
+     */
+    if (stream->started || !video->event_sub.type) {
+        ESP_LOGD(TAG, "video is started or event subscription is not set");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* Clear subscription first so ISR stops enqueueing. Keep event_queue until
+     * close so any blocked DQEVENT waiter can be deleted safely by the app.
+     */
+    ret = video->ops->unsubscribe_event(video, sub);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "video->ops->unsubscribe_event=%x", ret);
+        return ret;
+    }
+
+    memset(&video->event_sub, 0, sizeof(struct v4l2_event_subscription));
+    memset(&video->event, 0, sizeof(struct v4l2_event));
+
+    if (xQueueReset(video->event_queue) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to reset event queue");
+        return ESP_FAIL;
+    }
+
+    struct v4l2_event event = {
+        .type = V4L2_EVENT_ESP_VIDEO_EVENT_UNSUBSCRIBED,
+    };
+
+    if (xQueueSend(video->event_queue, &event, 0) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to send unsubscribed event");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Get video event
+ *
+ * @param video     Video object
+ * @param event     Event buffer pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_get_event(struct esp_video *video, struct v4l2_event *event)
+{
+    esp_err_t ret;
+
+    CHECK_VIDEO_OBJ(video);
+
+    if (!event) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!video->event_queue) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ret = xQueueReceive(video->event_queue, event, portMAX_DELAY);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to receive event: %d", ret);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Restart video hardware
+ *
+ * @param video     Video object
+ * @param config    Restart configuration
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_restart(struct esp_video *video, struct v4l2_restart_config *config)
+{
+    esp_err_t ret;
+
+    CHECK_VIDEO_OBJ(video);
+
+    if (!config) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    struct esp_video_stream *stream = esp_video_get_stream(video, config->type);
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!stream->started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!video->ops->restart) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    ret = video->ops->restart(video, config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "video->ops->restart=%x", ret);
+        return ret;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Set event callback
+ *
+ * @param video     Video object
+ * @param callback  Event callback pointer
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - Others if failed
+ */
+esp_err_t esp_video_set_event_callback(struct esp_video *video, struct v4l2_event_callback *callback)
+{
+    CHECK_VIDEO_OBJ(video);
+    if (!callback) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!video->event_queue) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    struct esp_video_stream *stream = video->stream;
+    if (!stream) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (stream->started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!video->ops->set_event_callback) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    esp_err_t ret = video->ops->set_event_callback(video, callback);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "video->ops->set_event_callback=%x", ret);
+        return ret;
     }
 
     return ESP_OK;

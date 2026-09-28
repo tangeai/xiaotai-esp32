@@ -1,24 +1,24 @@
 # P4 开发指南
 
-本指南适用于小钛 P4 `1.5.0`，芯片要求为 **ESP32-P4 rev3.2 及以上**。首次体验直接下载[完整 16 MB 烧录包](../README.md#开始使用)；需要修改代码时，再按下面的步骤编译。
+本指南适用于小钛 P4 `1.6.0`，芯片要求 rev3.2 及以上。先核对[芯片与构建配置](P4_REV3_VALIDATION.md)，再按顺序完成编译、烧录、热点配网和平台绑定。
 
 ## 准备源码与硬件
 
 准备完整的 `waveshare-esp32p4-xiaotai/` 目录，以及：
 
-- 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 开发板，P4 rev3.2 及以上，16MB Flash。
+- 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 开发板，P4 芯片 rev3.2 及以上，16MB Flash。
 - 配套屏幕、触摸、麦克风、扬声器和 OV5647 摄像头。
 - USB 数据线、可联网的 Wi-Fi、手机及[小钛平台](https://xiaotai.chat/)账号。
 
 源码已包含 SDK、模型、字体和提示音；首次编译由组件管理器下载其余依赖。版本和文件说明见[版本与依赖](DEPENDENCIES.md)。
 
-P4 通过板载 C6 联网。本工程只烧录 P4；出厂 C6 能正常联网时保持原样。C6 固件异常时再查[C6 准备与恢复](C6_PREPARATION.md)。
+P4 通过板载 C6 联网。本版要求 C6 固件与 ESP-Hosted 3.0.7 匹配；确认版本匹配且正常联网时无需重刷。首次升级或链路异常时按[C6 准备与恢复](C6_PREPARATION.md)核对两侧配置。
 
 ## 编译与烧录
 
 ### 1. 打开 ESP-IDF 环境
 
-按[官方安装指南](https://docs.espressif.com/projects/esp-idf/zh_CN/v5.5.4/esp32p4/get-started/index.html)安装 ESP-IDF 5.5.4，使用配套的 RISC-V 工具链，基线版本为 `14.2.0_20260121`。
+按[官方安装指南](https://docs.espressif.com/projects/esp-idf/zh_CN/v5.5.5/esp32p4/get-started/index.html)安装 ESP-IDF 5.5.5，使用配套的 RISC-V 工具链，基线版本为 `14.2.0_20260121`。
 
 Windows 打开安装器或 VS Code 扩展提供的 ESP-IDF PowerShell 终端。Linux/WSL 加载所安装 IDF 的 `export.sh`。进入 P4 工程目录后执行：
 
@@ -28,9 +28,11 @@ python --version
 riscv32-esp-elf-gcc --version
 ```
 
-预期 IDF 显示 5.5.4，Python 和编译器均能运行。命令不存在时，先检查终端环境。
+预期 IDF 显示 5.5.5，Python 和编译器均能运行。命令不存在时，先检查终端环境。
 
 ### 2. 编译
+
+下载[同版 C6 附件](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.0/c6_app.bin)，核对 [C6 指南](C6_PREPARATION.md#恢复基线)中的长度和 SHA-256，再放入 `main/assets/c6_app.bin`。该文件是 P4 APP 的内置只读资源，不在源码 Git 中；缺少或摘要不匹配时不要借用其他版本的镜像。
 
 ```sh
 idf.py build
@@ -44,7 +46,7 @@ idf.py build
 | `build/xiaotai_esp32p4.elf` | 调试和回溯定位 |
 | `build/flasher_args.json` | 本次完整烧录参数 |
 
-SDK、产品链接符号和 I2C 驱动检查也应通过。Windows 构建后处理使用 Python，无需 Bash。
+SDK、产品链接符号和 I2C 驱动检查也应通过。Windows 构建后处理由 CMake 执行，无需 Bash。
 
 若配置阶段报 `LV_USE_LIBJPEG_TURBO`、`LV_USE_LIBPNG` 或 `LV_USE_LZ4` 缺失，先按[组件版本检查误报](TESTING.md#组件版本检查误报)核对组件管理器版本，不要为此添加虚假的配置项。
 
@@ -66,7 +68,7 @@ Windows 通常为 `COM数字`，Linux 通常为 `/dev/ttyACM数字` 或 `/dev/tt
 python -m esptool --port PORT chip_id
 ```
 
-确认是 ESP32-P4 rev3.2 及以上。若显示 ESP32-C6，重新选择接口；烧录工具提示不兼容时，停止操作，不要跳过校验。
+确认是 ESP32-P4，芯片修订为 rev3.2 及以上。若显示 ESP32-C6，重新选择 P4 接口；烧录工具报告不兼容时停止，不绕过检查。
 
 ### 4. 烧录并查看启动
 
@@ -76,7 +78,7 @@ idf.py -p PORT flash monitor
 
 IDF 按生成的参数写入 bootloader、分区表和应用。下载模式未自动进入时，按板卡 BOOT/RESET 步骤重试。退出日志监视使用 `Ctrl+]`。
 
-启动日志应显示 `xiaotai_esp32p4`、版本 `1.5.0` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
+启动日志应显示 `xiaotai_esp32p4`、版本 `1.6.0` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
 
 **单独的应用 BIN 不能写到 0x0。** 日常使用上述完整烧录命令，保留 NVS 中的 Wi-Fi 和绑定信息。若旧固件分区不同，先比较[分区表](../partitions.csv)，不要直接整片擦除。
 

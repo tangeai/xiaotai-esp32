@@ -3,4 +3,4 @@ dependencies:
     version: ^1
   esp_lvgl_port:
     version: '*'
-  idf: '>=5.0'
+  idf: '>=5.2'

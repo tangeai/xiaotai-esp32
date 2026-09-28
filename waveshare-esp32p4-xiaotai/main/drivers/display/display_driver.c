@@ -84,12 +84,17 @@ esp_err_t display_driver_init(display_driver_handles_t *handles)
 
 	s_display = bsp_display_start_with_config(&cfg);
 	ESP_RETURN_ON_FALSE(s_display != NULL, ESP_FAIL, TAG, "bsp display start failed");
+	ESP_RETURN_ON_FALSE(lvgl_port_lock(1000), ESP_ERR_TIMEOUT, TAG, "LVGL lock failed");
 	lv_disp_set_rotation(s_display, DISPLAY_DRIVER_LANDSCAPE_ROTATION);
 	s_orientation = DISPLAY_DRIVER_ORIENTATION_LANDSCAPE;
 
 	s_touch_indev = bsp_display_get_input_dev();
-	ESP_RETURN_ON_FALSE(s_touch_indev != NULL, ESP_FAIL, TAG, "bsp touch init failed");
+	if (s_touch_indev == NULL) {
+		lvgl_port_unlock();
+		return ESP_FAIL;
+	}
 	display_driver_configure_touch(s_touch_indev);
+	lvgl_port_unlock();
 	ESP_RETURN_ON_ERROR(bsp_display_backlight_on(), TAG, "backlight on failed");
 	s_initialized = true;
 	if (handles != NULL) {

@@ -287,7 +287,7 @@ PSRAM 栈与内部 TCB 分开分配。`WithCaps` 任务仍须用匹配的删除�
 
 `sdkconfig.defaults` 的 192 KiB 内部预留是限制普通 `malloc` 使用的堆池，不是额外丢失的 192 KiB。通用 `malloc`、LVGL/cJSON 和 SDK 内部小对象仍受分配器策略影响；“优先 PSRAM”不等于“强制 PSRAM”。上述表格记录显式分配与已核对的客户端任务，不代表第三方库每个动态对象的实时位置。
 
-C6 关闭 modem sleep 并回读检查。SDIO 使用 4 线 40 MHz SDR；当前驱动不能把 50 MHz 当作同模式加速选项。RPC 按请求 UID 和响应类型匹配，初始化失败由所属模块回收资源，详见 [Hosted 修正](../components/espressif__esp_hosted/LOCAL_CHANGES.md)。
+C6 关闭 modem sleep 并回读检查。SDIO 使用 4 线 40 MHz SDR；当前驱动不能把 50 MHz 当作同模式加速选项。当前主机使用官方 ESP-Hosted 3.0.7；主从版本与引脚配置见 [C6 准备与恢复](C6_PREPARATION.md)。
 
 ## 手机热点配网
 

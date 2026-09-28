@@ -186,6 +186,10 @@ static atomic_int s_preferences_error;
 static const char *TAG = "starter_product";
 static EXT_RAM_BSS_ATTR atomic_int s_binding_ui_state;
 static EXT_RAM_BSS_ATTR atomic_int s_initialization_ui_state;
+static EXT_RAM_BSS_ATTR atomic_int s_c6_update_state;
+static EXT_RAM_BSS_ATTR atomic_uint s_c6_update_percent;
+static EXT_RAM_BSS_ATTR atomic_int s_c6_update_error;
+static EXT_RAM_BSS_ATTR atomic_bool s_c6_retry_requested;
 static bool s_started;
 static QueueHandle_t s_voice_queue;
 #if !CONFIG_IDF_TARGET_ESP32P4
@@ -325,6 +329,31 @@ void starter_product_set_binding_state(starter_product_binding_state_t state)
 void starter_product_set_initialization_state(starter_product_initialization_state_t state)
 {
     atomic_store_explicit(&s_initialization_ui_state, state, memory_order_release);
+}
+
+void starter_product_set_c6_update(starter_product_c6_update_state_t state,
+                                   uint8_t percent, esp_err_t error)
+{
+    atomic_store_explicit(&s_c6_update_percent, percent, memory_order_relaxed);
+    atomic_store_explicit(&s_c6_update_error, error, memory_order_relaxed);
+    atomic_store_explicit(&s_c6_update_state, state, memory_order_release);
+}
+
+bool starter_product_take_c6_retry(void)
+{
+    return atomic_exchange_explicit(&s_c6_retry_requested, false,
+                                    memory_order_acq_rel);
+}
+
+bool starter_product_request_c6_retry(void)
+{
+    if (atomic_load_explicit(&s_c6_update_state, memory_order_acquire) !=
+            STARTER_C6_UPDATE_RECOVERY ||
+        atomic_load_explicit(&s_c6_update_error, memory_order_relaxed) ==
+            ESP_ERR_NOT_SUPPORTED)
+        return false;
+    atomic_store_explicit(&s_c6_retry_requested, true, memory_order_release);
+    return true;
 }
 
 static int64_t monotonic_ms(void)

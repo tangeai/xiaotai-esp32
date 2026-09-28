@@ -1,147 +1,114 @@
 menu "Example Configuration"
-
-    config EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR
-        bool "Enable MIPI CSI Camera Sensor"
-        default y
-        depends on ESP_VIDEO_ENABLE_MIPI_CSI_VIDEO_DEVICE
-
-    if EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR
-        config EXAMPLE_MIPI_CSI_SCCB_I2C_PORT
-            int "MIPI CSI SCCB I2C Port Number"
-            default 0
-            range 0 1
-
-        config EXAMPLE_MIPI_CSI_SCCB_I2C_SCL_PIN
-            int "MIPI CSI SCCB I2C SCL Pin"
-            default 8
-            range -1 56
-
-        config EXAMPLE_MIPI_CSI_SCCB_I2C_SDA_PIN
-            int "MIPI CSI SCCB I2C SDA Pin"
-            default 7
-            range -1 56
-
-        config EXAMPLE_MIPI_CSI_SCCB_I2C_FREQ
-            int "MIPI CSI SCCB I2C Frequency"
-            default 100000
-            range 100000 400000
-            help
-                Increasing this value can reduce the initialization time of the camera sensor.
-                Please refer to the relevant instructions of the camera sensor to adjust the value.
-
-        config EXAMPLE_MIPI_CSI_CAM_SENSOR_RESET_PIN
-            int "MIPI CSI Camera Sensor Reset Pin"
-            default -1
-            range -1 56
-
-        config EXAMPLE_MIPI_CSI_CAM_SENSOR_PWDN_PIN
-            int "MIPI CSI Camera Sensor Power Down Pin"
-            default -1
-            range -1 56
-    endif
-
-    config EXAMPLE_ENABLE_DVP_CAM_SENSOR
-        bool "Enable DVP Camera Sensor"
-        default n
-        depends on ESP_VIDEO_ENABLE_DVP_VIDEO_DEVICE
-
-    if EXAMPLE_ENABLE_DVP_CAM_SENSOR
-        config EXAMPLE_DVP_SCCB_I2C_PORT
-            int "DVP SCCB I2C Port Number"
-            default 1
-            range 0 1
-
-        config EXAMPLE_DVP_SCCB_I2C_SCL_PIN
-            int "DVP SCCB I2C SCL Pin"
-            default 33
-            range -1 56
-
-        config EXAMPLE_DVP_SCCB_I2C_SDA_PIN
-            int "DVP SCCB I2C SDA Pin"
-            default 32
-            range -1 56
-
-        config EXAMPLE_DVP_SCCB_I2C_FREQ
-            int "DVP SCCB I2C Frequency"
-            default 100000
-            range 100000 400000
-            help
-                Increasing this value can reduce the initialization time of the camera sensor.
-                Please refer to the relevant instructions of the camera sensor to adjust the value.
-
-        config EXAMPLE_DVP_CAM_SENSOR_RESET_PIN
-            int "DVP Camera Sensor Reset Pin"
-            default -1
-            range -1 56
-
-        config EXAMPLE_DVP_CAM_SENSOR_PWDN_PIN
-            int "DVP Camera Sensor Power Down Pin"
-            default -1
-            range -1 56
-
-        config EXAMPLE_DVP_XCLK_FREQ
-            int "DVP XCLK Frequency"
-            default 20000000
-
-        config EXAMPLE_DVP_XCLK_PIN
-            int "DVP XCLK Pin"
-            range 0 56
-            default 20
-
-        config EXAMPLE_DVP_PCLK_PIN
-            int "DVP PCLK Pin"
-            range 0 56
-            default 21
-
-        config EXAMPLE_DVP_VSYNC_PIN
-            int "DVP VSYNC Pin"
-            range 0 56
-            default 23
-
-        config EXAMPLE_DVP_DE_PIN
-            int "DVP DE Pin"
-            range 0 56
-            default 22
-
-        config EXAMPLE_DVP_D0_PIN
-            int "DVP D0 Pin"
-            range 0 56
-            default 53
-
-        config EXAMPLE_DVP_D1_PIN
-            int "DVP D1 Pin"
-            range 0 56
-            default 54
-
-        config EXAMPLE_DVP_D2_PIN
-            int "DVP D2 Pin"
-            range 0 56
-            default 52
-
-        config EXAMPLE_DVP_D3_PIN
-            int "DVP D3 Pin"
-            range 0 56
-            default 1
-
-        config EXAMPLE_DVP_D4_PIN
-            int "DVP D4 Pin"
-            range 0 56
-            default 0
-
-        config EXAMPLE_DVP_D5_PIN
-            int "DVP D5 Pin"
-            range 0 56
-            default 45
-
-        config EXAMPLE_DVP_D6_PIN
-            int "DVP D6 Pin"
-            range 0 56
-            default 46
-
-        config EXAMPLE_DVP_D7_PIN
-            int "DVP D7 Pin"
-            range 0 56
-            default 47
-    endif
     
+    config EXAMPLE_CAMERA_VIDEO_BUFFER_NUMBER
+        int "Camera video buffer number"
+        default 2
+        help
+            Number of video buffers for the camera sensor.
+            
+            More buffers provide better performance and reduce frame drops,
+            but consume more memory. Recommended range: 2-4 buffers.
+            
+            - 2 buffers: Minimum for basic operation
+            - 3-4 buffers: Better performance for smooth streaming
+            - Higher values: May improve performance but increase memory usage
+
+    config EXAMPLE_JPEG_COMPRESSION_QUALITY
+        int "JPEG compression quality (%)"
+        default 80
+        range 1 100
+        help
+            JPEG compression quality percentage (1-100).
+
+            Higher values produce better image quality but larger data streams:
+            - 90-100: Excellent quality, high bandwidth usage
+            - 70-90: Good quality, moderate bandwidth (recommended for UVC)
+            - 50-70: Acceptable quality, lower bandwidth
+            - 1-50: Poor quality, minimal bandwidth
+
+            For UVC streaming, consider the USB bandwidth limitations
+            and host system capabilities when choosing quality level.
+
+            Recommended: 80 for balanced quality and performance.
+
+    config EXAMPLE_HTTP_PART_BOUNDARY
+        string "HTTP part boundary"
+        default "123456789000000000000987654321"
+        help
+            HTTP multipart boundary string used for MJPEG streaming.
+            
+            This boundary separates different parts in the HTTP multipart response.
+            Must be unique and not appear in the video data. The default value
+            is designed to be unique and safe for most applications.
+    
+    config EXAMPLE_MDNS_INSTANCE
+        string "mDNS instance"
+        default "web-cam"
+        help
+            mDNS instance name for service discovery.
+            
+            This name will be used to identify the camera service on the network.
+            Other devices can discover this camera using this instance name
+            through mDNS/Bonjour protocols.
+    
+    config EXAMPLE_MDNS_HOST_NAME
+        string "mDNS host name"
+        default "esp-web"
+        help
+            mDNS host name for the ESP32 device.
+            
+            This hostname will be used for network identification and can be
+            accessed as "esp-web.local" on the local network (if mDNS is supported
+            by the client device).
+
+    config EXAMPLE_ENABLE_MIPI_CSI_CROP
+        bool "Enable crop for MIPI-CSI video device"
+        default n
+        depends on EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR && SOC_ISP_CROP_SUPPORTED
+    
+    if EXAMPLE_ENABLE_MIPI_CSI_CROP
+        config EXAMPLE_MIPI_CSI_CROP_TOP_LEFT_H
+            int "Crop region top-left horizontal coordinate"
+            default 0
+            help
+                Horizontal coordinate of the top-left corner for the crop.
+                Must be an even number and less than bottom-right horizontal coordinate.
+
+        config EXAMPLE_MIPI_CSI_CROP_TOP_LEFT_V
+            int "Crop region top-left vertical coordinate"
+            default 0
+            help
+                Vertical coordinate of the top-left corner for the crop.
+                Must be an even number and less than bottom-right vertical coordinate.
+
+        config EXAMPLE_MIPI_CSI_CROP_WIDTH
+            int "Crop region width"
+            default 640
+            help
+                Width of the crop region in pixels.
+                Must be greater than 0 and not exceed the sensor output width.
+
+        config EXAMPLE_MIPI_CSI_CROP_HEIGHT
+            int "Crop region height"
+            default 480
+            help
+                Height of the crop region in pixels.
+                Must be greater than 0 and not exceed the sensor output height.
+    endif
+
+    config EXAMPLE_DISABLE_ISP_PIPELINE_AGC
+        bool "Disable Auto Gain Control(AGC)"
+        default n
+        depends on ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER
+        help
+            Disables the Auto Gain Control (AGC) functionality in the ISP (Image Signal Processor) pipeline controller.
+            When enabled, the ISP pipeline will not automatically adjust the sensor's gain based on scene brightness,
+            which may be useful for custom exposure scenarios or testing purposes.
+
+            If disabled (default), the ISP pipeline will autonomously manage gain adjustments to optimize image quality
+            under varying lighting conditions.
+
+            Note:
+              - This option is only available when the ISP pipeline controller is enabled.
+              - Disabling AGC may require manual gain adjustments to ensure correct image exposure.
 endmenu

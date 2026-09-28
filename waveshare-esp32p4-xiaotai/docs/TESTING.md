@@ -7,8 +7,8 @@
 | 现象 | 检查顺序 |
 | --- | --- |
 | 模型、源码或检查脚本缺失 | 核对完整 P4 目录；旧缓存引用其他工程时运行 `idf.py reconfigure`，再构建 |
-| 组件下载失败 | IDF 5.5.4 环境、组件仓库访问和依赖锁；保留本地补丁组件 |
-| Windows 链接后报 Bash 或旧路径错误 | 确认使用当前源码与缓存；当前后处理使用 Python |
+| 组件下载失败 | IDF 5.5.5 环境、组件仓库访问和依赖锁；保留本地补丁组件 |
+| Windows 链接后报 Bash 或旧路径错误 | 确认使用当前源码与缓存；当前固件检查由 CMake 执行，不依赖 Bash 后处理 |
 | SDK ABI、trace 或 tick 检查失败 | 对照附带 SDK 的版本说明和有效配置，保留第一条错误 |
 | 芯片或 Flash 不匹配 | 串口、P4 修订、16MB 配置及分区；确认后再烧录 |
 | Hosted/SDIO 初始化失败 | C6 固件、供电、板型和 SDIO 配置，见 [C6 指南](C6_PREPARATION.md) |
@@ -18,7 +18,7 @@
 
 ### 组件版本检查误报
 
-本机 ESP-IDF 5.5.4 环境中的 `idf-component-manager 2.4.9` 曾在可选的组件新版本检查阶段，将 `LV_USE_LIBJPEG_TURBO`、`LV_USE_LIBPNG`、`LV_USE_LZ4` 报为缺失。本工程锁定的 LVGL 8.3.11 不要求这些配置。先用 `python -m pip show idf-component-manager` 核对版本，并保留最早的配置错误；其他组件下载或编译错误不适用此处理。
+旧环境中的 `idf-component-manager 2.4.9` 曾在可选的组件新版本检查阶段，将 `LV_USE_LIBJPEG_TURBO`、`LV_USE_LIBPNG`、`LV_USE_LZ4` 报为缺失。当前使用 LVGL 8.4.0；如再次出现此类配置错误，先用 `python -m pip show idf-component-manager` 核对管理器版本并保留首条错误，不能把其他下载或编译错误归为同一原因。
 
 本分支在 CMake 中默认跳过这项可选的新版本探测，依赖解析、锁文件和实际 Kconfig 检查仍然执行；直接运行 `idf.py build` 即可。需要专门检查组件更新时，可在当前 PowerShell 会话显式开启探测：
 

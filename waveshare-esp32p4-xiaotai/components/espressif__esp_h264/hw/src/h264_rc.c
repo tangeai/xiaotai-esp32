@@ -32,11 +32,6 @@ static const int init_mad[] = { 1, 3, 4, 5, 6, 7, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 
 
 #define CLIP3(min, max, v) ((v) > (max) ? (max) : ((v) < (min) ? (min) : (v)))
 
-/* Live calls must not spend a long quiet-scene credit in one motion burst.
- * Keep two frames of rate-control breathing room while retaining upstream's
- * corrected signed arithmetic and QP clamping. */
-#define ESP_H264_RC_RESERVOIR_FRAMES 2LL
-
 void esp_h264_enc_hw_rc_del(esp_h264_rc_hd_t rc_hd)
 {
     if (rc_hd) {
@@ -72,8 +67,8 @@ esp_h264_rc_hd_t esp_h264_enc_hw_rc_new(uint8_t qp_max, uint8_t qp_min, uint32_t
     if (prc->bits_per_frame == 0) {
         prc->bits_per_frame = 1;
     }
-    prc->ebits_sat_clip =
-        (int64_t)prc->bits_per_frame * ESP_H264_RC_RESERVOIR_FRAMES;
+    /* Limit cumulative error correction to one second of the bitrate budget. */
+    prc->ebits_sat_clip = bitrate;
     prc->mb_cnt = mb_cnt;
     mad_idx = CLIP3(0, INIT_MAD_MAX_IDX, 53 / (prc->qpm + 1));
     mad = 8.0f / init_mad[mad_idx];
@@ -102,25 +97,11 @@ void esp_h264_enc_hw_rc_set_bt_fps(esp_h264_rc_hd_t rc_hd, uint32_t bitrate, uin
     if (prc == NULL || fps == 0) {
         return;
     }
-    uint32_t bits_per_frame = bitrate / fps;
-    if (bits_per_frame == 0) {
-        bits_per_frame = 1;
+    prc->bits_per_frame = bitrate / fps;
+    if (prc->bits_per_frame == 0) {
+        prc->bits_per_frame = 1;
     }
-    if (bits_per_frame == prc->bits_per_frame) {
-        return;
-    }
-
-    prc->bits_per_frame = bits_per_frame;
-    prc->target_frame_bits = bits_per_frame;
-    for (uint8_t i = 0; i < 4; i++) {
-        prc->frame_bits_last[i] = bits_per_frame;
-    }
-    prc->frame_bits_last4_average = bits_per_frame;
-    prc->ebits = 0;
-    prc->err_sum = 0.0f;
-    prc->eqp = 0;
-    prc->ebits_sat_clip =
-        (int64_t)bits_per_frame * ESP_H264_RC_RESERVOIR_FRAMES;
+    prc->ebits_sat_clip = bitrate;
 }
 
 void esp_h264_rc_start(esp_h264_rc_hd_t rc_hd, bool is_iframe, uint32_t *rate, uint32_t *pred_mad, uint8_t *qp)

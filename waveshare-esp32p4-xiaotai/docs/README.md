@@ -15,6 +15,5 @@
 - [C6 准备与恢复](C6_PREPARATION.md)：C6 固件缺失、版本不兼容或 SDIO 初始化异常时使用。
 - [唤醒组件](../components/starter_voice/README.md)：模型接入、FFT 和卷积适配。
 - [TiRTC SDK](../components/tirtc_sdk/VERSION.md)：库版本、补丁与校验值。
-- [Hosted 修正](../components/espressif__esp_hosted/LOCAL_CHANGES.md)：主机驱动的并发与资源回收修正。
 
 供应商组件内的 README 和示例说明对应其上游工程。小钛的板型、入口和操作步骤以本目录文档为准。

@@ -1,17 +1,18 @@
 
-set(COMPONENT_PRIV_INCLUDEDIRS "device/zl38063/api_lib" "device/priv_include")
+set(COMPONENT_PRIV_INCLUDEDIRS "device/zl38063/api_lib" "device/zl38063/firmware" "device/priv_include")
 
 set(COMPONENT_ADD_INCLUDEDIRS include interface device/include)
 
 # set conversion sources
 set(COMPONENT_SRCS
   esp_codec_dev.c
+  codec_dev_mirror.c
   esp_codec_dev_vol.c
   esp_codec_dev_if.c
   audio_codec_sw_vol.c
 )
 
-set(priv_requires freertos)
+set(priv_requires freertos esp_ringbuf esp_hw_support)
 if("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_GREATER_EQUAL "5.3")
   list(APPEND priv_requires esp_driver_gpio esp_driver_i2c esp_driver_i2s esp_driver_spi)
 else()
@@ -33,6 +34,7 @@ list(APPEND COMPONENT_SRCS
   platform/audio_codec_data_i2s.c
   platform/audio_codec_ctrl_spi.c
   platform/esp_codec_dev_os.c
+  device/common/codec_ref_mgr.c
 )
 
 if(CONFIG_CODEC_DATA_ADC_SUPPORT AND "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_GREATER_EQUAL "5.0")
@@ -84,7 +86,6 @@ if (CONFIG_CODEC_DUMMY_SUPPORT)
 endif()
 
 if (CONFIG_CODEC_ZL38063_SUPPORT)
-  list(APPEND COMPONENT_PRIV_INCLUDEDIRS device/zl38063/firmware)
   list(APPEND COMPONENT_SRCS device/zl38063/zl38063.c
     device/zl38063/api_lib/vprocTwolf_access.c
     device/zl38063/api_lib/vproc_common.c
