@@ -8,10 +8,10 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 source = (root / "components/starter_tirtc/src/starter_tirtc.c").read_text()
 header = (root / "components/starter_tirtc/include/starter_tirtc.h").read_text(encoding="utf-8")
-constants = "\n".join(re.findall(r"^#define STARTER_H5_.*$", header, re.M)) + "\n"
+constants = "\n".join(re.findall(r"^#define (?:STARTER_H5_|STARTER_TIRTC_AUDIO_).*$", header, re.M)) + "\n"
 callbacks = []
 for name in ("on_subscribe_audio", "on_subscribe_video", "on_unsubscribe_audio", "on_unsubscribe_video",
-             "starter_tirtc_send_alaw", "on_audio", "clear_subscriptions"):
+             "starter_tirtc_send_audio", "on_audio", "clear_subscriptions"):
     match = re.search(r"(?:static )?(?:int|void) " + name + r"\([^)]*\)\s*\{.*?\n\}", source, re.S)
     assert match, name
     callbacks.append(match[0])
@@ -28,7 +28,9 @@ prefix = r'''
 #define NULL 0
 #define TIRTC_E_INVALID_PARAMETER -1
 #define TIRTC_AUDIO_ALAW 2
+#define TIRTC_AUDIO_OPUS 4
 #define TIRTC_AUDIOSAMPLE_8K16B1C 0
+#define TIRTC_AUDIOSAMPLE_16K16B1C 1
 #define H5_AUDIO_STREAM STARTER_H5_UP_AUDIO_STREAM_ID
 #define H5_VIDEO_STREAM STARTER_H5_UP_VIDEO_STREAM_ID
 #define AI_AUDIO_STREAM 1U
@@ -47,12 +49,17 @@ static unsigned sent, received;
 static uint8_t expected_tx;
 static int TiRtcSendAudioStream(tirtc_conn_t c, const TIRTCFRAMEINFO *f, const void *data) {
     assert(c == 7 && data && f->stream_id == expected_tx);
-    assert(f->media == TIRTC_AUDIO_ALAW && f->flags == 0 && f->length == 160);
+    if (s_mode == STARTER_TIRTC_H5) {
+        assert(f->media == TIRTC_AUDIO_ALAW && f->flags == TIRTC_AUDIOSAMPLE_8K16B1C);
+    } else {
+        assert(f->media == TIRTC_AUDIO_OPUS && f->flags == TIRTC_AUDIOSAMPLE_16K16B1C);
+    }
+    assert(f->length == 60);
     ++sent; return 0;
 }
 static void receive(starter_tirtc_mode_t mode, uint32_t gen,
                     const starter_tirtc_frame_t *f, const void *data, void *context) {
-    assert((int)mode == s_mode && gen == 3 && f->length == 160 && data && context == NULL);
+    assert((int)mode == s_mode && gen == 3 && f->length == 60 && data && context == NULL);
     ++received;
 }
 static struct {
@@ -107,24 +114,24 @@ int main(void) {
             assert(!s_audio_subscribed);
         }
     }
-    unsigned char data[160] = {0};
+    unsigned char data[60] = {0};
     s_mode=STARTER_TIRTC_H5;
     clear_subscriptions();
-    assert(starter_tirtc_send_alaw(100,data,sizeof(data))<0 && sent==0);
+    assert(starter_tirtc_send_audio(100,data,sizeof(data))<0 && sent==0);
     assert(on_subscribe_audio(7,14)<0); /* Our receive ID is not our TX ID. */
-    assert(starter_tirtc_send_alaw(100,data,sizeof(data))<0 && sent==0);
+    assert(starter_tirtc_send_audio(100,data,sizeof(data))<0 && sent==0);
     assert(on_subscribe_audio(7,10)==0);
     expected_tx=10;
-    assert(starter_tirtc_send_alaw(100,data,sizeof(data))==0 && sent==1);
+    assert(starter_tirtc_send_audio(100,data,sizeof(data))==0 && sent==1);
     on_unsubscribe_audio(7,14);
-    assert(starter_tirtc_send_alaw(100,data,sizeof(data))==0 && sent==2);
+    assert(starter_tirtc_send_audio(100,data,sizeof(data))==0 && sent==2);
     on_unsubscribe_audio(7,10);
-    assert(starter_tirtc_send_alaw(100,data,sizeof(data))<0 && sent==2);
+    assert(starter_tirtc_send_audio(100,data,sizeof(data))<0 && sent==2);
     on_subscribe_audio(7,10); on_subscribe_video(7,11);
     clear_subscriptions();
     assert(!s_audio_subscribed && !s_video_subscribed);
-    assert(starter_tirtc_send_alaw(100,data,sizeof(data))<0 && sent==2);
-    TIRTCFRAMEINFO frame={.stream_id=14,.media=TIRTC_AUDIO_ALAW,.flags=0,.length=160};
+    assert(starter_tirtc_send_audio(100,data,sizeof(data))<0 && sent==2);
+    TIRTCFRAMEINFO frame={.stream_id=14,.media=TIRTC_AUDIO_ALAW,.flags=TIRTC_AUDIOSAMPLE_8K16B1C,.length=60};
     on_audio(7,&frame,data);
     assert(received==0); /* Frames are not admitted before our subscription. */
     s_h5_audio_rx_generation=3;
@@ -134,15 +141,15 @@ int main(void) {
     assert(received==1 && s_downlink_audio_rejected==16);
     frame.stream_id=14; on_audio(8,&frame,data);
     frame.media=99; on_audio(7,&frame,data);
-    frame.media=TIRTC_AUDIO_ALAW; frame.flags=1; on_audio(7,&frame,data);
+    frame.media=TIRTC_AUDIO_ALAW; frame.flags=TIRTC_AUDIOSAMPLE_16K16B1C; on_audio(7,&frame,data);
     assert(received==1);
     for (int mode=STARTER_TIRTC_AI; mode<=STARTER_TIRTC_ROOM; ++mode) {
         s_mode=mode;
         expected_tx=(mode==STARTER_TIRTC_AI || mode==STARTER_TIRTC_ROOM)?1:10;
-        assert(starter_tirtc_send_alaw(100,data,sizeof(data))==0);
+        assert(starter_tirtc_send_audio(100,data,sizeof(data))==0);
     }
     s_connection=0;
-    assert(starter_tirtc_send_alaw(100,data,sizeof(data))<0);
+    assert(starter_tirtc_send_audio(100,data,sizeof(data))<0);
 }
 '''
 with tempfile.TemporaryDirectory(prefix="s3-audio-only-") as tmp:
@@ -154,4 +161,4 @@ with tempfile.TemporaryDirectory(prefix="s3-audio-only-") as tmp:
                         f"-DCONFIG_IDF_TARGET_ESP32P4={p4}", str(path / "test.c"),
                         "-o", str(path / "test")], check=True)
         subprocess.run([str(path / "test")], check=True)
-print("PASS: H5 stream IDs, TX subscription gate, RX filter, unsubscribe/session isolation, other audio protocols unchanged")
+print("PASS: H5 PCMA/8k and non-H5 Opus/16k contracts, stream IDs, TX gate, RX filter and isolation")

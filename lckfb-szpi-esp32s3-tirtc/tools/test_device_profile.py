@@ -24,16 +24,32 @@ prefix = r'''
 #include <stdio.h>
 #include <string.h>
 #define CONFIG_IDF_TARGET_ESP32P4 0
+#define EXT_RAM_BSS_ATTR
 #define ESP_OK 0
 #define PLATFORM_SERVICE_DEVICE 2
 #define VOIP_PROFILE_RETRY_MS 15000
+#define DEVICE_PROFILE_JSON_CAPACITY 1280U
+#define DEVICE_PROFILE_CHIP_MODEL "ESP32-S3"
+#define DEVICE_PROFILE_BOARD_MODEL "LCKFB-SZPI-ESP32S3-V1.0.1"
+#define STARTER_H5_UP_AUDIO_STREAM_ID 10U
+#define STARTER_H5_UP_VIDEO_STREAM_ID 11U
+#define STARTER_H5_DOWN_AUDIO_STREAM_ID 14U
+#define STARTER_H5_DOWN_VIDEO_STREAM_ID 15U
+#define STARTER_H5_AUDIO_CODEC_NAME "alaw"
+#define STARTER_H5_AUDIO_SAMPLE_RATE_HZ 8000U
+#define STARTER_TIRTC_AUDIO_CODEC_NAME "opus"
+#define STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ 16000U
 #define ESP_LOGI(...) ((void)0)
 #define ESP_LOGW(...) ((void)0)
+#define ESP_LOGE(...) ((void)0)
 typedef int esp_err_t;
+typedef struct { char version[32]; } esp_app_desc_t;
+static const esp_app_desc_t app_desc = {.version = "1.5.0-test"};
+static const esp_app_desc_t *esp_app_get_description(void) {return &app_desc;}
 static bool s_voip_profile_inflight, ready, online;
 static int64_t s_voip_profile_retry_at_ms;
 static int calls, result;
-static const char *snapshot;
+static char snapshot[2048];
 static bool platform_client_ready(void) {return ready;}
 static bool platform_client_mqtt_connected(void) {return online;}
 static int64_t now_ms(void) {return 1000;}
@@ -43,9 +59,9 @@ static esp_err_t platform_client_request_metadata(int service, const char *path,
     assert(service == PLATFORM_SERVICE_DEVICE);
     assert(strcmp(path, "/v1/device/profile") == 0);
     assert(timeout == 10000 && cb == voip_profile_response && context == NULL);
-    assert(body && strlen(body) < 2048);
-    if (snapshot) assert(strcmp(body, snapshot) == 0);
-    snapshot = body; ++calls; return result;
+    assert(body && strlen(body) < sizeof(snapshot));
+    if (snapshot[0]) assert(strcmp(body, snapshot) == 0);
+    snprintf(snapshot, sizeof(snapshot), "%s", body); ++calls; return result;
 }
 '''
 main = r'''
@@ -71,7 +87,12 @@ with tempfile.TemporaryDirectory(prefix="s3-profile-") as tmp:
     payload_bytes = len(output.rstrip("\r\n").encode("utf-8"))
     assert payload_bytes + 1 <= body_limit and payload_bytes <= 16 * 1024
     body = json.loads(output)
-    assert set(body) == {"profiles"}
+    assert set(body) == {"hardware", "firmware_version", "profiles"}
+    assert body["hardware"] == {
+        "chip_model": "ESP32-S3",
+        "board_model": "LCKFB-SZPI-ESP32S3-V1.0.1",
+    }
+    assert body["firmware_version"] == "1.5.0-test"
     profiles = body["profiles"]
     assert set(profiles) == {"stream", "call", "voip"}
     # API contract: no unknown fields/nulls and full replacement per scene.
@@ -93,19 +114,22 @@ with tempfile.TemporaryDirectory(prefix="s3-profile-") as tmp:
             assert type(profile[field]) is int
         for field in ("no_video", "hor_mirror", "vert_mirror"):
             assert type(profile[field]) is bool
-        assert profile["audio_rate"] == 8000 and profile["audio_channels"] == 1
+        expected_rate = 8000 if name == "stream" else 16000
+        assert profile["audio_rate"] == expected_rate and profile["audio_channels"] == 1
         assert profile["no_video"] is (name != "stream")
         assert profile["camera_rotation"] == 0
         assert profile["hor_mirror"] is False and profile["vert_mirror"] is False
         assert profile["aspect_ratio"] == "4:3" and profile["object_fit"] == "contain"
+    assert profiles["stream"]["up_audio_mt"] == ["alaw"]
+    assert profiles["stream"]["down_audio_mt"] == ["alaw"]
+    assert profiles["call"]["up_audio_mt"] == ["opus"]
+    assert profiles["call"]["down_audio_mt"] == ["opus"]
     for name in ("stream", "call"):
-        assert profiles[name]["up_audio_mt"] == ["alaw"]
-        assert profiles[name]["down_audio_mt"] == ["alaw"]
         assert profiles[name]["down_video_mt"] == []
     assert profiles["stream"]["up_video_mt"] == ["mjpeg"]
     assert profiles["stream"]["aspect_ratio"] == "4:3"
     assert profiles["call"]["up_video_mt"] == []
-    assert profiles["voip"]["down_audio_mt"] == "alaw"
+    assert profiles["voip"]["down_audio_mt"] == "opus"
     assert profiles["voip"]["up_video_mt"] == profiles["voip"]["down_video_mt"] == "none"
     assert profiles["voip"]["screen_width"] == 320 and profiles["voip"]["screen_height"] == 240
     for field in ("screen_width", "screen_height", "down_video_rotation", "calling_timeout_sec"):
@@ -113,5 +137,5 @@ with tempfile.TemporaryDirectory(prefix="s3-profile-") as tmp:
     assert profiles["voip"]["down_video_rotation"] == 0
     assert profiles["voip"]["video_res_mode"] == "auto"
     assert profiles["voip"]["calling_timeout_sec"] == 30
-print(f"PASS: device profile 16/12/16 fields, stream IDs, types, {payload_bytes}/{body_limit} bytes, "
-      "codec contract, online/inflight gate, retry snapshot")
+print(f"PASS: device profile metadata + 16/12/16 fields, stream IDs, types, "
+      f"{payload_bytes}/{body_limit} bytes, codec contract, online/inflight gate, retry snapshot")

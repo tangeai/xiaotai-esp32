@@ -2,6 +2,12 @@
 
 #include <string.h>
 
+static uint64_t samples_to_us(size_t samples)
+{
+    return ((uint64_t)samples * 1000000U + STARTER_PLAYOUT_SAMPLE_RATE_HZ - 1U) /
+           STARTER_PLAYOUT_SAMPLE_RATE_HZ;
+}
+
 static uint32_t bounded_target(uint32_t ms)
 {
     ms = ((ms + 19U) / 20U) * 20U;
@@ -155,7 +161,7 @@ uint32_t starter_playout_output_estimate(const starter_playout_t *q, uint64_t no
 
 void starter_playout_output_written(starter_playout_t *q, uint64_t now_us, size_t samples)
 {
-    uint64_t estimate = starter_playout_output_estimate(q, now_us) + (uint64_t)samples * 125U;
+    uint64_t estimate = starter_playout_output_estimate(q, now_us) + samples_to_us(samples);
     q->output_estimate_us = estimate > STARTER_PLAYOUT_DMA_ESTIMATE_US ?
         STARTER_PLAYOUT_DMA_ESTIMATE_US : (uint32_t)estimate;
     q->output_updated_us = now_us;
@@ -164,7 +170,7 @@ void starter_playout_output_written(starter_playout_t *q, uint64_t now_us, size_
 
 uint16_t starter_playout_quantum(starter_playout_t *q, size_t pending_samples, uint64_t now_us)
 {
-    uint64_t available = q->queued_us + (uint64_t)pending_samples * 125U;
+    uint64_t available = q->queued_us + samples_to_us(pending_samples);
     uint64_t level = available + starter_playout_output_estimate(q, now_us);
     /* The prebuffer still ranges from 60 to 500 ms. Rate control must not try
      * to drain a 90 ms DMA pipeline below its own scheduling headroom. */
@@ -183,7 +189,7 @@ uint16_t starter_playout_quantum(starter_playout_t *q, size_t pending_samples, u
         q->rate_mode = 1;
     }
     /* Never wait for an extra source sample just to speed up a short tail. */
-    if (q->rate_mode > 0 && available < STARTER_PLAYOUT_PCM_CAPACITY * 125U)
+    if (q->rate_mode > 0 && available < samples_to_us(STARTER_PLAYOUT_PCM_CAPACITY))
         q->rate_mode = 0;
     return (uint16_t)((int)STARTER_PLAYOUT_PCM_SAMPLES + q->rate_mode);
 }

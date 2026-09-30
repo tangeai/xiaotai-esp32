@@ -165,43 +165,43 @@ int main(void) {
 def test_preroll():
     run("preroll: ordered replay/live, backpressure, tokens, cancellation, timeout, overflow, gaps", r'''
 #include "starter_preroll.h"
-static int16_t memory[PREROLL_CAPACITY_SAMPLES], pcm[160], output[160];
+static int16_t memory[PREROLL_CAPACITY_SAMPLES], pcm[320], output[320];
 static starter_preroll_t q;
 static unsigned value;
 static int64_t tick;
 static void append(void) {
-    for (unsigned i=0; i<160; ++i) pcm[i]=(int16_t)value++;
+    for (unsigned i=0; i<320; ++i) pcm[i]=(int16_t)value++;
     tick += 20;
-    starter_preroll_append(&q, pcm, 160, tick);
+    starter_preroll_append(&q, pcm, 320, tick);
 }
 int main(void) {
     starter_preroll_init(&q, memory, PREROLL_CAPACITY_SAMPLES);
     for (unsigned i=0; i<100; ++i) append();
-    assert(q.count == 12000);
+    assert(q.count == 24000);
     uint32_t token=starter_preroll_prepare(&q, tick, tick);
-    assert(token && q.count == 6400);
+    assert(token && q.count == 12800);
     assert(starter_preroll_prepare(&q, tick, tick) == 0);
     for (unsigned i=0; i<100; ++i) append();
     assert(!starter_preroll_bind(&q, token+1, 7, tick));
     assert(starter_preroll_bind(&q, token, 7, tick));
     assert(!starter_preroll_bind(&q, token, 8, tick));
     uint32_t timestamp;
-    assert(!starter_preroll_peek(&q, 8, output, 160, &timestamp));
-    unsigned expected=9600, packets=0;
-    while (starter_preroll_peek(&q, 7, output, 160, &timestamp)) {
+    assert(!starter_preroll_peek(&q, 8, output, 320, &timestamp));
+    unsigned expected=19200, packets=0;
+    while (starter_preroll_peek(&q, 7, output, 320, &timestamp)) {
         assert(timestamp == 1200 + packets*20);
         assert(output[0] == (int16_t)expected);
-        assert(starter_preroll_peek(&q, 7, output, 160, &timestamp)); /* no consume on backpressure */
-        for (unsigned i=0;i<160;++i) assert(output[i] == (int16_t)expected++);
-        starter_preroll_consume(&q, 160); ++packets;
+        assert(starter_preroll_peek(&q, 7, output, 320, &timestamp)); /* no consume on backpressure */
+        for (unsigned i=0;i<320;++i) assert(output[i] == (int16_t)expected++);
+        starter_preroll_consume(&q, 320); ++packets;
     }
-    assert(expected == 32000);
+    assert(expected == 64000);
     append();
-    assert(starter_preroll_peek(&q, 7, output, 160, &timestamp));
+    assert(starter_preroll_peek(&q, 7, output, 320, &timestamp));
     assert(output[0] == (int16_t)expected); /* live follows replay exactly once */
     starter_preroll_clear(&q);
     assert(!starter_preroll_valid(&q, token, tick));
-    assert(!starter_preroll_peek(&q, 7, output, 160, &timestamp));
+    assert(!starter_preroll_peek(&q, 7, output, 320, &timestamp));
     append();
     uint32_t next=starter_preroll_prepare(&q, tick, tick);
     assert(next != token);
@@ -210,7 +210,7 @@ int main(void) {
     append(); next=starter_preroll_prepare(&q, tick, tick);
     tick+=200; append();
     assert(q.failed && !starter_preroll_valid(&q,next,tick));
-    starter_preroll_init(&q,memory,320);
+    starter_preroll_init(&q,memory,640);
     append(); next=starter_preroll_prepare(&q,tick,tick);
     append(); append();
     assert(q.failed && !starter_preroll_valid(&q,next,tick));
@@ -223,29 +223,29 @@ int main(void) {
 def test_preroll_handoff():
     run("AI preroll handoff: partial packet preserved; live gaps recover; pending gaps abort", r'''
 #include "starter_preroll.h"
-static int16_t memory[PREROLL_CAPACITY_SAMPLES], pcm[256], tail[160];
+static int16_t memory[PREROLL_CAPACITY_SAMPLES], pcm[512], tail[320];
 int main(void) {
     starter_preroll_t q; starter_preroll_init(&q,memory,PREROLL_CAPACITY_SAMPLES);
-    for(int i=0;i<256;++i) pcm[i]=i;
-    starter_preroll_append(&q,pcm,256,1000);
+    for(int i=0;i<512;++i) pcm[i]=i;
+    starter_preroll_append(&q,pcm,512,1000);
     unsigned token=starter_preroll_prepare(&q,1000,1000);
     assert(starter_preroll_bind(&q,token,1,1000));
     size_t count=99; uint32_t timestamp=0;
-    assert(!starter_preroll_finish_replay(&q,1,tail,160,&count,&timestamp));
-    starter_preroll_consume(&q,160);
-    assert(!starter_preroll_finish_replay(&q,2,tail,160,&count,&timestamp));
-    assert(starter_preroll_finish_replay(&q,1,tail,160,&count,&timestamp));
-    assert(count==96 && timestamp==988 && q.token==0 && q.generation==0);
-    for(int i=0;i<96;++i) assert(tail[i]==i+160);
-    starter_preroll_append(&q,pcm,256,2000);
+    assert(!starter_preroll_finish_replay(&q,1,tail,320,&count,&timestamp));
+    starter_preroll_consume(&q,320);
+    assert(!starter_preroll_finish_replay(&q,2,tail,320,&count,&timestamp));
+    assert(starter_preroll_finish_replay(&q,1,tail,320,&count,&timestamp));
+    assert(count==192 && timestamp==988 && q.token==0 && q.generation==0);
+    for(int i=0;i<192;++i) assert(tail[i]==i+320);
+    starter_preroll_append(&q,pcm,512,2000);
     token=starter_preroll_prepare(&q,2000,2000);
-    starter_preroll_append(&q,pcm,256,2200);
+    starter_preroll_append(&q,pcm,512,2200);
     assert(starter_preroll_failure_requires_abort(&q,token,2200));
     starter_preroll_clear(&q);
-    starter_preroll_append(&q,pcm,256,3000);
+    starter_preroll_append(&q,pcm,512,3000);
     token=starter_preroll_prepare(&q,3000,3000);
     assert(starter_preroll_bind(&q,token,3,3000));
-    starter_preroll_append(&q,pcm,256,3200);
+    starter_preroll_append(&q,pcm,512,3200);
     assert(q.failed && !starter_preroll_failure_requires_abort(&q,token,3200));
     return 0;
 }

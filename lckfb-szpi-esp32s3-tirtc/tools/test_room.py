@@ -134,8 +134,8 @@ static void join(void) {
     response(token);assert(s_room.pending==0 && heap_calls>0);
     runtime_event_t event={.mode=STARTER_TIRTC_ROOM,.request_tag=s_session_generation,.generation=s_session_generation+10,.flag=true};
     room_connection(&event);assert(strstr(last_command,"join_room"));
-    assert(strstr(last_command,"g711a") && strstr(last_command,"8000") && !s_active);
-    char ack[400];snprintf(ack,sizeof(ack),"{\"jsonrpc\":\"2.0\",\"id\":%u,\"result\":{\"session_id\":\"server-session\",\"input_audio\":{\"codec\":\"g711a\",\"sample_rate\":8000,\"channels\":1},\"output_audio\":{\"codec\":\"g711a\",\"sample_rate\":8000,\"channels\":1}}}",s_session_generation);
+    assert(strstr(last_command,"opus") && strstr(last_command,"16000") && !s_active);
+    char ack[400];snprintf(ack,sizeof(ack),"{\"jsonrpc\":\"2.0\",\"id\":%u,\"result\":{\"session_id\":\"server-session\",\"input_audio\":{\"codec\":\"opus\",\"sample_rate\":16000,\"channels\":1},\"output_audio\":{\"codec\":\"opus\",\"sample_rate\":16000,\"channels\":1}}}",s_session_generation);
     signal(ack);assert(s_active && s_room.phase==STARTER_ROOM_LISTENING && !s_deadline_ms);
     assert(!uplink_session_current(STARTER_TIRTC_ROOM,s_room.generation));
     room_tick(clock_ms);assert(s_room.pending==ROOM_PRESENCE && strstr(last_body,"joined"));
@@ -285,7 +285,7 @@ int main(void) {
     room_tick(clock_ms);assert(s_room.pending==ROOM_TOKEN);response(token);
     runtime_event_t connected={.request_tag=s_session_generation,.generation=s_session_generation+10,.flag=true};
     room_connection(&connected);
-    char bad_ack[512];snprintf(bad_ack,sizeof(bad_ack),"{\"id\":%u,\"result\":{\"session_id\":\"x\",\"input_audio\":{\"codec\":\"pcm\",\"sample_rate\":16000,\"channels\":1},\"output_audio\":{\"codec\":\"g711a\",\"sample_rate\":8000,\"channels\":1}}}",s_session_generation);
+    char bad_ack[512];snprintf(bad_ack,sizeof(bad_ack),"{\"id\":%u,\"result\":{\"session_id\":\"x\",\"input_audio\":{\"codec\":\"pcm\",\"sample_rate\":16000,\"channels\":1},\"output_audio\":{\"codec\":\"opus\",\"sample_rate\":16000,\"channels\":1}}}",s_session_generation);
     signal(bad_ack);assert(!s_active && s_room.error==ESP_ERR_INVALID_RESPONSE);
     clock_ms=s_room.retry_due;room_tick(clock_ms);response(assignment);join();
     /* Protocol notifications do not accidentally use request IDs. */
@@ -301,7 +301,7 @@ int main(void) {
     assert(!room_json_cJSON_Parse(deep));assert(json_live==0);
     /* The private parser's hooks/recursion bound cannot affect other users. */
     cJSON *ordinary=cJSON_Parse(deep);assert(ordinary);cJSON_Delete(ordinary);
-    ordinary=cJSON_Parse("{\"codec\":\"g711a\",\"sample_rate\":8000,\"channels\":1.5}");
+    ordinary=cJSON_Parse("{\"codec\":\"opus\",\"sample_rate\":16000,\"channels\":1.5}");
     assert(!room_audio_profile(ordinary));cJSON_Delete(ordinary);
     /* Closing an app keeps assignment, but stops media/lease/polling. It must
      * also work with a full event queue and a connecting/token request. */

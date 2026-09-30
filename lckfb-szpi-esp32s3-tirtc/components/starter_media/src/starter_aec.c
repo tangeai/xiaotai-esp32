@@ -1,7 +1,6 @@
 /* One official AFE owns both microphones and the synchronous MIC3 reference.
  * Acquisition must keep draining DMA independently of AFE processing. */
 #include "starter_aec.h"
-#include "starter_audio_resampler.h"
 #include "starter_agc.h"
 #include "sdkconfig.h"
 #include <stdatomic.h>
@@ -36,7 +35,7 @@ typedef struct {
     const esp_afe_sr_iface_t *iface;
     esp_afe_sr_data_t *handle;
     size_t feed_samples, fetch_samples, chunks_per_feed;
-    int16_t *tdm, *clean, *uplink, *output_8k;
+    int16_t *tdm, *clean, *uplink;
     afe_input_slot_t input[AFE_INPUT_SLOTS];
     QueueHandle_t free_slots, pending_slots, stamps;
     TaskHandle_t feed_worker;
@@ -44,7 +43,6 @@ typedef struct {
     atomic_uint feed_frames, fetch_frames, input_full, fetch_timeouts;
     atomic_uint max_feed_us, last_feed_us;
     atomic_int channel_id;
-    starter_audio_resampler_16k_to_8k_t resampler;
 } starter_aec_context_t;
 
 static const char *TAG = "starter_aec";
@@ -103,7 +101,6 @@ static void starter_aec_release(void)
     heap_caps_free(s_aec.tdm);
     heap_caps_free(s_aec.clean);
     heap_caps_free(s_aec.uplink);
-    heap_caps_free(s_aec.output_8k);
     starter_agc_deinit();
     if (s_aec.handle) s_aec.iface->destroy(s_aec.handle);
     memset(&s_aec, 0, sizeof(s_aec));
@@ -169,12 +166,11 @@ esp_err_t starter_aec_init(void)
     s_aec.chunks_per_feed = (size_t)(feed / fetch);
     s_aec.tdm = allocate_samples(s_aec.feed_samples * STARTER_AEC_CAPTURE_DMA_CHANNELS);
     s_aec.clean = allocate_samples(s_aec.fetch_samples);
-    s_aec.output_8k = allocate_samples(s_aec.fetch_samples / 2U);
     s_aec.free_slots = xQueueCreateWithCaps(AFE_INPUT_SLOTS, sizeof(uint8_t), AFE_CAPS);
     s_aec.pending_slots = xQueueCreateWithCaps(AFE_INPUT_SLOTS, sizeof(uint8_t), AFE_CAPS);
     s_aec.stamps = xQueueCreateWithCaps((AFE_RING_FRAMES + AFE_INPUT_SLOTS) * 2U,
                                       sizeof(afe_frame_stamp_t), AFE_CAPS);
-    bool buffers_ok = s_aec.tdm && s_aec.clean && s_aec.output_8k &&
+    bool buffers_ok = s_aec.tdm && s_aec.clean &&
                       s_aec.free_slots && s_aec.pending_slots && s_aec.stamps;
     for (uint8_t i = 0; i < AFE_INPUT_SLOTS; ++i) {
         s_aec.input[i].pcm = allocate_samples(s_aec.feed_samples * 3U);
@@ -302,16 +298,9 @@ esp_err_t starter_aec_fetch(starter_aec_output_t *output)
     if (ret != ESP_OK) return ret;
     uplink = s_aec.uplink;
 #endif
-    size_t count_8k = s_aec.fetch_samples / 2U;
-    int64_t resample_begin = esp_timer_get_time();
-    size_t resampled = starter_audio_resampler_16k_to_8k_process(&s_aec.resampler, uplink,
-            s_aec.fetch_samples, s_aec.output_8k, count_8k);
-    uint32_t resample_us = (uint32_t)(esp_timer_get_time() - resample_begin);
-    output->resample_us = resample_us;
-    if (resampled != count_8k) return ESP_FAIL;
     int64_t measure_start = esp_timer_get_time();
     starter_signal_level_t clean_level = starter_signal_measure(s_aec.clean, s_aec.fetch_samples);
-    starter_signal_level_t uplink_level = starter_signal_measure(s_aec.output_8k, count_8k);
+    starter_signal_level_t uplink_level = starter_signal_measure(uplink, s_aec.fetch_samples);
     *output = (starter_aec_output_t) {
         .pcm_16k = s_aec.clean, .samples_16k = s_aec.fetch_samples,
 #if CONFIG_XIAOTAI_WAKE_CAPTURE_AGC
@@ -319,7 +308,7 @@ esp_err_t starter_aec_fetch(starter_aec_output_t *output)
 #else
         .wake_pcm_16k = s_aec.clean, .wake_delay_ms = 0,
 #endif
-        .pcm_8k = s_aec.output_8k, .samples = count_8k,
+        .transport_pcm = uplink, .transport_samples = s_aec.fetch_samples,
         .captured_ms = stamp.captured_ms, .capture_epoch = stamp.capture_epoch,
         .mute_epoch = stamp.mute_epoch,
         .mic_clipped = stamp.mic_clipped, .reference_clipped = stamp.reference_clipped,
@@ -327,7 +316,7 @@ esp_err_t starter_aec_fetch(starter_aec_output_t *output)
         .level = {stamp.mic[stamp.mic[1].rms > stamp.mic[0].rms], stamp.reference, clean_level},
         .measurement_us = (uint32_t)(esp_timer_get_time() - measure_start),
         .feed_us = atomic_load(&s_aec.last_feed_us),
-        .fetch_wait_us = fetch_wait_us, .agc_us = agc_us, .resample_us = resample_us,
+        .fetch_wait_us = fetch_wait_us, .agc_us = agc_us,
         .uplink_level = uplink_level,
     };
     return ESP_OK;

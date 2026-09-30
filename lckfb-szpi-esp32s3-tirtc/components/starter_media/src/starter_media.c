@@ -2,8 +2,8 @@
  * 立创·实战派 ESP32-S3 V1.0.1 媒体适配器。
  *
  * 上行：ES7210 TDM MIC1/MIC2 + MIC3 硬件回采 -> ESP-SR AFE 16 kHz ->
- *       PCM 8 kHz mono -> G.711 A-law。
- * 下行：G.711 A-law -> PCM 8 kHz mono -> 16 kHz -> ES8311 -> NS4150B。
+ *       H5 A-law 8 kHz 或其余业务 Opus 16 kHz，均为单声道 20 ms。
+ * 下行：按业务解码到 16 kHz PCM -> ES8311 -> NS4150B。
  *
  * ES7210 的四槽 TDM 与 ES8311 的标准 I2S 共用 MCLK/BCLK/WS。两路一次性
  * 注册为 I2S0 配对通道，由同一个控制器输出共享时钟，采集和播放可同时运行。
@@ -13,6 +13,7 @@
 #include "starter_camera.h"
 #include "starter_aec.h"
 #include "starter_agc.h"
+#include "starter_audio_resampler.h"
 #include "starter_voice.h"
 #include "starter_preroll.h"
 #include "starter_playout.h"
@@ -23,11 +24,13 @@
 #include <string.h>
 
 #include "decoder/impl/esp_g711_dec.h"
+#include "decoder/impl/esp_opus_dec.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/i2s_std.h"
 #include "driver/i2s_tdm.h"
 #include "encoder/impl/esp_g711_enc.h"
+#include "encoder/impl/esp_opus_enc.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
 #include "es7210_adc.h"
@@ -55,19 +58,26 @@
 #define PCA9557_PA_EN_MASK BIT(1)
 #define PCA9557_DVP_PWDN_MASK BIT(2)
 
-#define AUDIO_TRANSPORT_SAMPLE_RATE_HZ 8000U
+#define AUDIO_TRANSPORT_SAMPLE_RATE_HZ STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ
 #define AUDIO_HW_SAMPLE_RATE_HZ 16000U
 #define AUDIO_PACKET_MS 20U
 #define AUDIO_PACKET_SAMPLES \
     ((AUDIO_TRANSPORT_SAMPLE_RATE_HZ * AUDIO_PACKET_MS) / 1000U)
+#define AUDIO_H5_PACKET_SAMPLES \
+    ((STARTER_H5_AUDIO_SAMPLE_RATE_HZ * STARTER_H5_AUDIO_PACKET_MS) / 1000U)
 #define AUDIO_TDM_SLOTS 4U
 #define AUDIO_MCLK_MULTIPLE 256U
 #define AUDIO_MCLK_HZ (AUDIO_HW_SAMPLE_RATE_HZ * AUDIO_MCLK_MULTIPLE)
-#define AUDIO_RX_BYTES 1500U
+#define AUDIO_ENCODED_MAX_BYTES 1500U
+#define AUDIO_RX_BYTES AUDIO_ENCODED_MAX_BYTES
+#define AUDIO_DECODE_PCM_CAPACITY (AUDIO_RX_BYTES * 2U)
 #define AUDIO_RX_QUEUE_DEPTH STARTER_PLAYOUT_CAPACITY
 #define AUDIO_TX_QUEUE_DEPTH 12U
-#define AUDIO_PLAYBACK_UPSAMPLE 2U
-#define AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT (AUDIO_PLAYBACK_UPSAMPLE * 2U)
+#define AUDIO_OPUS_DECODER_STACK_BYTES (24U * 1024U)
+#define AUDIO_OPUS_ENCODER_STACK_BYTES (48U * 1024U)
+#define AUDIO_OPUS_ENCODER_COMPLEXITY 0
+#define AUDIO_RTC_I2S_VALUES_PER_INPUT 2U
+#define AUDIO_PCM8K_I2S_VALUES_PER_INPUT 4U
 #define AUDIO_OUTPUT_LOCK_WAIT_MS 500U
 #define AUDIO_PLAYOUT_POLL_MS 5U
 #define NS4150B_STARTUP_MS 120U
@@ -81,7 +91,9 @@ _Static_assert(AUDIO_TRANSPORT_SAMPLE_RATE_HZ ==
                    STARTER_AEC_TRANSPORT_RATE_HZ,
                "AEC output and TiRTC sample rates must match");
 _Static_assert(AUDIO_PACKET_SAMPLES == STARTER_PLAYOUT_PCM_SAMPLES,
-               "playout quantum must be 20 ms at 8 kHz");
+               "playout quantum must be 20 ms at 16 kHz");
+_Static_assert(AUDIO_H5_PACKET_SAMPLES * 2U == AUDIO_PACKET_SAMPLES,
+               "H5 PCMA packet must map to one 16 kHz playout quantum");
 _Static_assert(AUDIO_TDM_SLOTS == 4U,
                "ES7210 physical TDM wire layout must remain four-slot");
 _Static_assert(STARTER_AEC_CAPTURE_DMA_CHANNELS == 4U,
@@ -107,7 +119,7 @@ _Static_assert(sizeof(audio_rx_item_t) == 1536U, "S3 RX PSRAM budget changed");
 
 /*
  * 采集/AEC 是硬实时任务，不能直接进入 TiRTC SDK。每个项目固定为一个
- * 20 ms、8 kHz、16-bit 单声道 PCM 包；池放在 PSRAM，队列只传递索引。
+ * 20 ms、16 kHz、16-bit 单声道 PCM 包；池放在 PSRAM，队列只传递索引。
  */
 typedef struct {
     starter_tirtc_mode_t mode;
@@ -164,11 +176,11 @@ EXT_RAM_BSS_ATTR static struct {
 
 EXT_RAM_BSS_ATTR static struct {
     atomic_uint_fast32_t read_frames, read_errors, read_gap_max_us, read_max_us;
-    atomic_uint_fast32_t afe_age_max_ms, fetch_wait_max_us, agc_max_us, resample_max_us;
+    atomic_uint_fast32_t afe_age_max_ms, fetch_wait_max_us, agc_max_us;
     atomic_uint_fast32_t tx_queue_peak, tx_age_max_us, tx_gain_max_us, encode_max_us, send_max_us;
     atomic_uint_fast32_t post_agc_peak, post_agc_rms, tx_peak, tx_rms, tx_clipped, tx_frames, tx_measure_max_us;
 } s_pipeline_diag;
-_Static_assert(sizeof(s_pipeline_diag) == 80U, "S3 pipeline diagnostics PSRAM budget changed");
+_Static_assert(sizeof(s_pipeline_diag) == 76U, "S3 pipeline diagnostics PSRAM budget changed");
 
 /* Room-only observation, no pacing/gain/gate changes. Counters are lifetime
  * values. TX/RX each own their last-* fields; runtime owns last_log_ms. No
@@ -268,26 +280,30 @@ static esp_codec_dev_handle_t s_microphone_dev;
 static esp_codec_dev_handle_t s_speaker_dev;
 static i2c_master_bus_handle_t s_i2c_bus;
 static i2c_master_dev_handle_t s_pca9557_i2c_dev;
+static void *s_opus_encoder;
+static void *s_opus_decoder;
 static void *s_g711_encoder;
 static void *s_g711_decoder;
 static uint8_t s_pca9557_output;
 
-/* 下行会话和启动期绑定播报复用这些缓冲，不放到任务栈上。 */
-EXT_RAM_BSS_ATTR static int16_t s_decode_pcm[AUDIO_RX_BYTES];
+/* Codec scratch stays in PSRAM. H5 may carry up to AUDIO_RX_BYTES A-law
+ * samples, which expand twofold when normalized to the 16 kHz playout clock. */
+EXT_RAM_BSS_ATTR static int16_t s_decode_h5_pcm[AUDIO_RX_BYTES];
+EXT_RAM_BSS_ATTR static int16_t s_decode_pcm[AUDIO_DECODE_PCM_CAPACITY];
+EXT_RAM_BSS_ATTR static int16_t s_encode_h5_pcm[AUDIO_H5_PACKET_SAMPLES];
+EXT_RAM_BSS_ATTR static uint8_t s_encode_alaw[AUDIO_H5_PACKET_SAMPLES];
+EXT_RAM_BSS_ATTR static uint8_t s_encode_opus[AUDIO_ENCODED_MAX_BYTES];
 EXT_RAM_BSS_ATTR static starter_playout_pcm_t s_rx_pcm;
-_Static_assert(sizeof(s_rx_pcm) == 490U, "S3 PCM staging PSRAM budget changed");
+_Static_assert(sizeof(s_rx_pcm) == 970U, "S3 PCM staging PSRAM budget changed");
 EXT_RAM_BSS_ATTR static struct {
     int16_t samples[STARTER_PLAYOUT_PCM_SAMPLES];
     uint16_t fade_remaining;
 } s_rx_render;
-_Static_assert(sizeof(s_rx_render) == 322U, "S3 render scratch PSRAM budget changed");
+_Static_assert(sizeof(s_rx_render) == 642U, "S3 render scratch PSRAM budget changed");
 /* ES8311 consumes ordinary interleaved 16-bit stereo PCM.  Keep this exactly
  * aligned with the validated device-monitor board adapter. */
 EXT_RAM_BSS_ATTR static int16_t
-    s_play_stereo[AUDIO_RX_BYTES * AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT];
-static uint32_t s_playback_resampler_generation;
-EXT_RAM_BSS_ATTR static uint32_t s_playback_resampler_epoch;
-static int16_t s_playback_previous;
+    s_play_stereo[AUDIO_RX_BYTES * AUDIO_PCM8K_I2S_VALUES_PER_INPUT];
 
 static void update_max_counter(atomic_uint_fast32_t *counter, uint32_t value)
 {
@@ -332,6 +348,13 @@ static bool same_session(starter_tirtc_mode_t mode, uint32_t generation)
     return atomic_load_explicit(&s_active, memory_order_acquire) &&
            atomic_load_explicit(&s_mode, memory_order_acquire) == (int)mode &&
            atomic_load_explicit(&s_generation, memory_order_acquire) == generation;
+}
+
+static uint32_t audio_samples_to_us(size_t samples)
+{
+    return (uint32_t)(((uint64_t)samples * 1000000U +
+                       AUDIO_TRANSPORT_SAMPLE_RATE_HZ - 1U) /
+                      AUDIO_TRANSPORT_SAMPLE_RATE_HZ);
 }
 
 static bool uplink_session_current(starter_tirtc_mode_t mode, uint32_t generation)
@@ -609,13 +632,60 @@ static esp_err_t audio_codecs_init(void)
     return ESP_OK;
 }
 
+static esp_err_t opus_init(void)
+{
+    size_t internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t psram_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    esp_opus_enc_config_t encoder = ESP_OPUS_ENC_CONFIG_DEFAULT();
+    encoder.sample_rate = ESP_AUDIO_SAMPLE_RATE_16K;
+    encoder.channel = ESP_AUDIO_MONO;
+    encoder.bits_per_sample = ESP_AUDIO_BIT16;
+    encoder.bitrate = 24000;
+    encoder.frame_duration = ESP_OPUS_ENC_FRAME_DURATION_20_MS;
+    encoder.application_mode = ESP_OPUS_ENC_APPLICATION_VOIP;
+    /* Complexity 0 is Espressif's measured low-CPU profile. The 24 kbps CBR
+     * voice contract stays unchanged, while UI/audio contention is reduced. */
+    encoder.complexity = AUDIO_OPUS_ENCODER_COMPLEXITY;
+    encoder.enable_fec = false;
+    encoder.enable_dtx = false;
+    encoder.enable_vbr = false;
+    if (esp_opus_enc_open(&encoder, sizeof(encoder), &s_opus_encoder) != ESP_AUDIO_ERR_OK) {
+        return ESP_FAIL;
+    }
+    int input_bytes = 0, output_bytes = 0;
+    if (esp_opus_enc_get_frame_size(s_opus_encoder, &input_bytes, &output_bytes) !=
+            ESP_AUDIO_ERR_OK || input_bytes != (int)(AUDIO_PACKET_SAMPLES * sizeof(int16_t)) ||
+        output_bytes <= 0 || output_bytes > AUDIO_ENCODED_MAX_BYTES) {
+        esp_opus_enc_close(s_opus_encoder);
+        s_opus_encoder = NULL;
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    esp_opus_dec_cfg_t decoder = ESP_OPUS_DEC_CONFIG_DEFAULT();
+    decoder.sample_rate = ESP_AUDIO_SAMPLE_RATE_16K;
+    decoder.channel = ESP_AUDIO_MONO;
+    decoder.frame_duration = ESP_OPUS_DEC_FRAME_DURATION_20_MS;
+    decoder.self_delimited = false;
+    if (esp_opus_dec_open(&decoder, sizeof(decoder), &s_opus_decoder) != ESP_AUDIO_ERR_OK) {
+        esp_opus_enc_close(s_opus_encoder);
+        s_opus_encoder = NULL;
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG,
+             "Opus ready: 16k mono 20ms 24kbps CBR complexity=%u frame=%d/%d RAM/PSRAM=%u/%u B",
+             (unsigned)AUDIO_OPUS_ENCODER_COMPLEXITY,
+             input_bytes, output_bytes,
+             (unsigned)(internal_before - heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+             (unsigned)(psram_before - heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+    return ESP_OK;
+}
+
 static esp_err_t g711_init(void)
 {
     esp_g711_enc_config_t encoder = ESP_G711_ENC_CONFIG_DEFAULT();
     encoder.sample_rate = ESP_AUDIO_SAMPLE_RATE_8K;
     encoder.channel = ESP_AUDIO_MONO;
     encoder.bits_per_sample = ESP_AUDIO_BIT16;
-    encoder.frame_duration = AUDIO_PACKET_MS;
+    encoder.frame_duration = STARTER_H5_AUDIO_PACKET_MS;
     if (esp_g711a_enc_open(&encoder, sizeof(encoder), &s_g711_encoder) !=
         ESP_AUDIO_ERR_OK) {
         return ESP_FAIL;
@@ -623,6 +693,7 @@ static esp_err_t g711_init(void)
     if (esp_g711_dec_open(NULL, 0, &s_g711_decoder) != ESP_AUDIO_ERR_OK) {
         return ESP_FAIL;
     }
+    ESP_LOGI(TAG, "H5 PCMA ready: 8k mono 20ms");
     return ESP_OK;
 }
 
@@ -681,7 +752,9 @@ static bool enqueue_uplink_pcm(starter_tirtc_mode_t mode,
 static void audio_uplink_task(void *argument)
 {
     (void)argument;
-    uint8_t alaw[AUDIO_PACKET_SAMPLES];
+    uint32_t codec_generation = 0;
+    starter_tirtc_mode_t codec_mode = STARTER_TIRTC_NONE;
+    starter_audio_resampler_16k_to_8k_t h5_resampler = {0};
     for (;;) {
         uint8_t slot = 0;
         if (xQueueReceive(s_audio_tx_ready_queue, &slot, portMAX_DELAY) != pdTRUE) {
@@ -696,6 +769,20 @@ static void audio_uplink_task(void *argument)
                      !atomic_load_explicit(&s_microphone_muted, memory_order_acquire);
         if (!ready && item->mode == STARTER_TIRTC_ROOM)
             atomic_fetch_add(&s_room_audio_diag.tx_stale, 1);
+        if (ready && (codec_generation != item->generation ||
+                      codec_mode != item->mode)) {
+            if (item->mode == STARTER_TIRTC_H5) {
+                starter_audio_resampler_16k_to_8k_reset(&h5_resampler);
+            } else if (esp_opus_enc_reset(s_opus_encoder) != ESP_AUDIO_ERR_OK) {
+                ESP_LOGE(TAG, "Opus encoder reset failed generation=%lu",
+                         (unsigned long)item->generation);
+                ready = false;
+            }
+            if (ready) {
+                codec_generation = item->generation;
+                codec_mode = item->mode;
+            }
+        }
 #if CONFIG_XIAOTAI_CAPTURE_AGC
         if (ready) {
             /* The TX worker exclusively owns this slot. Both live and preroll
@@ -725,19 +812,42 @@ static void audio_uplink_task(void *argument)
             atomic_fetch_add(&s_pipeline_diag.tx_frames, 1);
             update_max_counter(&s_pipeline_diag.tx_measure_max_us,
                                (uint32_t)(esp_timer_get_time() - measure_begin));
-            esp_audio_enc_in_frame_t input = {
-                .buffer = (uint8_t *)item->pcm,
-                .len = sizeof(item->pcm),
-            };
-            esp_audio_enc_out_frame_t output = {
-                .buffer = alaw,
-                .len = sizeof(alaw),
-            };
+            esp_audio_enc_in_frame_t input = {0};
+            esp_audio_enc_out_frame_t output = {0};
             int64_t encode_begin = esp_timer_get_time();
-            esp_err_t encoded = esp_g711_enc_process(s_g711_encoder, &input, &output);
-            update_max_counter(&s_pipeline_diag.encode_max_us,
-                               (uint32_t)(esp_timer_get_time() - encode_begin));
-            if (encoded == ESP_AUDIO_ERR_OK && output.encoded_bytes == AUDIO_PACKET_SAMPLES) {
+            esp_audio_err_t encoded;
+            bool size_ok;
+            const char *codec_name;
+            if (item->mode == STARTER_TIRTC_H5) {
+                size_t h5_samples = starter_audio_resampler_16k_to_8k_process(
+                    &h5_resampler, item->pcm, AUDIO_PACKET_SAMPLES,
+                    s_encode_h5_pcm, AUDIO_H5_PACKET_SAMPLES);
+                if (h5_samples != AUDIO_H5_PACKET_SAMPLES) {
+                    atomic_fetch_add(&s_audio_dropped, 1);
+                    ESP_LOGE(TAG, "H5 16k-to-8k resample failed samples=%u",
+                             (unsigned)h5_samples);
+                    goto release_tx_slot;
+                }
+                input.buffer = (uint8_t *)s_encode_h5_pcm;
+                input.len = h5_samples * sizeof(int16_t);
+                output.buffer = s_encode_alaw;
+                output.len = sizeof(s_encode_alaw);
+                encoded = esp_g711_enc_process(s_g711_encoder, &input, &output);
+                size_ok = output.encoded_bytes == AUDIO_H5_PACKET_SAMPLES;
+                codec_name = STARTER_H5_AUDIO_CODEC_NAME;
+            } else {
+                input.buffer = (uint8_t *)item->pcm;
+                input.len = sizeof(item->pcm);
+                output.buffer = s_encode_opus;
+                output.len = sizeof(s_encode_opus);
+                encoded = esp_opus_enc_process(s_opus_encoder, &input, &output);
+                size_ok = output.encoded_bytes > 0 &&
+                          output.encoded_bytes <= sizeof(s_encode_opus);
+                codec_name = STARTER_TIRTC_AUDIO_CODEC_NAME;
+            }
+            uint32_t encode_us = (uint32_t)(esp_timer_get_time() - encode_begin);
+            update_max_counter(&s_pipeline_diag.encode_max_us, encode_us);
+            if (encoded == ESP_AUDIO_ERR_OK && size_ok) {
                 if (!uplink_session_current(item->mode, item->generation) ||
                     item->mute_epoch != atomic_load(&s_mute_epoch)) {
                     if (item->mode == STARTER_TIRTC_ROOM)
@@ -758,8 +868,8 @@ static void audio_uplink_task(void *argument)
                     s_room_audio_diag.tx_generation = item->generation;
                     s_room_audio_diag.tx_epoch = item->mute_epoch;
                 }
-                int ret = starter_tirtc_send_alaw(item->timestamp_ms,
-                                                   alaw,
+                int ret = starter_tirtc_send_audio(item->timestamp_ms,
+                                                   output.buffer,
                                                    output.encoded_bytes);
                 update_max_counter(&s_pipeline_diag.send_max_us,
                                    (uint32_t)(esp_timer_get_time() - send_begin));
@@ -770,10 +880,13 @@ static void audio_uplink_task(void *argument)
                         &s_audio_sent, 1, memory_order_relaxed) + 1U;
                     if (sent == 1U) {
                         ESP_LOGI(TAG,
-                                 "uplink first packet mode=%d bytes=%u timestamp=%lu",
+                                 "uplink first packet mode=%d codec=%s bytes=%u timestamp=%lu encode_us=%lu stack_hwm=%u",
                                  (int)item->mode,
+                                 codec_name,
                                  (unsigned)output.encoded_bytes,
-                                 (unsigned long)item->timestamp_ms);
+                                 (unsigned long)item->timestamp_ms,
+                                 (unsigned long)encode_us,
+                                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
                     }
                 } else {
                     if (item->mode == STARTER_TIRTC_ROOM)
@@ -784,13 +897,17 @@ static void audio_uplink_task(void *argument)
             } else {
                 if (item->mode == STARTER_TIRTC_ROOM)
                     atomic_fetch_add(&s_room_audio_diag.tx_encode_error, 1);
-                ESP_LOGW(TAG, "uplink A-law encode failed ret=%s bytes=%u",
-                         esp_err_to_name(encoded), (unsigned)output.encoded_bytes);
+                ESP_LOGW(TAG, "uplink %s encode failed ret=%d bytes=%u",
+                         codec_name, (int)encoded, (unsigned)output.encoded_bytes);
             }
         }
 release_tx_slot:
         memset(item, 0, sizeof(*item));
         (void)xQueueSend(s_audio_tx_free_queue, &slot, 0);
+        /* A queued burst must not let the unpinned codec worker continuously
+         * outrank LVGL on CPU0. One millisecond per 20 ms packet preserves
+         * audio headroom and gives the UI task a deterministic run chance. */
+        vTaskDelay(pdMS_TO_TICKS(MEDIA_CPU_YIELD_MS));
     }
 }
 
@@ -870,7 +987,6 @@ static void audio_capture_task(void *argument)
         esp_err_t aec_err = starter_aec_fetch(&clean);
         update_max_counter(&s_pipeline_diag.fetch_wait_max_us, clean.fetch_wait_us);
         update_max_counter(&s_pipeline_diag.agc_max_us, clean.agc_us);
-        update_max_counter(&s_pipeline_diag.resample_max_us, clean.resample_us);
         const int64_t captured_ms = clean.captured_ms;
         /* feed works on a larger input chunk than fetch. Normalize the DSP
          * duration to one output frame, rather than counting the blocking
@@ -938,7 +1054,8 @@ static void audio_capture_task(void *argument)
                 starter_preroll_clear(&s_preroll);
             } else if (s_preroll.token != 0 ||
                        (!atomic_load(&s_active) && atomic_load(&s_wake_allowed))) {
-                starter_preroll_append(&s_preroll, clean.pcm_8k, clean.samples, captured_ms);
+                starter_preroll_append(&s_preroll, clean.transport_pcm,
+                                       clean.transport_samples, captured_ms);
             }
             if (s_preroll.failed && s_preroll.generation != 0) {
                 /* Already admitted: lose damaged backlog, never the AI session.
@@ -974,13 +1091,13 @@ static void audio_capture_task(void *argument)
          * 并要求档位保持 300 ms 才发布，避免 20~40 ms 抖动让屏幕反复跳变。
          */
         uint64_t square_sum = 0;
-        for (size_t i = 0; i < clean.samples; ++i) {
-            int32_t sample = clean.pcm_8k[i];
+        for (size_t i = 0; i < clean.transport_samples; ++i) {
+            int32_t sample = clean.transport_pcm[i];
             square_sum += (uint64_t)((int64_t)sample * sample);
         }
-        uint32_t energy = clean.samples == 0U ? 0U :
+        uint32_t energy = clean.transport_samples == 0U ? 0U :
                           (uint32_t)sqrtf((float)square_sum /
-                                          (float)clean.samples);
+                                          (float)clean.transport_samples);
         smoothed_energy = (smoothed_energy * 3U + energy) / 4U;
         uint8_t measured_level = smoothed_energy < 100U ? 0U :
                                  smoothed_energy < 300U ? 1U :
@@ -1042,8 +1159,8 @@ static void audio_capture_task(void *argument)
         }
         if (replay) continue;
 
-        for (size_t i = 0; i < clean.samples; ++i) {
-            packet_pcm[packet_samples++] = clean.pcm_8k[i];
+        for (size_t i = 0; i < clean.transport_samples; ++i) {
+            packet_pcm[packet_samples++] = clean.transport_pcm[i];
             if (packet_samples != AUDIO_PACKET_SAMPLES) {
                 continue;
             }
@@ -1060,7 +1177,15 @@ static void audio_capture_task(void *argument)
     }
 }
 
-static size_t decode_audio_item(const audio_rx_item_t *item)
+typedef struct {
+    uint32_t generation;
+    uint32_t epoch;
+    int16_t previous;
+    bool initialized;
+} h5_upsampler_t;
+
+static size_t decode_audio_item(const audio_rx_item_t *item,
+                                h5_upsampler_t *h5_upsampler)
 {
     if (item == NULL || !same_session(item->mode, item->generation) ||
         item->epoch != atomic_load(&s_playout_diag.epoch)) {
@@ -1071,25 +1196,103 @@ static size_t decode_audio_item(const audio_rx_item_t *item)
         .buffer = (uint8_t *)item->payload,
         .len = item->frame.length,
     };
-    esp_audio_dec_out_frame_t output = {
-        .buffer = (uint8_t *)s_decode_pcm,
-        .len = sizeof(s_decode_pcm),
-    };
-    esp_audio_dec_info_t info = {0};
     int64_t begin = esp_timer_get_time();
-    esp_audio_err_t result = esp_g711a_dec_decode(s_g711_decoder, &input, &output, &info);
-    update_max_counter(&s_playout_diag.decode_max_us, (uint32_t)(esp_timer_get_time() - begin));
-    if (result != ESP_AUDIO_ERR_OK || output.decoded_size > sizeof(s_decode_pcm) ||
-        output.decoded_size != item->frame.length * sizeof(int16_t)) {
-        atomic_fetch_add_explicit(&s_audio_decode_failed, 1, memory_order_relaxed);
-        return 0;
+    esp_audio_err_t result;
+    size_t mono_samples = 0;
+    const char *codec_name;
+    if (item->mode == STARTER_TIRTC_H5) {
+        esp_audio_dec_out_frame_t output = {
+            .buffer = (uint8_t *)s_decode_h5_pcm,
+            .len = sizeof(s_decode_h5_pcm),
+        };
+        esp_audio_dec_info_t info = {0};
+        result = esp_g711a_dec_decode(s_g711_decoder, &input, &output, &info);
+        size_t samples_8k = output.decoded_size / sizeof(int16_t);
+        if (result != ESP_AUDIO_ERR_OK ||
+            output.decoded_size != item->frame.length * sizeof(int16_t) ||
+            samples_8k > AUDIO_DECODE_PCM_CAPACITY / 2U) {
+            uint32_t failed = (uint32_t)atomic_fetch_add_explicit(
+                                  &s_audio_decode_failed, 1,
+                                  memory_order_relaxed) + 1U;
+            if (failed <= 3U || failed % 100U == 0U) {
+                ESP_LOGW(TAG,
+                         "downlink PCMA decode failed ret=%d encoded=%u decoded=%u count=%lu",
+                         (int)result,
+                         (unsigned)item->frame.length,
+                         (unsigned)output.decoded_size,
+                         (unsigned long)failed);
+            }
+            return 0;
+        }
+        if (h5_upsampler == NULL ||
+            h5_upsampler->generation != item->generation ||
+            h5_upsampler->epoch != item->epoch) {
+            if (h5_upsampler == NULL) {
+                atomic_fetch_add_explicit(&s_audio_decode_failed, 1,
+                                          memory_order_relaxed);
+                return 0;
+            }
+            *h5_upsampler = (h5_upsampler_t){
+                .generation = item->generation,
+                .epoch = item->epoch,
+            };
+        }
+        for (size_t i = 0; i < samples_8k; ++i) {
+            int16_t current = s_decode_h5_pcm[i];
+            int16_t previous = h5_upsampler->initialized
+                                   ? h5_upsampler->previous
+                                   : current;
+            s_decode_pcm[i * 2U] =
+                (int16_t)(((int32_t)previous + current) / 2);
+            s_decode_pcm[i * 2U + 1U] = current;
+            h5_upsampler->previous = current;
+            h5_upsampler->initialized = true;
+        }
+        mono_samples = samples_8k * 2U;
+        codec_name = STARTER_H5_AUDIO_CODEC_NAME;
+    } else {
+        esp_audio_dec_out_frame_t output = {
+            .buffer = (uint8_t *)s_decode_pcm,
+            .len = sizeof(s_decode_pcm),
+        };
+        esp_audio_dec_info_t info = {0};
+        result = esp_opus_dec_decode(s_opus_decoder, &input, &output, &info);
+        if (result != ESP_AUDIO_ERR_OK ||
+            output.decoded_size != AUDIO_PACKET_SAMPLES * sizeof(int16_t) ||
+            info.sample_rate != AUDIO_TRANSPORT_SAMPLE_RATE_HZ ||
+            info.channel != 1U || info.bits_per_sample != 16U) {
+            uint32_t failed = (uint32_t)atomic_fetch_add_explicit(
+                                  &s_audio_decode_failed, 1,
+                                  memory_order_relaxed) + 1U;
+            if (failed <= 3U || failed % 100U == 0U) {
+                ESP_LOGW(TAG,
+                         "downlink Opus decode failed ret=%d encoded=%u decoded=%u rate=%u channels=%u bits=%u count=%lu",
+                         (int)result,
+                         (unsigned)item->frame.length,
+                         (unsigned)output.decoded_size,
+                         (unsigned)info.sample_rate,
+                         (unsigned)info.channel,
+                         (unsigned)info.bits_per_sample,
+                         (unsigned long)failed);
+            }
+            return 0;
+        }
+        mono_samples = output.decoded_size / sizeof(int16_t);
+        codec_name = STARTER_TIRTC_AUDIO_CODEC_NAME;
     }
-    atomic_fetch_add_explicit(&s_audio_decoded, 1, memory_order_relaxed);
-    size_t mono_samples = output.decoded_size / sizeof(int16_t);
+    update_max_counter(&s_playout_diag.decode_max_us, (uint32_t)(esp_timer_get_time() - begin));
+    uint32_t decoded = (uint32_t)atomic_fetch_add_explicit(
+                           &s_audio_decoded, 1, memory_order_relaxed) + 1U;
     atomic_fetch_add(&s_playout_diag.decoded_samples, mono_samples);
     atomic_store(&s_playout_diag.pcm_in_hash,
                  starter_playout_pcm_hash(atomic_load(&s_playout_diag.pcm_in_hash),
                                           s_decode_pcm, mono_samples));
+    if (decoded == 1U) {
+        ESP_LOGI(TAG, "downlink first %s frame samples=%u stack_hwm=%u",
+                 codec_name,
+                 (unsigned)mono_samples,
+                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    }
     return mono_samples;
 }
 
@@ -1101,6 +1304,7 @@ static bool play_audio_chunk(starter_tirtc_mode_t mode, uint32_t generation,
         !same_session(mode, generation) || epoch != atomic_load(&s_playout_diag.epoch)) {
         return false;
     }
+    (void)restart;
     if (!take_audio_output_lock(OUTPUT_OWNER_RX, pdMS_TO_TICKS(AUDIO_OUTPUT_LOCK_WAIT_MS))) {
         return false;
     }
@@ -1112,27 +1316,14 @@ static bool play_audio_chunk(starter_tirtc_mode_t mode, uint32_t generation,
          * not just I2S writes, so a cancelled prompt cannot race its first RTC
          * successor. Each write is at most 20 ms; never hold this mutex while
          * collecting the next network packet or waiting for a tail fragment. */
-        /* A restart must not interpolate from the last sample before silence:
-         * that stale midpoint would bypass the new 5 ms fade-in. */
-        if (restart || s_playback_resampler_generation != generation ||
-            s_playback_resampler_epoch != epoch) {
-            s_playback_resampler_generation = generation;
-            s_playback_resampler_epoch = epoch;
-            s_playback_previous = pcm[0];
-        }
         for (size_t i = 0; i < mono_samples; ++i) {
             int16_t current = pcm[i];
-            int16_t midpoint = (int16_t)(((int32_t)s_playback_previous + current) / 2);
-            size_t output_index = i * AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT;
-            /* Keep the existing chronological interpolation and gain. */
-            s_play_stereo[output_index] = midpoint;
-            s_play_stereo[output_index + 1U] = midpoint;
-            s_play_stereo[output_index + 2U] = current;
-            s_play_stereo[output_index + 3U] = current;
-            s_playback_previous = current;
+            size_t output_index = i * AUDIO_RTC_I2S_VALUES_PER_INPUT;
+            s_play_stereo[output_index] = current;
+            s_play_stereo[output_index + 1U] = current;
         }
         size_t bytes = mono_samples *
-                       AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT * sizeof(int16_t);
+                       AUDIO_RTC_I2S_VALUES_PER_INPUT * sizeof(int16_t);
         int64_t write_begin = esp_timer_get_time();
         played = s_speaker_dev != NULL &&
                  esp_codec_dev_write(s_speaker_dev, s_play_stereo, bytes) ==
@@ -1141,14 +1332,13 @@ static bool play_audio_chunk(starter_tirtc_mode_t mode, uint32_t generation,
         update_max_counter(&s_playout_diag.write_max_us, write_us);
         /* A blocking I2S write normally paces one frame; only excess time is
          * suspicious. This is not a measurement of actual DAC underruns. */
-        if (write_us > mono_samples * 125U + 20000U)
+        if (write_us > audio_samples_to_us(mono_samples) + 20000U)
             atomic_fetch_add(&s_playout_diag.slow_writes, 1);
         if (!played) {
             atomic_fetch_add_explicit(&s_audio_write_failed, 1,
                                       memory_order_relaxed);
             /* Partial codec writes have unknown progress. Do not replay this
              * block, and do not interpolate from its unconfirmed last sample. */
-            s_playback_resampler_generation = 0;
         }
     } else {
         atomic_fetch_add_explicit(&s_audio_playback_blocked, 1,
@@ -1175,7 +1365,7 @@ static void release_audio_rx_slot(uint8_t slot, bool stale)
 static void publish_playout(const starter_playout_t *q, uint32_t generation,
                              size_t pending_samples)
 {
-    uint32_t queued_ms = (q->queued_us + pending_samples * 125U + 999U) / 1000U;
+    uint32_t queued_ms = (q->queued_us + audio_samples_to_us(pending_samples) + 999U) / 1000U;
     atomic_store(&s_playout_diag.generation, generation);
     atomic_store(&s_playout_diag.target_ms, q->target_ms);
     atomic_store(&s_playout_diag.queued_ms, queued_ms);
@@ -1226,6 +1416,7 @@ static void audio_sink_task(void *argument)
     uint64_t partial_since_us = 0, last_service_us = 0;
     uint64_t last_log_us = 0;
     uint32_t last_faults = 0, last_target = 0, render_starts = 0;
+    h5_upsampler_t h5_upsampler = {0};
     for (;;) {
         uint32_t current_epoch = atomic_load(&s_playout_diag.epoch);
         bool active = atomic_load(&s_active) && !atomic_load(&s_speaker_muted);
@@ -1248,6 +1439,10 @@ static void audio_sink_task(void *argument)
             s_rx_render.fade_remaining = 0;
             render_starts = 0;
             if (epoch != current_epoch) {
+                if (esp_opus_dec_reset(s_opus_decoder) != ESP_AUDIO_ERR_OK)
+                    ESP_LOGE(TAG, "Opus decoder reset failed epoch=%lu",
+                             (unsigned long)current_epoch);
+                memset(&h5_upsampler, 0, sizeof(h5_upsampler));
                 atomic_store(&s_playout_diag.pcm_in_hash, STARTER_PLAYOUT_HASH_INITIAL);
                 atomic_store(&s_playout_diag.pcm_out_hash, STARTER_PLAYOUT_HASH_INITIAL);
             }
@@ -1275,11 +1470,16 @@ static void audio_sink_task(void *argument)
             if (admitted_us >= item->received_us)
                 update_max_counter(&s_playout_diag.ingress_max_us,
                                    (uint32_t)(admitted_us - item->received_us));
-            /* A-law 8 kHz mono: one encoded byte represents 125 us of audio.
-             * This works for 20/40/80 ms packets, not just a fixed packet count. */
-            if (!starter_playout_push(&playout, slot, item->frame.length * 125U,
-                                      item->frame.timestamp_ms, item->frame.stream_id,
-                                      item->received_us)) {
+            /* Opus is fixed at 20 ms. PCMA carries one byte per 8 kHz sample,
+             * so its encoded length is also the packet duration. */
+            uint32_t duration_us = item->mode == STARTER_TIRTC_H5
+                                       ? (uint32_t)(((uint64_t)item->frame.length *
+                                                     1000000U) /
+                                                    STARTER_H5_AUDIO_SAMPLE_RATE_HZ)
+                                       : AUDIO_PACKET_MS * 1000U;
+            if (!starter_playout_push(&playout, slot, duration_us,
+                                       item->frame.timestamp_ms, item->frame.stream_id,
+                                       item->received_us)) {
                 atomic_fetch_add(&s_playout_diag.overflow, 1);
                 atomic_fetch_add(&s_audio_dropped, 1);
                 release_audio_rx_slot(slot, false);
@@ -1288,7 +1488,8 @@ static void audio_sink_task(void *argument)
         uint64_t now = esp_timer_get_time();
         update_max_counter(&s_playout_diag.queued_peak_ms,
                            (playout.queued_us +
-                            (decoded_count - decoded_offset + s_rx_pcm.count) * 125U + 999U) / 1000U);
+                            audio_samples_to_us(decoded_count - decoded_offset + s_rx_pcm.count) +
+                            999U) / 1000U);
         unsigned decoded_this_turn = 0;
         if (s_rx_pcm.count == 0)
             s_rx_pcm.limit = starter_playout_quantum(&playout, decoded_count - decoded_offset, now);
@@ -1301,7 +1502,8 @@ static void audio_sink_task(void *argument)
             }
             if (decoded_this_turn++ >= AUDIO_RX_QUEUE_DEPTH ||
                 !starter_playout_pop(&playout, now, false, &slot)) break;
-            decoded_count = decode_audio_item(&s_audio_rx_pool[slot]);
+            decoded_count = decode_audio_item(&s_audio_rx_pool[slot],
+                                              &h5_upsampler);
             decoded_offset = 0;
             release_audio_rx_slot(slot, false);
         }
@@ -1418,6 +1620,9 @@ esp_err_t starter_media_init(void)
         err = audio_i2s_init();
     }
     if (err == ESP_OK) {
+        err = opus_init();
+    }
+    if (err == ESP_OK) {
         err = g711_init();
     }
     if (err == ESP_OK) {
@@ -1449,7 +1654,11 @@ esp_err_t starter_media_init(void)
     if (s_audio_rx_pool == NULL || s_audio_tx_pool == NULL ||
         !esp_ptr_external_ram(s_audio_rx_pool) ||
         !esp_ptr_external_ram(s_audio_tx_pool) ||
+        !esp_ptr_external_ram(s_decode_h5_pcm) ||
         !esp_ptr_external_ram(s_decode_pcm) ||
+        !esp_ptr_external_ram(s_encode_h5_pcm) ||
+        !esp_ptr_external_ram(s_encode_alaw) ||
+        !esp_ptr_external_ram(s_encode_opus) ||
         !esp_ptr_external_ram(&s_rx_pcm) ||
         !esp_ptr_external_ram(s_play_stereo) ||
         s_audio_rx_ready_queue == NULL || s_audio_rx_free_queue == NULL ||
@@ -1471,19 +1680,20 @@ esp_err_t starter_media_init(void)
     err = audio_codecs_init();
     if (err == ESP_OK) err = audio_i2s_start();
     if (err != ESP_OK) return err;
-    /* These long-running workers use only PSRAM-backed frame pools and board
-     * drivers. Keeping their stacks in PSRAM preserves internal/DMA SRAM for
-     * Wi-Fi and TiRTC bootstrap allocations. */
+    /* Espressif's esp_audio_codec contract recommends about 40 KiB for an
+     * encoder task and 20 KiB for a decoder task.  The wrapper, diagnostics
+     * and TiRTC send call need their own margin, so use 48/24 KiB.  Both
+     * stacks remain in PSRAM; internal/DMA SRAM is not consumed by this fix. */
     if (xTaskCreateWithCaps(audio_sink_task,
                             "board_audio_rx",
-                            6144,
+                            AUDIO_OPUS_DECODER_STACK_BYTES,
                             NULL,
                             8,
                             NULL,
                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS ||
         xTaskCreateWithCaps(audio_uplink_task,
                             "rtc_audio_tx",
-                            6144,
+                            AUDIO_OPUS_ENCODER_STACK_BYTES,
                             NULL,
                             7,
                             NULL,
@@ -1508,7 +1718,7 @@ esp_err_t starter_media_init(void)
     }
     atomic_store_explicit(&s_ready, true, memory_order_release);
     ESP_LOGI(TAG,
-             "audio ready: PSRAM rx/tx=%u/%u B, ES7210/ES8311 A-law, "
+             "audio ready: PSRAM rx/tx=%u/%u B, H5=PCMA/8k other=Opus/16k, "
              "full-duplex AEC=%u Hz->%u Hz chunk=%u media-core=%d yield=%u ms",
              (unsigned)(AUDIO_RX_QUEUE_DEPTH * sizeof(*s_audio_rx_pool)),
              (unsigned)(AUDIO_TX_QUEUE_DEPTH * sizeof(*s_audio_tx_pool)),
@@ -1649,7 +1859,7 @@ bool starter_media_preroll_status(starter_media_preroll_status_t *out)
     if (out == NULL || s_preroll_mutex == NULL ||
         xSemaphoreTake(s_preroll_mutex, 0) != pdTRUE) return false;
     *out = (starter_media_preroll_status_t){
-        .buffered_ms = (uint32_t)(s_preroll.count / 8U),
+        .buffered_ms = (uint32_t)(s_preroll.count / PREROLL_SAMPLES_PER_MS),
         .owned = s_preroll.token != 0,
         .bound = s_preroll.generation != 0,
         .failed = s_preroll.failed,
@@ -1705,14 +1915,14 @@ esp_err_t starter_media_play_pcm8k_at_epoch(const int16_t *pcm, size_t sample_co
         for (size_t i = 0; i < chunk_samples; ++i) {
             int16_t current = pcm[offset + i];
             int16_t midpoint = (int16_t)(((int32_t)previous + current) / 2);
-            size_t output_index = i * AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT;
+            size_t output_index = i * AUDIO_PCM8K_I2S_VALUES_PER_INPUT;
             s_play_stereo[output_index] = current;
             s_play_stereo[output_index + 1U] = current;
             s_play_stereo[output_index + 2U] = midpoint;
             s_play_stereo[output_index + 3U] = midpoint;
             previous = current;
         }
-        size_t bytes = chunk_samples * AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT *
+        size_t bytes = chunk_samples * AUDIO_PCM8K_I2S_VALUES_PER_INPUT *
                        sizeof(int16_t);
         if (s_speaker_dev == NULL ||
             esp_codec_dev_write(s_speaker_dev, s_play_stereo, bytes) !=
@@ -1742,7 +1952,7 @@ esp_err_t starter_media_play_pcm8k_at_epoch(const int16_t *pcm, size_t sample_co
         ESP_LOGI(TAG,
                  "verification prompt played samples=%u rate=%u",
                  (unsigned)sample_count,
-                 AUDIO_TRANSPORT_SAMPLE_RATE_HZ);
+                 8000U);
     }
     return err;
 }
@@ -1912,7 +2122,7 @@ static void submit_audio(starter_tirtc_mode_t mode,
                 update_max_counter(&s_room_audio_diag.rx_gap_max_us, gap);
                 if (!step) atomic_fetch_add(&s_room_audio_diag.rx_repeat_ts, 1);
                 else if (step > INT32_MAX) atomic_fetch_add(&s_room_audio_diag.rx_back_ts, 1);
-                else if (step * (uint64_t)1000U > s_room_audio_diag.rx_last_len * 125ULL + 2000U)
+                else if (step * (uint64_t)1000U > AUDIO_PACKET_MS * 1000ULL + 2000U)
                     atomic_fetch_add(&s_room_audio_diag.rx_forward_gap, 1);
             }
             if (ordered) {
@@ -2060,7 +2270,6 @@ starter_media_pipeline_status_t starter_media_pipeline_status(void)
         .afe_age_max_ms = atomic_load(&s_pipeline_diag.afe_age_max_ms),
         .fetch_wait_max_us = atomic_load(&s_pipeline_diag.fetch_wait_max_us),
         .agc_max_us = atomic_load(&s_pipeline_diag.agc_max_us),
-        .resample_max_us = atomic_load(&s_pipeline_diag.resample_max_us),
         .tx_queue_peak = atomic_load(&s_pipeline_diag.tx_queue_peak),
         .tx_age_max_us = atomic_load(&s_pipeline_diag.tx_age_max_us),
         .tx_gain_max_us = atomic_load(&s_pipeline_diag.tx_gain_max_us),

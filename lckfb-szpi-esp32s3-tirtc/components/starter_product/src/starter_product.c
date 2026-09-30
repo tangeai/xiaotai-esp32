@@ -846,9 +846,10 @@ static void set_object_visible(lv_obj_t *object, bool visible)
     if (object == NULL) {
         return;
     }
-    if (visible) {
+    bool hidden = lv_obj_has_flag(object, LV_OBJ_FLAG_HIDDEN);
+    if (visible && hidden) {
         lv_obj_clear_flag(object, LV_OBJ_FLAG_HIDDEN);
-    } else {
+    } else if (!visible && !hidden) {
         lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
     }
 }

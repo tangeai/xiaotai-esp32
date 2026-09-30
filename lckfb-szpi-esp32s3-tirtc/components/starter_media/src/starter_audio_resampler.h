@@ -5,11 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/*
- * Stateful 16 kHz mono -> 8 kHz mono decimator for the G.711 boundary.
- * The state belongs to one uninterrupted media timeline.  Reset only when a
- * capture pipeline is torn down, never once per 20/32 ms AEC block.
- */
+/* Stateful 16 kHz mono -> 8 kHz mono decimator for the H5 G.711 boundary. */
 #define STARTER_AUDIO_RESAMPLER_TAPS 31U
 
 typedef struct {
@@ -22,7 +18,7 @@ typedef struct {
 void starter_audio_resampler_16k_to_8k_reset(
     starter_audio_resampler_16k_to_8k_t *resampler);
 
-/* Returns the number of produced 8 kHz samples (input_count / 2 for even input). */
+/* Returns input_count / 2 for an even input block and sufficient output space. */
 size_t starter_audio_resampler_16k_to_8k_process(
     starter_audio_resampler_16k_to_8k_t *resampler,
     const int16_t *input,

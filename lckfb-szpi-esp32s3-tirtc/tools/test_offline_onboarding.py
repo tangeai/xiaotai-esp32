@@ -50,6 +50,10 @@ static bool platform_client_reconciling(void) {return reconciling;}
 static bool platform_client_known_unbound(void) {return unbound;}
 static void lv_obj_clear_flag(void *o,int f) {(void)o;assert(f==1);retry_hidden=false;}
 static void lv_obj_add_flag(void *o,int f) {(void)o;assert(f==1);retry_hidden=true;}
+static void set_object_visible(void *o,bool visible) {
+    if(visible)lv_obj_clear_flag(o,LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(o,LV_OBJ_FLAG_HIDDEN);
+}
 static int render_count, enqueued;
 static bool wifi_manager_connected(void) { return wifi; }
 static int enqueue_simple(int type) { assert(type == EVENT_AI_START); ++enqueued; return 0; }

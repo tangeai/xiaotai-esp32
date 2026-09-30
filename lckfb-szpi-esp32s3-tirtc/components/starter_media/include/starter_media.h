@@ -37,9 +37,9 @@ typedef struct {
 #endif
     uint32_t audio_received;     /**< 成功复制到播放队列的音频帧数。 */
     uint32_t audio_dropped;      /**< 参数无效、队列满或代次过期的帧数。 */
-    uint32_t audio_decoded;      /**< 已成功从 A-law 解码的下行帧数。 */
+    uint32_t audio_decoded;      /**< 已成功从 Opus 解码的下行帧数。 */
     uint32_t audio_played;       /**< 已完整写入 I2S 播放 DMA 的下行帧数。 */
-    uint32_t audio_decode_failed; /**< A-law 解码失败或空输出的帧数。 */
+    uint32_t audio_decode_failed; /**< PCMA/Opus 解码失败或空输出的帧数。 */
     uint32_t audio_playback_blocked; /**< 静音、功放或会话门禁拒绝的帧数。 */
     uint32_t audio_write_failed; /**< I2S 写入失败或部分写入的帧数。 */
     uint32_t aec_processed;      /**< 已完成的 16 kHz ESP-SR AEC 帧数。 */
@@ -135,7 +135,7 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation);
 void starter_media_stop(void);
 /* Remote AI EOS: preserve already admitted downlink, then acknowledge from the
  * sink. Explicit stop/mute/call preemption still cancels immediately. No wait
- * or allocation on the runtime task. Upper bound: 32 x 1500 A-law bytes (6 s),
+ * or allocation on the runtime task. Upper bound: 32 x 1500 encoded bytes,
  * 500 ms prebuffer, short PCM tail and <=90 ms output horizon, plus margin. */
 #define STARTER_MEDIA_DRAIN_TIMEOUT_MS 7000U
 bool starter_media_begin_audio_drain(uint32_t generation);
@@ -143,7 +143,7 @@ bool starter_media_audio_drained(uint32_t generation);
 
 
 /**
- * 提交一帧下行 A-law 音频。
+ * 提交一帧下行 Opus 音频。
  *
  * 可从 SDK 回调调用：函数只做有界复制并以零等待时间投递固定队列；data 的
  * 所有权仍属于 SDK，函数返回后不会继续引用它。
@@ -178,7 +178,7 @@ void starter_media_log_room_audio(void);
  * Levels before/after TX gain are not simultaneous snapshots or calibrated SPL. */
 typedef struct {
     uint32_t read_frames, read_errors, read_gap_max_us, read_max_us;
-    uint32_t afe_age_max_ms, fetch_wait_max_us, agc_max_us, resample_max_us;
+    uint32_t afe_age_max_ms, fetch_wait_max_us, agc_max_us;
     uint32_t tx_queue_peak, tx_age_max_us, tx_gain_max_us, encode_max_us, send_max_us;
     uint32_t post_agc_peak, post_agc_rms, tx_peak, tx_rms, tx_clipped, tx_frames, tx_measure_max_us;
 } starter_media_pipeline_status_t;
@@ -201,10 +201,10 @@ typedef struct {
     uint32_t rx_invalid, rx_overflow, rx_stale, slot_errors;
     uint32_t lock_timeouts, lock_max_us, last_lock_owner;
     uint32_t write_max_us, slow_writes;
-    /* Lifetime 8 kHz sample totals (modulo 2^32). Once the worker is quiescent:
+    /* Lifetime 16 kHz sample totals (modulo 2^32). Once the worker is quiescent:
      * decoded = written + discarded + pending. 'written' counts source samples
      * consumed by successful writes, before rate conversion/fade; output_samples
-     * counts rendered 8 kHz samples submitted. Decode/RX failures are separate.
+     * counts rendered 16 kHz samples submitted. Decode/RX failures are separate.
      * 'discarded' on I2S error has unknown partial progress, not proven silence.
      * Snapshot fields are independently atomic, not a transaction. */
     uint32_t decoded_samples, written_samples, discarded_samples, pending_samples;

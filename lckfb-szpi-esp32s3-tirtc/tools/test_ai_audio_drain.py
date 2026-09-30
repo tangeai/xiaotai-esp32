@@ -17,6 +17,7 @@ static atomic_uint s_audio_rx_writers, s_audio_received, s_audio_dropped, s_audi
 static struct { atomic_uint epoch, invalid, stale, overflow; } s_playout_diag;
 #define AUDIO_RX_BYTES 1500U
 #define AUDIO_RX_QUEUE_DEPTH 32U
+#define AUDIO_PACKET_MS 20U
 typedef struct { uint64_t received_us; starter_tirtc_mode_t mode; uint32_t generation, epoch;
     starter_tirtc_frame_t frame; uint8_t payload[AUDIO_RX_BYTES]; } audio_rx_item_t;
 static audio_rx_item_t pool[AUDIO_RX_QUEUE_DEPTH], *s_audio_rx_pool=pool;
@@ -92,8 +93,8 @@ int main(void) {
     queued=0; q.count=1;
     complete_audio_drain(&q,0,clock_us); assert(!starter_media_audio_drained(7));
     q.count=0;
-    complete_audio_drain(&q,160,clock_us); assert(!starter_media_audio_drained(7));
-    starter_playout_output_written(&q,clock_us,160);
+    complete_audio_drain(&q,320,clock_us); assert(!starter_media_audio_drained(7));
+    starter_playout_output_written(&q,clock_us,320);
     complete_audio_drain(&q,0,clock_us+89999); assert(!starter_media_audio_drained(7));
     complete_audio_drain(&q,0,clock_us+90000); assert(starter_media_audio_drained(7));
     assert(!starter_media_audio_drained(8));

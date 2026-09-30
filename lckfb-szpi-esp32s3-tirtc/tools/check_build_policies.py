@@ -406,6 +406,9 @@ def media_cpu_fairness(c):
     body = line_range(c.text("media"), "static void audio_capture_task", "static size_t decode_audio_item")
     require("vTaskDelay(pdMS_TO_TICKS(MEDIA_CPU_YIELD_MS))" in body,
             "backlogged AEC capture must block cooperatively instead of starving IDLE/rtc_thread")
+    uplink = line_range(c.text("media"), "static void audio_uplink_task", "static void audio_input_task")
+    require("vTaskDelay(pdMS_TO_TICKS(MEDIA_CPU_YIELD_MS))" in uplink,
+            "backlogged Opus uplink must yield after returning each TX slot")
     c.need("voice", "vTaskDelay(pdMS_TO_TICKS(20))")
     for name in ("media", "voice", "defaults"):
         c.forbid(name, r"esp_task_wdt_(delete|deinit)|CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU[01]=n")
@@ -427,7 +430,7 @@ def i2s_resource(c):
            "ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0)|ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1)", compact=True)
     require(c.text("media").count("I2S_MCLK_MULTIPLE_256") >= 2, "TX and four-slot RX must both use 256 Fs MCLK")
     c.need("media", "EXT_RAM_BSS_ATTRstaticint16_ts_play_stereo", "s_play_stereo[output_index]=current",
-           "s_play_stereo[output_index+2U]=midpoint", "AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT*sizeof(int16_t)",
+           "s_play_stereo[output_index+2U]=midpoint", "AUDIO_PCM8K_I2S_VALUES_PER_INPUT*sizeof(int16_t)",
            "esp_codec_dev_write(s_speaker_dev,s_play_stereo,bytes)",
            "esp_codec_dev_read(s_microphone_dev,capture,capture_bytes)",
            "esp_codec_dev_set_out_vol(s_speaker_dev,70)",
@@ -443,7 +446,7 @@ def i2s_resource(c):
 
 def audio_capture(c):
     c.need("aec_header", "STARTER_AEC_MIC_SLOT=0", compact=True)
-    require(re.search(r"starter_tirtc_send_alaw\(.*>=0\)", c.compact("media")) is not None,
+    require(re.search(r"starter_tirtc_send_audio\(.*>=0\)", c.compact("media")) is not None,
             "TiRTC media send success must accept non-negative return values")
     c.need("main", "#defineDISCOVERY_URLCONFIG_XIAOTAI_DISCOVERY_URL", ".max_send_buffer_bytes=256U*1024U", compact=True)
     c.need("platform", "#definePLATFORM_DEFAULT_DISCOVERYCONFIG_XIAOTAI_DISCOVERY_URL", compact=True)
@@ -458,7 +461,7 @@ def aec(c):
             "Espressif esp-sr must be pinned to 2.4.7 in manifest")
     sr_lock = line_range(c.text("lock"), "espressif/esp-sr:", "^  [^ ]")
     require(has_line(sr_lock, r"version:\s*2\.4\.7"), "esp-sr lock version must be 2.4.7")
-    c.need("aec_header", "STARTER_AEC_SAMPLE_RATE_HZ=16000", "STARTER_AEC_TRANSPORT_RATE_HZ=8000",
+    c.need("aec_header", "STARTER_AEC_SAMPLE_RATE_HZ=16000", "STARTER_AEC_TRANSPORT_RATE_HZ=16000",
            "STARTER_AEC_CAPTURE_DMA_CHANNELS=4", "STARTER_AEC_MIC_CHANNELS=2",
            "STARTER_AEC_SECOND_MIC_SLOT=2", "STARTER_AEC_MIC_SLOT=0", "STARTER_AEC_REFERENCE_SLOT=1", compact=True)
     c.need("aec", 'afe_config_init("MMR",NULL,AFE_TYPE_FD,AFE_MODE_LOW_COST)',
@@ -472,9 +475,7 @@ def aec(c):
            "s_aec.tdm[i*STARTER_AEC_CAPTURE_DMA_CHANNELS+STARTER_AEC_SECOND_MIC_SLOT]",
            "s_aec.tdm[i*STARTER_AEC_CAPTURE_DMA_CHANNELS+STARTER_AEC_MIC_SLOT]",
            "s_aec.tdm[i*STARTER_AEC_CAPTURE_DMA_CHANNELS+STARTER_AEC_REFERENCE_SLOT]",
-           "starter_audio_resampler_16k_to_8k_process(&s_aec.resampler,", compact=True)
-    c.need("components/starter_media/src/starter_audio_resampler.h", "STARTER_AUDIO_RESAMPLER_TAPS 31U")
-    c.need("components/starter_media/src/starter_audio_resampler.c", "resampler->emit_phase")
+           ".transport_pcm=uplink", ".transport_samples=s_aec.fetch_samples", compact=True)
     c.forbid("aec", r"sum\s*/\s*2|clean\[i \* 2U\]")
     # The ADC owner now reuses its measured read-completion time. Preserve
     # timestamp units, epoch ownership and successful-read ordering.
@@ -492,12 +493,32 @@ def aec(c):
     require(all(position >= 0 for position in positions) and positions == sorted(positions),
             "AEC input must submit a successful ADC read with its completion timestamp in ms and original epochs")
     c.need("media", ".channel_mask=ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0)|ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1)|ESP_CODEC_DEV_MAKE_CHANNEL_MASK(2)|ESP_CODEC_DEV_MAKE_CHANNEL_MASK(3)",
-           "#defineAUDIO_TRANSPORT_SAMPLE_RATE_HZ8000U", "#defineAUDIO_HW_SAMPLE_RATE_HZ16000U",
+           "#defineAUDIO_TRANSPORT_SAMPLE_RATE_HZSTARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ",
+           "#defineAUDIO_HW_SAMPLE_RATE_HZ16000U",
            "#defineAUDIO_MCLK_MULTIPLE256U",
            "starter_aec_fetch(&clean)", "clean.mute_epoch!=mute_epoch||clean.capture_epoch!=capture_epoch",
-           "packet_pcm[packet_samples++]=clean.pcm_8k[i]",
-           "AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT(AUDIO_PLAYBACK_UPSAMPLE*2U)",
-           "s_play_stereo[output_index+2U]=midpoint", compact=True)
+           "packet_pcm[packet_samples++]=clean.transport_pcm[i]",
+           "#defineAUDIO_RTC_I2S_VALUES_PER_INPUT2U",
+           "s_play_stereo[output_index+1U]=current", compact=True)
+    c.need("media", "esp_opus_enc_process(s_opus_encoder", "esp_opus_dec_decode(s_opus_decoder",
+           "encoder.sample_rate=ESP_AUDIO_SAMPLE_RATE_16K", "encoder.bitrate=24000",
+           "#defineAUDIO_OPUS_ENCODER_COMPLEXITY0",
+           "encoder.complexity=AUDIO_OPUS_ENCODER_COMPLEXITY",
+           "decoder.sample_rate=ESP_AUDIO_SAMPLE_RATE_16K",
+           "#defineAUDIO_OPUS_ENCODER_STACK_BYTES(48U*1024U)",
+           "#defineAUDIO_OPUS_DECODER_STACK_BYTES(24U*1024U)",
+           '"rtc_audio_tx",AUDIO_OPUS_ENCODER_STACK_BYTES',
+           '"board_audio_rx",AUDIO_OPUS_DECODER_STACK_BYTES',
+           "MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT", compact=True)
+    c.need("media", "esp_g711_enc_process(s_g711_encoder", "esp_g711a_dec_decode(s_g711_decoder",
+           "starter_audio_resampler_16k_to_8k_process(",
+           "item->mode==STARTER_TIRTC_H5", compact=True)
+    c.need("tirtc", "mode==STARTER_TIRTC_H5",
+           "frame->media==TIRTC_AUDIO_ALAW",
+           "frame->flags==TIRTC_AUDIOSAMPLE_8K16B1C",
+           ".media=mode==STARTER_TIRTC_H5?TIRTC_AUDIO_ALAW:TIRTC_AUDIO_OPUS",
+           ".flags=mode==STARTER_TIRTC_H5?TIRTC_AUDIOSAMPLE_8K16B1C:TIRTC_AUDIOSAMPLE_16K16B1C",
+           compact=True)
     c.need("media_cmake", '"src/starter_aec.c"', "esp-sr", compact=True)
     for name in ("media", "aec_header"):
         c.forbid(name, r"s_playback_active|STARTER_AEC_REFERENCE_SLOT\s*=\s*0")
@@ -603,7 +624,8 @@ def memory_placement(c):
     c.need("media", "heap_caps_calloc(AUDIO_RX_QUEUE_DEPTH,sizeof(*s_audio_rx_pool),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",
            "s_audio_rx_ready_queue=xQueueCreateWithCaps(AUDIO_RX_QUEUE_DEPTH,sizeof(uint8_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",
            "s_audio_rx_free_queue=xQueueCreateWithCaps(AUDIO_RX_QUEUE_DEPTH,sizeof(uint8_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)",
-           'xTaskCreateWithCaps(audio_sink_task,"board_audio_rx",6144,NULL,8,NULL,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)',
+           'xTaskCreateWithCaps(audio_sink_task,"board_audio_rx",AUDIO_OPUS_DECODER_STACK_BYTES,NULL,8,NULL,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)',
+           'xTaskCreateWithCaps(audio_uplink_task,"rtc_audio_tx",AUDIO_OPUS_ENCODER_STACK_BYTES,NULL,7,NULL,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)',
            'xTaskCreatePinnedToCoreWithCaps(audio_capture_task,"board_audio_tx",6144,NULL,7,NULL,0,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)',
            'xTaskCreatePinnedToCoreWithCaps(audio_input_task,"board_audio_in",4096,NULL,9,NULL,MEDIA_REALTIME_CORE,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)', compact=True)
     c.need("aec", "config->memory_alloc_mode=AFE_MEMORY_ALLOC_INTERNAL_PSRAM_BALANCE", "heap_caps_aligned_calloc(",

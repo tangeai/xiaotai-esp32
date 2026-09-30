@@ -28,6 +28,19 @@ extern "C" {
 #define STARTER_H5_DOWN_AUDIO_STREAM_ID 14
 #define STARTER_H5_DOWN_VIDEO_STREAM_ID 15
 
+/* H5 keeps the lightweight browser-compatible PCMA contract. The other
+ * realtime applications use Opus. Keep negotiation, frame metadata and the
+ * media adapter aligned with these two explicit contracts. */
+#define STARTER_H5_AUDIO_CODEC_NAME "alaw"
+#define STARTER_H5_AUDIO_SAMPLE_RATE_HZ 8000U
+#define STARTER_H5_AUDIO_CHANNELS 1U
+#define STARTER_H5_AUDIO_PACKET_MS 20U
+
+#define STARTER_TIRTC_AUDIO_CODEC_NAME "opus"
+#define STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ 16000U
+#define STARTER_TIRTC_AUDIO_CHANNELS 1U
+#define STARTER_TIRTC_AUDIO_PACKET_MS 20U
+
 typedef enum {
     STARTER_TIRTC_NONE = 0, /**< 当前没有连接。 */
     STARTER_TIRTC_H5,      /**< H5 入站查看/对讲连接；S3 视频仅在订阅后发送。 */
@@ -153,12 +166,13 @@ int starter_tirtc_send_command(uint32_t command,
 int starter_tirtc_service_request(const char *path, const char *json_body);
 
 /**
- * 发送 G.711 A-law、8 kHz、16 bit、单声道音频。
+ * 发送当前模式对应的 20 ms 单声道编码音频：H5 为 A-law/8 kHz，
+ * AI、房间、设备呼叫和微信通话为 Opus/16 kHz。
  * H5 使用 STARTER_H5_UP_AUDIO_STREAM_ID，AI/房间使用 1，设备/微信通话使用 10。
  */
-int starter_tirtc_send_alaw(uint32_t timestamp_ms,
-                            const void *data,
-                            uint32_t length);
+int starter_tirtc_send_audio(uint32_t timestamp_ms,
+                             const void *data,
+                             uint32_t length);
 
 #if CONFIG_IDF_TARGET_ESP32P4
 /** 发送一张完整 JPEG 图像；只允许 H5，使用 UP_VIDEO 流。 */

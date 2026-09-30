@@ -344,13 +344,20 @@ static void on_audio(tirtc_conn_t connection,
      * H5 按能力上报的接收流号匹配，房间按固定流 1 匹配；设备呼叫和
      * VoIP 保留对端流号语义，均需验证本产品的可播放编码格式。
      */
+    bool codec_expected;
+    if (mode == STARTER_TIRTC_H5) {
+        codec_expected = frame->media == TIRTC_AUDIO_ALAW &&
+                         frame->flags == TIRTC_AUDIOSAMPLE_8K16B1C;
+    } else {
+        codec_expected = frame->media == TIRTC_AUDIO_OPUS &&
+                         frame->flags == TIRTC_AUDIOSAMPLE_16K16B1C;
+    }
     bool expected = (mode != STARTER_TIRTC_H5 ||
                      (frame->stream_id == STARTER_H5_DOWN_AUDIO_STREAM_ID &&
                       generation != 0U && generation == atomic_load_explicit(
                           &s_h5_audio_rx_generation, memory_order_acquire))) &&
                     (mode != STARTER_TIRTC_ROOM || frame->stream_id == 1U) &&
-                    frame->media == TIRTC_AUDIO_ALAW &&
-                    frame->flags == TIRTC_AUDIOSAMPLE_8K16B1C;
+                    codec_expected;
     if (!expected) {
         uint32_t rejected = (uint32_t)atomic_fetch_add_explicit(
                                 &s_downlink_audio_rejected, 1,
@@ -850,9 +857,9 @@ int starter_tirtc_service_request(const char *path, const char *json_body)
                                NULL);
 }
 
-int starter_tirtc_send_alaw(uint32_t timestamp_ms,
-                            const void *data,
-                            uint32_t length)
+int starter_tirtc_send_audio(uint32_t timestamp_ms,
+                             const void *data,
+                             uint32_t length)
 {
     tirtc_conn_t connection = (tirtc_conn_t)atomic_load_explicit(
         &s_connection, memory_order_acquire);
@@ -872,8 +879,9 @@ int starter_tirtc_send_alaw(uint32_t timestamp_ms,
     TIRTCFRAMEINFO frame = {
         .stream_id = mode == STARTER_TIRTC_H5 ? H5_AUDIO_STREAM :
                      (mode == STARTER_TIRTC_AI || mode == STARTER_TIRTC_ROOM) ? AI_AUDIO_STREAM : CALL_AUDIO_STREAM,
-        .media = TIRTC_AUDIO_ALAW,
-        .flags = TIRTC_AUDIOSAMPLE_8K16B1C,
+        .media = mode == STARTER_TIRTC_H5 ? TIRTC_AUDIO_ALAW : TIRTC_AUDIO_OPUS,
+        .flags = mode == STARTER_TIRTC_H5 ? TIRTC_AUDIOSAMPLE_8K16B1C :
+                                            TIRTC_AUDIOSAMPLE_16K16B1C,
         .ts = timestamp_ms,
         .length = length,
     };

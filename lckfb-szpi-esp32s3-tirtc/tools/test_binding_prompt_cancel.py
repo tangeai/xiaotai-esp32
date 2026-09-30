@@ -59,10 +59,10 @@ static atomic_bool s_ready, s_active, s_speaker_muted;
 static void *s_speaker_dev = (void *)1, *s_audio_output_mutex = (void *)2;
 static int held;
 #define AUDIO_RX_BYTES 1500U
-#define AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT 4U
+#define AUDIO_PCM8K_I2S_VALUES_PER_INPUT 4U
 #define ESP_CODEC_DEV_OK 0
 #define pdTRUE 1
-static int16_t s_play_stereo[AUDIO_RX_BYTES * AUDIO_PLAYBACK_I2S_VALUES_PER_INPUT];
+static int16_t s_play_stereo[AUDIO_RX_BYTES * AUDIO_PCM8K_I2S_VALUES_PER_INPUT];
 static atomic_bool cancelled;
 static provision_mqtt_t ctx;
 static void provision_mqtt_event(void *, esp_event_base_t, int32_t, void *);

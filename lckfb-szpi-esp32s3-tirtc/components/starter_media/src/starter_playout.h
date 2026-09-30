@@ -39,7 +39,7 @@ typedef struct {
     bool buffering, have_arrival;
     uint64_t rate_start_us, output_updated_us;
     uint32_t output_estimate_us;
-    int rate_mode; /* -1: consume 159, 0: 160, +1: 161 samples per 20 ms */
+    int rate_mode; /* -1: consume 319, 0: 320, +1: 321 samples per 20 ms */
     uint8_t timed_run;
 } starter_playout_t;
 
@@ -60,9 +60,10 @@ void starter_playout_output_written(starter_playout_t *q, uint64_t now_us, size_
 /* Packet boundaries are independent of the 20 ms output quantum. A residual
  * fragment is retained across packets; end markers preserve packet accounting
  * even when a packet spans several writes or several packets share one write. */
-#define STARTER_PLAYOUT_PCM_SAMPLES 160U /* 8 kHz, 20 ms, mono */
+#define STARTER_PLAYOUT_SAMPLE_RATE_HZ 16000U
+#define STARTER_PLAYOUT_PCM_SAMPLES 320U /* 16 kHz, 20 ms, mono */
 #define STARTER_PLAYOUT_PCM_CAPACITY (STARTER_PLAYOUT_PCM_SAMPLES + 1U)
-#define STARTER_PLAYOUT_FADE_SAMPLES 40U /* 5 ms, only at a playback restart */
+#define STARTER_PLAYOUT_FADE_SAMPLES 80U /* 5 ms, only at a playback restart */
 #define STARTER_PLAYOUT_TAIL_WAIT_US 60000U
 #define STARTER_PLAYOUT_HASH_INITIAL UINT32_C(2166136261)
 typedef struct {

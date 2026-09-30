@@ -103,7 +103,7 @@ static void s3_feedback(const char *text)
         lv_obj_clear_flag(s3_ui.toast, LV_OBJ_FLAG_CLICKABLE);
     }
     label_set_text_if_changed(s3_ui.toast, text);
-    lv_obj_clear_flag(s3_ui.toast, LV_OBJ_FLAG_HIDDEN);
+    set_object_visible(s3_ui.toast, true);
     s3_ui.toast_until = monotonic_ms() + 2400;
 }
 
@@ -631,9 +631,8 @@ static void s3_update_setup(bool connected, bool idle, bool provisioning,
             "绑定未完成，请点击右上角重试" : binding == STARTER_BINDING_CHECKING ?
             "正在检查设备配置…" : s_previous_verification_code[0] ?
             "等待绑定，完成后进入首页" : "正在获取验证码…");
-        if (binding == STARTER_BINDING_FAILED)
-            lv_obj_clear_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s3_ui.binding_retry, LV_OBJ_FLAG_HIDDEN);
+        set_object_visible(s3_ui.binding_retry,
+                           binding == STARTER_BINDING_FAILED);
     }
 }
 
@@ -901,23 +900,23 @@ static void s3_refresh_home_status(starter_runtime_status_t runtime,
 #if CONFIG_IDF_TARGET_ESP32S3
     if (s3_ui.view_stop) {
         if (runtime.state == STARTER_RUNTIME_H5_ACTIVE) {
-            lv_obj_clear_flag(s3_ui.view_stop, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(s3_ui.caption_panel, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(s3_ui.wake_hint, LV_OBJ_FLAG_HIDDEN);
+            set_object_visible(s3_ui.view_stop, true);
+            set_object_visible(s3_ui.caption_panel, false);
+            set_object_visible(s3_ui.wake_hint, false);
             return;
         }
-        lv_obj_add_flag(s3_ui.view_stop, LV_OBJ_FLAG_HIDDEN);
+        set_object_visible(s3_ui.view_stop, false);
     }
 #endif
     if (idle) {
         label_set_text_if_changed(s3_ui.wake_hint, s_preferences.microphone_muted ?
             "麦克风已关闭\n点击表情唤醒对话" :
             "尝试说“你好小钛”\n或者点击表情唤醒对话");
-        lv_obj_clear_flag(s3_ui.wake_hint, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s3_ui.caption_panel, LV_OBJ_FLAG_HIDDEN);
+        set_object_visible(s3_ui.wake_hint, true);
+        set_object_visible(s3_ui.caption_panel, false);
     } else {
-        lv_obj_add_flag(s3_ui.wake_hint, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(s3_ui.caption_panel, LV_OBJ_FLAG_HIDDEN);
+        set_object_visible(s3_ui.wake_hint, false);
+        set_object_visible(s3_ui.caption_panel, true);
     }
 }
 
@@ -928,7 +927,7 @@ static void s3_refresh_ui(int64_t now, starter_runtime_status_t runtime,
     bool pending = s3_ui.pending_until > now && s3_ui.pending_state == runtime.state;
     if (!pending) s3_ui.pending_action = 0;
     if (s3_ui.toast && now >= s3_ui.toast_until)
-        lv_obj_add_flag(s3_ui.toast, LV_OBJ_FLAG_HIDDEN);
+        set_object_visible(s3_ui.toast, false);
     if (s3_ui.wechat_qr) note_interaction();
     s3_set_enabled(s3_ui.contacts_refresh, !(pending && (unsigned)s3_ui.pending_action == S3_ACTION_REFRESH));
     s3_set_enabled(s3_ui.wechat_button, !(pending && (unsigned)s3_ui.pending_action == S3_ACTION_WECHAT));

@@ -180,9 +180,9 @@ static int command_status(int argc, char **argv)
            (unsigned long)pipeline.read_frames, (unsigned long)pipeline.read_errors,
            (unsigned long)pipeline.read_max_us, (unsigned long)pipeline.read_gap_max_us,
            (unsigned long)pipeline.afe_age_max_ms);
-    printf("DSP: fetch-wait/AGC/resample-max=%lu/%lu/%lu us post8k-peak/rms=%lu/%lu\n",
+    printf("DSP: fetch-wait/AGC-max=%lu/%lu us post16k-peak/rms=%lu/%lu\n",
            (unsigned long)pipeline.fetch_wait_max_us, (unsigned long)pipeline.agc_max_us,
-           (unsigned long)pipeline.resample_max_us, (unsigned long)pipeline.post_agc_peak,
+           (unsigned long)pipeline.post_agc_peak,
            (unsigned long)pipeline.post_agc_rms);
     printf("TX: q-peak=%lu age/gain/encode/send-max=%lu/%lu/%lu/%lu us peak/rms=%lu/%lu clip=%lu frames=%lu measure-max=%lu us\n",
            (unsigned long)pipeline.tx_queue_peak, (unsigned long)pipeline.tx_age_max_us,

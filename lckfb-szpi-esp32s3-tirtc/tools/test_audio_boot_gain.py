@@ -63,7 +63,7 @@ typedef int esp_err_t;
 static struct { int mode, rate, gain, limiter, target; } state[2];
 static int opened, closed, fail_allocation_at, internal_mode, fail_process_mode;
 static void *esp_agc_open(int mode, int rate) {
-    assert((mode==2 && rate==16000) || (mode==3 && rate==8000));
+    assert((mode==2 || mode==3) && rate==16000);
     ++opened;
     if (opened == fail_allocation_at) return NULL;
     state[mode-2].mode=mode; state[mode-2].rate=rate;
@@ -103,17 +103,17 @@ int main(void) {
     starter_agc_discard_pending();
     assert(starter_agc_process(in,out,1)==ESP_OK && out[0]==0);
     assert(starter_agc_process(NULL,out,1)==ESP_ERR_INVALID_ARG);
-    int16_t pcm[160], expected[160];
-    for(int i=0;i<160;i++) pcm[i]=expected[i]=(int16_t)(i*300-22000);
+    int16_t pcm[320], expected[320];
+    for(int i=0;i<320;i++) pcm[i]=expected[i]=(int16_t)(i*180-22000);
     for(int i=0;i<100;i++) {
-        assert(starter_agc_boost_uplink(pcm,160)==ESP_OK);
+        assert(starter_agc_boost_uplink(pcm,320)==ESP_OK);
         assert(memcmp(pcm,expected,sizeof(pcm))==0);
     }
-    assert(starter_agc_boost_uplink(pcm,79)==ESP_ERR_INVALID_ARG);
-    assert(starter_agc_boost_uplink(NULL,160)==ESP_ERR_INVALID_ARG);
+    assert(starter_agc_boost_uplink(pcm,159)==ESP_ERR_INVALID_ARG);
+    assert(starter_agc_boost_uplink(NULL,320)==ESP_ERR_INVALID_ARG);
     assert(starter_agc_boost_uplink(pcm,0)==ESP_ERR_INVALID_ARG);
     fail_process_mode=3;
-    assert(starter_agc_boost_uplink(pcm,160)==ESP_FAIL);
+    assert(starter_agc_boost_uplink(pcm,320)==ESP_FAIL);
     assert(starter_agc_process(in,out,1)==ESP_OK);
     fail_process_mode=0;
     starter_agc_deinit();

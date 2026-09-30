@@ -18,6 +18,8 @@ code = r'''
 #include "cJSON.h"
 #define AI_COMMAND 0x2100
 #define AI_RESPONSE_TIMEOUT_MS 10000
+#define STARTER_TIRTC_AUDIO_CODEC_NAME "opus"
+#define STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ 16000
 #define ESP_ERR_INVALID_STATE 1
 #define ESP_ERR_NO_MEM 2
 #define ESP_LOGI(tag, ...) do { if (0) printf(__VA_ARGS__); } while (0)
@@ -67,9 +69,9 @@ int main(void) {
     cJSON_SetNumberValue(cJSON_GetObjectItem(input,"channels"),2);
     assert(!ai_audio_profile_valid(input));
     cJSON_SetNumberValue(cJSON_GetObjectItem(input,"channels"),1);
-    cJSON_SetNumberValue(cJSON_GetObjectItem(input,"sample_rate"),16000);
-    assert(!ai_audio_profile_valid(input));
     cJSON_SetNumberValue(cJSON_GetObjectItem(input,"sample_rate"),8000);
+    assert(!ai_audio_profile_valid(input));
+    cJSON_SetNumberValue(cJSON_GetObjectItem(input,"sample_rate"),16000);
     assert(ai_audio_profile_valid(input) && !ai_audio_profile_valid(NULL));
     cJSON_Delete(root); assert(!allocations);
     send_error=-9; send_ai_start();
@@ -123,7 +125,7 @@ int main(void) {
     send_error=-8; send_device_action_result(&id,false,"busy","not available");
     assert(calls==2 && !allocations);
     printf("PASS: every action reply allocation failure (%u sites), notification and string/numeric IDs\n",reply_allocations);
-    puts("PASS: AI RPC generation, exact mono A-law profile, send/allocation/disconnect errors and cleanup");
+    puts("PASS: AI RPC generation, exact mono Opus/16k profile, send/allocation/disconnect errors and cleanup");
     return 0;
 }
 '''

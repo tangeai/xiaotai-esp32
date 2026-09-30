@@ -19,7 +19,7 @@ void starter_preroll_append(starter_preroll_t *q, const int16_t *pcm,
 {
     if (q->failed || q->capacity == 0 || samples == 0) return;
     /* An input discontinuity invalidates a pending utterance, never splices it. */
-    int64_t duration_ms = (int64_t)samples / 8;
+    int64_t duration_ms = (int64_t)samples / PREROLL_SAMPLES_PER_MS;
     if (q->end_ms != 0 &&
         (end_ms <= q->end_ms || end_ms - q->end_ms > duration_ms + 100)) {
         if (q->token != 0) { q->failed = true; return; }
@@ -54,7 +54,7 @@ uint32_t starter_preroll_prepare(starter_preroll_t *q, int64_t wake_ms, int64_t 
      * by a manual AI start. */
     int64_t keep_ms = q->end_ms - wake_ms + 800;
     if (keep_ms <= 0) return 0;
-    size_t keep = (size_t)keep_ms * 8U;
+    size_t keep = (size_t)keep_ms * PREROLL_SAMPLES_PER_MS;
     if (keep < q->count) {
         size_t drop = q->count - keep;
         q->head = (q->head + drop) % q->capacity;
@@ -62,7 +62,7 @@ uint32_t starter_preroll_prepare(starter_preroll_t *q, int64_t wake_ms, int64_t 
     }
     if (++q->next_token == 0) ++q->next_token;
     q->token = q->next_token;
-    q->timestamp_ms = q->end_ms - (int64_t)q->count / 8;
+    q->timestamp_ms = q->end_ms - (int64_t)q->count / PREROLL_SAMPLES_PER_MS;
     q->expires_ms = now_ms + PREROLL_TIMEOUT_MS;
     return q->token;
 }
@@ -97,7 +97,7 @@ void starter_preroll_consume(starter_preroll_t *q, size_t samples)
     if (samples > q->count) return;
     q->head = (q->head + samples) % q->capacity;
     q->count -= samples;
-    q->timestamp_ms += (int64_t)samples / 8;
+    q->timestamp_ms += (int64_t)samples / PREROLL_SAMPLES_PER_MS;
 }
 
 bool starter_preroll_finish_replay(starter_preroll_t *q, uint32_t generation,

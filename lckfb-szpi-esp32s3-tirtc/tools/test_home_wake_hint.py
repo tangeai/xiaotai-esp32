@@ -9,6 +9,9 @@ root = Path(__file__).resolve().parents[1]
 source = (root / "components/starter_product/src/starter_product_s3_ui.inc").read_text(encoding="utf-8")
 body = function_body(source, "s3_refresh_home_status")
 assert body
+product_source = (root / "components/starter_product/src/starter_product.c").read_text(encoding="utf-8")
+visibility_body = function_body(product_source, "set_object_visible")
+assert visibility_body
 refresh = function_body(source, "s3_refresh_ui")
 assert "s3_refresh_home_status(runtime, product, ai_pending);" in refresh
 
@@ -27,6 +30,7 @@ static struct { label_t *wake_hint, *caption_panel; unsigned pending_action; }
     s3_ui = {&hint, &captions, 0};
 static struct { bool microphone_muted; } s_preferences;
 static char s_voice_feedback[80];
+static unsigned flag_writes;
 static const char *phase_text(starter_ai_ui_phase_t phase) {
     (void)phase; return "AI 回复中";
 }
@@ -34,11 +38,15 @@ static void label_set_text_if_changed(label_t *label, const char *text) {
     assert(label && text); label->text = text;
 }
 static void lv_obj_clear_flag(label_t *label, unsigned flag) {
-    assert(flag == LV_OBJ_FLAG_HIDDEN); label->hidden = false;
+    assert(flag == LV_OBJ_FLAG_HIDDEN); label->hidden = false; flag_writes++;
 }
 static void lv_obj_add_flag(label_t *label, unsigned flag) {
-    assert(flag == LV_OBJ_FLAG_HIDDEN); label->hidden = true;
+    assert(flag == LV_OBJ_FLAG_HIDDEN); label->hidden = true; flag_writes++;
 }
+static bool lv_obj_has_flag(label_t *label, unsigned flag) {
+    assert(flag == LV_OBJ_FLAG_HIDDEN); return label->hidden;
+}
+static void set_object_visible(label_t *object, bool visible) { VISIBILITY_BODY }
 static void s3_refresh_home_status(starter_runtime_status_t runtime,
     const starter_runtime_product_snapshot_t *product, bool ai_pending) { BODY }
 
@@ -65,6 +73,14 @@ int main(void) {
             assert(!strcmp(hint.text, "尝试说“你好小钛”\n或者点击表情唤醒对话"));
         }
     }
+    /* A stable idle page is refreshed every 100 ms. Repeating that refresh
+     * must not re-invalidate the same visible/hidden objects. */
+    hint.hidden = true; captions.hidden = false; flag_writes = 0;
+    update(STARTER_RUNTIME_WAITING, false);
+    assert(flag_writes == 2);
+    for (unsigned repeat = 0; repeat < 100; ++repeat)
+        update(STARTER_RUNTIME_WAITING, false);
+    assert(flag_writes == 2);
     /* A queued AI request suppresses wake guidance until it completes/expires. */
     update(STARTER_RUNTIME_WAITING, true);
     assert(hint.hidden && !strcmp(header.text, "正在连接 AI"));
@@ -87,7 +103,7 @@ int main(void) {
     assert(!strcmp(header.text, "状态同步中") && hint.hidden);
     puts("PASS: home status/hint agreement, all owners, pending, mute, feedback and idle restoration");
 }
-'''.replace("BODY", body)
+'''.replace("VISIBILITY_BODY", visibility_body).replace("BODY", body)
 
 with tempfile.TemporaryDirectory(prefix="s3-home-hint-") as directory:
     temp = Path(directory)

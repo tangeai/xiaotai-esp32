@@ -313,15 +313,18 @@ static bool room_audio_profile(const cJSON *object)
     const cJSON *codec = cJSON_GetObjectItemCaseSensitive(object, "codec");
     const cJSON *rate = cJSON_GetObjectItemCaseSensitive(object, "sample_rate");
     const cJSON *channels = cJSON_GetObjectItemCaseSensitive(object, "channels");
-    return cJSON_IsString(codec) && strcmp(codec->valuestring, "g711a") == 0 &&
-        cJSON_IsNumber(rate) && rate->valuedouble == 8000 && cJSON_IsNumber(channels) && channels->valuedouble == 1;
+    return cJSON_IsString(codec) &&
+        strcmp(codec->valuestring, STARTER_TIRTC_AUDIO_CODEC_NAME) == 0 &&
+        cJSON_IsNumber(rate) && rate->valuedouble == STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ &&
+        cJSON_IsNumber(channels) && channels->valuedouble == STARTER_TIRTC_AUDIO_CHANNELS;
 }
 
 static bool room_add_audio(cJSON *params, const char *name)
 {
     cJSON *format = cJSON_AddObjectToObject(params, name);
-    return format && cJSON_AddStringToObject(format, "codec", "g711a") &&
-        cJSON_AddNumberToObject(format, "sample_rate", 8000) && cJSON_AddNumberToObject(format, "channels", 1);
+    return format && cJSON_AddStringToObject(format, "codec", STARTER_TIRTC_AUDIO_CODEC_NAME) &&
+        cJSON_AddNumberToObject(format, "sample_rate", STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ) &&
+        cJSON_AddNumberToObject(format, "channels", STARTER_TIRTC_AUDIO_CHANNELS);
 }
 
 static void room_connection(const runtime_event_t *event)
@@ -430,7 +433,7 @@ static void room_command(const runtime_event_t *event)
             publish_state(STARTER_RUNTIME_ROOM_ACTIVE);
             s_room.retries = 0;
             if (!room_mic(false)) { cJSON_Delete(root); room_fail(ESP_FAIL); return; }
-            ESP_LOGI(TAG, "ROOM joined gen=%lu format=g711a/8000/1", (unsigned long)s_room.generation);
+            ESP_LOGI(TAG, "ROOM joined gen=%lu format=opus/16000/1", (unsigned long)s_room.generation);
         }
         s_room.dirty = true;
         cJSON_Delete(root);

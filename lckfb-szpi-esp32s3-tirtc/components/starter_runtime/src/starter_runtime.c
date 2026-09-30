@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "esp_app_desc.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -66,6 +67,9 @@
 #define CALL_CONNECT_TIMEOUT_MS 30000
 #define VOIP_CONNECTED_WAIT_TIMEOUT_MS 35000
 #define VOIP_PROFILE_RETRY_MS 15000
+#define DEVICE_PROFILE_JSON_CAPACITY 1280U
+#define DEVICE_PROFILE_CHIP_MODEL "ESP32-S3"
+#define DEVICE_PROFILE_BOARD_MODEL "LCKFB-SZPI-ESP32S3-V1.0.1"
 #define CALL_COMMAND_CONNECT 0x2000U
 #define CALL_COMMAND_HANGUP 0x2001U
 
@@ -957,31 +961,54 @@ static void request_voip_profile(void)
         "\"up_video_mt\":\"h264\",\"down_video_mt\":\"mjpeg\","
         "\"down_audio_mt\":\"alaw\",\"no_video\":false,\"calling_timeout_sec\":30}";
 #else
-    /* Cover every documented field for each scene. Presentation defaults do
-     * not enable video when no_video=true. Report the wire format (8k mono),
-     * not the 16k dual-microphone AFE input; unsupported codecs stay absent.
-     * This const snapshot is not camera health or runtime telemetry. */
-    static const char profile[] =
-        "{\"profiles\":{"
-        "\"stream\":{\"up_audio_streamid\":10,\"up_video_streamid\":11,"
-        "\"down_audio_streamid\":14,\"down_video_streamid\":15,"
-        "\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+    /* The server rejects unknown/null fields and replaces each included scene
+     * as a complete snapshot. Keep the payload tied to the actual stream and
+     * codec constants; hardware metadata is descriptive, never an auth input. */
+    static EXT_RAM_BSS_ATTR char profile[DEVICE_PROFILE_JSON_CAPACITY];
+    const esp_app_desc_t *app = esp_app_get_description();
+    const char *firmware_version =
+        app != NULL && app->version[0] != '\0' ? app->version : "unknown";
+    int profile_length = snprintf(
+        profile, sizeof(profile),
+        "{\"hardware\":{\"chip_model\":\"%s\",\"board_model\":\"%s\"},"
+        "\"firmware_version\":\"%s\",\"profiles\":{"
+        "\"stream\":{\"up_audio_streamid\":%u,\"up_video_streamid\":%u,"
+        "\"down_audio_streamid\":%u,\"down_video_streamid\":%u,"
+        "\"up_audio_mt\":[\"%s\"],\"down_audio_mt\":[\"%s\"],"
         "\"up_video_mt\":[\"mjpeg\"],\"down_video_mt\":[],"
-        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false,"
+        "\"audio_rate\":%u,\"audio_channels\":1,\"no_video\":false,"
         "\"camera_rotation\":0,\"hor_mirror\":false,\"vert_mirror\":false,"
         "\"aspect_ratio\":\"4:3\",\"object_fit\":\"contain\"},"
-        "\"call\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"call\":{\"up_audio_mt\":[\"%s\"],\"down_audio_mt\":[\"%s\"],"
         "\"up_video_mt\":[],\"down_video_mt\":[],"
-        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":true,"
+        "\"audio_rate\":%u,\"audio_channels\":1,\"no_video\":true,"
         "\"camera_rotation\":0,\"hor_mirror\":false,\"vert_mirror\":false,"
         "\"aspect_ratio\":\"4:3\",\"object_fit\":\"contain\"},"
         "\"voip\":{\"screen_width\":320,\"screen_height\":240,"
-        "\"audio_rate\":8000,\"audio_channels\":1,\"down_audio_mt\":\"alaw\","
+        "\"audio_rate\":%u,\"audio_channels\":1,\"down_audio_mt\":\"%s\","
         "\"up_video_mt\":\"none\",\"down_video_mt\":\"none\","
         "\"camera_rotation\":0,\"down_video_rotation\":0,"
         "\"hor_mirror\":false,\"vert_mirror\":false,"
-        "\"aspect_ratio\":\"4:3\",\"object_fit\":\"contain\",\"video_res_mode\":\"auto\","
-        "\"no_video\":true,\"calling_timeout_sec\":30}}}";
+        "\"aspect_ratio\":\"4:3\",\"object_fit\":\"contain\","
+        "\"video_res_mode\":\"auto\",\"no_video\":true,"
+        "\"calling_timeout_sec\":30}}}",
+        DEVICE_PROFILE_CHIP_MODEL, DEVICE_PROFILE_BOARD_MODEL, firmware_version,
+        (unsigned)STARTER_H5_UP_AUDIO_STREAM_ID,
+        (unsigned)STARTER_H5_UP_VIDEO_STREAM_ID,
+        (unsigned)STARTER_H5_DOWN_AUDIO_STREAM_ID,
+        (unsigned)STARTER_H5_DOWN_VIDEO_STREAM_ID,
+        STARTER_H5_AUDIO_CODEC_NAME, STARTER_H5_AUDIO_CODEC_NAME,
+        (unsigned)STARTER_H5_AUDIO_SAMPLE_RATE_HZ,
+        STARTER_TIRTC_AUDIO_CODEC_NAME, STARTER_TIRTC_AUDIO_CODEC_NAME,
+        (unsigned)STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ,
+        (unsigned)STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ,
+        STARTER_TIRTC_AUDIO_CODEC_NAME);
+    if (profile_length < 0 || (size_t)profile_length >= sizeof(profile)) {
+        s_voip_profile_retry_at_ms = now_ms() + VOIP_PROFILE_RETRY_MS;
+        ESP_LOGE(TAG, "device profile serialization overflow: capacity=%u",
+                 (unsigned)sizeof(profile));
+        return;
+    }
 #endif
     /* Profile registration also has no realtime-connect callback. */
     esp_err_t err = platform_client_request_metadata(
@@ -997,8 +1024,17 @@ static void request_voip_profile(void)
         ESP_LOGI(TAG, "VoIP profile submission queued");
         ESP_LOGI(TAG, "VoIP profile: video enabled, up=h264 down=mjpeg screen=480x320 camera_rotation=270 aspect_ratio=0.75 mirror=none object_fit=contain");
 #else
-        ESP_LOGI(TAG, "device profile queued api=/v1/device/profile fields=16/12/16 bytes=%u stream_tx=10/11 stream_rx=14/15(video=off) call=alaw voip=alaw",
-                 (unsigned)(sizeof(profile) - 1));
+        ESP_LOGI(TAG, "device profile queued api=/v1/device/profile meta=3 fields=16/12/16 bytes=%u stream_tx=%u/%u stream_rx=%u/%u video=mjpeg-up/none-down h5_audio=%s/%u/1 other_audio=%s/%u/1 fw=%s",
+                 (unsigned)profile_length,
+                 (unsigned)STARTER_H5_UP_AUDIO_STREAM_ID,
+                 (unsigned)STARTER_H5_UP_VIDEO_STREAM_ID,
+                 (unsigned)STARTER_H5_DOWN_AUDIO_STREAM_ID,
+                 (unsigned)STARTER_H5_DOWN_VIDEO_STREAM_ID,
+                 STARTER_H5_AUDIO_CODEC_NAME,
+                 (unsigned)STARTER_H5_AUDIO_SAMPLE_RATE_HZ,
+                 STARTER_TIRTC_AUDIO_CODEC_NAME,
+                 (unsigned)STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ,
+                 firmware_version);
 #endif
     } else {
         s_voip_profile_retry_at_ms = now_ms() + VOIP_PROFILE_RETRY_MS;
@@ -1794,11 +1830,11 @@ static void send_ai_start(void)
               cJSON_AddStringToObject(root, "method", "start_session") &&
               cJSON_AddStringToObject(params, "device_id", s_device_id) &&
               cJSON_AddStringToObject(params, "role_id", s_ai_role_id) &&
-              cJSON_AddStringToObject(input, "codec", "alaw") &&
-              cJSON_AddNumberToObject(input, "sample_rate", 8000) &&
+              cJSON_AddStringToObject(input, "codec", STARTER_TIRTC_AUDIO_CODEC_NAME) &&
+              cJSON_AddNumberToObject(input, "sample_rate", STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ) &&
               cJSON_AddNumberToObject(input, "channels", 1) &&
-              cJSON_AddStringToObject(output, "codec", "alaw") &&
-              cJSON_AddNumberToObject(output, "sample_rate", 8000) &&
+              cJSON_AddStringToObject(output, "codec", STARTER_TIRTC_AUDIO_CODEC_NAME) &&
+              cJSON_AddNumberToObject(output, "sample_rate", STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ) &&
               cJSON_AddNumberToObject(output, "channels", 1);
     if (ok) {
         /* cJSON allocates the member name here. Ownership transfers only on
@@ -1851,9 +1887,9 @@ static bool ai_audio_profile_valid(const cJSON *profile)
                                 ? cJSON_GetObjectItemCaseSensitive(profile, "channels")
                                 : NULL;
     bool codec_ok = cJSON_IsString(codec) && codec->valuestring != NULL &&
-                    (strcmp(codec->valuestring, "alaw") == 0 ||
-                     strcmp(codec->valuestring, "g711a") == 0);
-    return codec_ok && cJSON_IsNumber(rate) && rate->valueint == 8000 &&
+                    strcmp(codec->valuestring, STARTER_TIRTC_AUDIO_CODEC_NAME) == 0;
+    return codec_ok && cJSON_IsNumber(rate) &&
+           rate->valueint == STARTER_TIRTC_AUDIO_SAMPLE_RATE_HZ &&
            cJSON_IsNumber(channels) && channels->valueint == 1;
 }
 
@@ -2053,7 +2089,7 @@ static void handle_connection(const runtime_event_t *event)
         publish_state(STARTER_RUNTIME_CALL_CONNECTING);
         /*
          * WHIP 成功仅表示传输连接建立。微信 VoIP 与参考工程一致，必须
-         * 再等待服务端的 0x2000 / CALL_CONNECTED，收到后才允许启动 A-law
+         * 再等待服务端的 0x2000 / CALL_CONNECTED，收到后才允许启动 Opus
          * 媒体；过早发音频会被服务端关闭，表现为无声后自动回首页。
          */
         if (event->mode == STARTER_TIRTC_VOIP) {

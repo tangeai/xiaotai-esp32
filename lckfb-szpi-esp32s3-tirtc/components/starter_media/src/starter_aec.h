@@ -19,7 +19,7 @@ extern "C" {
 
 enum {
     STARTER_AEC_SAMPLE_RATE_HZ = 16000,
-    STARTER_AEC_TRANSPORT_RATE_HZ = 8000,
+    STARTER_AEC_TRANSPORT_RATE_HZ = 16000,
     /* Full mask 0x0f preserves ES7210 wire order MIC1/MIC3/MIC2/MIC4.
      * MIC1 and MIC2 are people; MIC3 is the electrical playback reference. */
     STARTER_AEC_CAPTURE_DMA_CHANNELS = 4,
@@ -36,8 +36,9 @@ typedef struct {
     /** Read-only wake branch, with its extra processing delay. No resampling. */
     const int16_t *wake_pcm_16k;
     uint32_t wake_delay_ms;
-    const int16_t *pcm_8k;
-    size_t samples;
+    /** AEC/AGC 后直接用于 Opus 的 16 kHz PCM。 */
+    const int16_t *transport_pcm;
+    size_t transport_samples;
     uint32_t mic_clipped;
     uint32_t reference_clipped;
     /** Input mic/ref stamp and processed clean; DSP latency is not compensated. */
@@ -48,8 +49,8 @@ typedef struct {
     uint32_t mute_epoch;
     uint32_t feed_us;
     /* fetch includes waiting for fresh audio/SE, not pure DSP CPU time. */
-    uint32_t fetch_wait_us, agc_us, resample_us;
-    starter_signal_level_t uplink_level; /* 8 kHz after AGC/resampling, before TX gain */
+    uint32_t fetch_wait_us, agc_us;
+    starter_signal_level_t uplink_level; /* 16 kHz after AEC/AGC, before TX gain */
 } starter_aec_output_t;
 
 typedef struct {
@@ -73,7 +74,7 @@ esp_err_t starter_aec_submit_capture(size_t capture_bytes, int64_t captured_ms,
                                      uint32_t capture_epoch, uint32_t mute_epoch);
 
 /** Single consumer only. Official AFE dual-mic enhancement, then one shared
- * AGC/resampler. Output storage is valid until the next fetch. */
+ * AGC. Output storage is valid until the next fetch. */
 esp_err_t starter_aec_fetch(starter_aec_output_t *output);
 void starter_aec_get_stats(starter_aec_stats_t *stats);
 

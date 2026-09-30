@@ -3,12 +3,8 @@
 #include <limits.h>
 #include <string.h>
 
-/*
- * 31-tap Hamming low-pass, Q15.  This is deliberately stateful: resetting a
- * symmetric filter at every AEC block creates periodic edge artefacts after
- * A-law companding.  It also rejects the 4-8 kHz band before decimation, so
- * it cannot fold back as the "sharp" voice heard at the remote endpoint.
- */
+/* 31-tap Hamming low-pass in Q15. Keeping state across packets avoids a
+ * periodic edge transient and rejects 4-8 kHz energy before decimation. */
 static const int16_t s_decimator_q15[STARTER_AUDIO_RESAMPLER_TAPS] = {
     -9, 65, 33, -132, -112, 261, 305, -438,
     -691, 635, 1429, -813, -3041, 937, 10266, 15378,
@@ -35,15 +31,16 @@ static int16_t filter_push(starter_audio_resampler_16k_to_8k_t *resampler,
     }
     resampler->delay[resampler->write_index] = sample;
     size_t delay_index = resampler->write_index;
-    resampler->write_index = (resampler->write_index + 1U) % STARTER_AUDIO_RESAMPLER_TAPS;
-    /* Every input updates history, but decimation consumes only alternate
-     * outputs. Skip only the unused dot product, never an input sample. The
-     * retained outputs, rounding, saturation and phase are bit-identical. */
-    if (!emit) return 0;
+    resampler->write_index =
+        (resampler->write_index + 1U) % STARTER_AUDIO_RESAMPLER_TAPS;
+    if (!emit) {
+        return 0;
+    }
 
     int64_t accumulator = 0;
     for (size_t tap = 0; tap < STARTER_AUDIO_RESAMPLER_TAPS; ++tap) {
-        accumulator += (int64_t)resampler->delay[delay_index] * s_decimator_q15[tap];
+        accumulator +=
+            (int64_t)resampler->delay[delay_index] * s_decimator_q15[tap];
         delay_index = delay_index == 0U ? STARTER_AUDIO_RESAMPLER_TAPS - 1U
                                         : delay_index - 1U;
     }
@@ -70,7 +67,8 @@ size_t starter_audio_resampler_16k_to_8k_process(
     }
     size_t output_count = 0U;
     for (size_t input_index = 0; input_index < input_count; ++input_index) {
-        int16_t filtered = filter_push(resampler, input[input_index], !resampler->emit_phase);
+        int16_t filtered = filter_push(resampler, input[input_index],
+                                       !resampler->emit_phase);
         if (!resampler->emit_phase) {
             output[output_count++] = filtered;
         }
