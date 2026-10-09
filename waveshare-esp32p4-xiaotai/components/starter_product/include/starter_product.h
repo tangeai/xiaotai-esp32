@@ -20,6 +20,7 @@ typedef enum {
     STARTER_BINDING_REQUIRED,
     STARTER_BINDING_READY,
     STARTER_BINDING_FAILED,
+    STARTER_BINDING_EXPIRED,
 } starter_product_binding_state_t;
 
 typedef enum {
@@ -46,12 +47,18 @@ typedef enum {
     STARTER_C6_UPDATE_HANDSHAKING,
     STARTER_C6_UPDATE_READY,
     STARTER_C6_UPDATE_RECOVERY,
+    STARTER_C6_UPDATE_PREVIOUS_ATTEMPT,
+    STARTER_C6_UPDATE_BAD_IMAGE,
+    STARTER_C6_UPDATE_UNSUPPORTED,
     STARTER_C6_UPDATE_RECOVERY_POWER_CYCLE,
+    STARTER_C6_UPDATE_STARTUP_FAILED,
 } starter_product_c6_update_state_t;
 
 /** Nonblocking boot status. The UI only renders this state; it never writes C6. */
 void starter_product_set_c6_update(starter_product_c6_update_state_t state,
                                    uint8_t percent, esp_err_t error);
+/** Short, read-only C6 identity for on-screen support when OTA is not approved. */
+void starter_product_set_c6_identity(const char *identity);
 bool starter_product_take_c6_retry(void);
 bool starter_product_request_c6_retry(void);
 

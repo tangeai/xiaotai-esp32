@@ -184,8 +184,12 @@ static esp_err_t play_verification_prompt(const int16_t *pcm,
     atomic_bool *cancelled = user_data;
     const uint32_t epoch = starter_media_playback_epoch();
     for (unsigned repeat = 0; repeat < VERIFICATION_PROMPT_REPEAT_COUNT; ++repeat) {
+        if (wifi_manager_manually_disconnected() ||
+            platform_client_binding_retry_pending()) return ESP_OK;
         if (atomic_load_explicit(cancelled, memory_order_acquire)) return ESP_OK;
         esp_err_t err = starter_media_play_pcm8k_at_epoch(pcm, sample_count, epoch);
+        if (wifi_manager_manually_disconnected() ||
+            platform_client_binding_retry_pending()) return ESP_OK;
         if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return err;
         if (atomic_load_explicit(cancelled, memory_order_acquire)) {
             ESP_LOGI(TAG, "binding prompt cancelled; continue credential save");
@@ -196,6 +200,8 @@ static esp_err_t play_verification_prompt(const int16_t *pcm,
         }
         if (repeat + 1U < VERIFICATION_PROMPT_REPEAT_COUNT) {
             for (unsigned waited = 0; waited < VERIFICATION_PROMPT_GAP_MS; waited += 25U) {
+                if (wifi_manager_manually_disconnected() ||
+                    platform_client_binding_retry_pending()) return ESP_OK;
                 if (atomic_load_explicit(cancelled, memory_order_acquire)) return ESP_OK;
                 vTaskDelay(pdMS_TO_TICKS(25));
             }
@@ -241,7 +247,8 @@ static esp_err_t provision_and_save(const char *mac_address, bool signed_rebind)
     };
     esp_err_t err = platform_client_provision(&provision, &result);
     if (err != ESP_OK) {
-        starter_product_set_binding_state(STARTER_BINDING_FAILED);
+        starter_product_set_binding_state(platform_client_last_verification_expired() ?
+            STARTER_BINDING_EXPIRED : STARTER_BINDING_FAILED);
         return err;
     }
     if (signed_rebind) {
@@ -593,13 +600,14 @@ static void c6_bootstrap_task(void *argument)
         if (c6_updater_run(manual_retry) == ESP_OK) break;
         while (!starter_product_take_c6_retry())
             vTaskDelay(pdMS_TO_TICKS(100));
+        ESP_LOGI(TAG, "C6 update manual retry starting");
         manual_retry = true;
     }
     starter_at_c6_ready();
     esp_err_t err = wifi_manager_start();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Wi-Fi startup failed after C6 check: %s", esp_err_to_name(err));
-        starter_product_set_c6_update(STARTER_C6_UPDATE_RECOVERY, 0, err);
+        starter_product_set_c6_update(STARTER_C6_UPDATE_STARTUP_FAILED, 0, err);
         vTaskDelete(NULL);
         return;
     }
@@ -611,7 +619,7 @@ static void c6_bootstrap_task(void *argument)
                     4,
                     NULL) != pdPASS) {
         ESP_LOGE(TAG, "cannot create startup task");
-        starter_product_set_c6_update(STARTER_C6_UPDATE_RECOVERY, 0, ESP_ERR_NO_MEM);
+        starter_product_set_c6_update(STARTER_C6_UPDATE_STARTUP_FAILED, 0, ESP_ERR_NO_MEM);
         vTaskDelete(NULL);
         return;
     }
@@ -669,6 +677,8 @@ void app_main(void)
     ESP_ERROR_CHECK(starter_product_start());
     log_heap_snapshot("post-product-ui");
     /* SDIO enumeration and OTA RPC can block; they must not run on main_task. */
-    if (xTaskCreate(c6_bootstrap_task, "c6_bootstrap", 8192, NULL, 4, NULL) != pdPASS)
+    if (xTaskCreate(c6_bootstrap_task, "c6_bootstrap", 8192, NULL, 4, NULL) != pdPASS) {
         ESP_LOGE(TAG, "cannot create C6 bootstrap task");
+        starter_product_set_c6_update(STARTER_C6_UPDATE_STARTUP_FAILED, 0, ESP_ERR_NO_MEM);
+    }
 }

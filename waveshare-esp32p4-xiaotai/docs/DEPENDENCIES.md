@@ -6,14 +6,14 @@
 
 | 项目 | 版本或位置 |
 | --- | --- |
-| 应用 | `1.6.0`，仅适用于 rev3.2 新板；项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
+| 应用 | `1.6.1`；项目名 `xiaotai_esp32p4`，定义在 [CMakeLists.txt](../CMakeLists.txt) |
 | 开发板 | Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5，16MB Flash |
-| 芯片修订 | 本版用于 rev3.2 新板，详见[版本说明](P4_REV3_VALIDATION.md) |
+| 芯片修订 | ESP32-P4 rev3.2 及以上，详见[版本说明](P4_REV3_VALIDATION.md) |
 | 开发环境 | ESP-IDF 5.5.5，riscv32-esp-elf 14.2.0_20260121 |
 | TiRTC SDK | 2.5.0 P4 包，库内标识 `v2.5.0-9088239c`，详情见 [SDK VERSION](../components/tirtc_sdk/VERSION.md) |
 | Wi-Fi | C6 + ESP-Hosted 3.0.7 主机组件；从机单独核验，见 [C6 指南](C6_PREPARATION.md) |
 
-SDK 的版本号相同不代表二进制相同。保留附带库和头文件，按 [SHA256SUMS](../components/tirtc_sdk/SHA256SUMS.txt) 核对。Hosted 3.0.7 使用组件管理器安装的官方版本；C6 配套要求见 [C6 准备与恢复](C6_PREPARATION.md)。
+SDK 的版本号相同不代表二进制相同。保留附带库和头文件，按 [SHA256SUMS](../components/tirtc_sdk/SHA256SUMS.txt) 核对。Hosted 3.0.7 以组件管理器安装的官方版本为基础，构建时自动应用 [APP 身份与 RPC 栈补丁](../tools/patches/esp-hosted-3.0.7-app-desc.patch)和 [P4 SDIO 接收补丁](../tools/patches/esp-hosted-3.0.7-p4-sdio-rx-bounce.patch)。这两份补丁是必要源码，不能仅保留本机已修改的 `managed_components/`。补丁检查以组件目录为根，不依赖源码是否嵌套在其他 Git 仓中。C6 配套要求见 [C6 准备与恢复](C6_PREPARATION.md)。
 
 应用版本在根 `CMakeLists.txt` 的 `PROJECT_VER` 中维护，启动日志和运行状态页读取生成的应用描述。
 
@@ -31,7 +31,7 @@ SDK 的版本号相同不代表二进制相同。保留附带库和头文件，�
 | `partitions.csv` | Flash 分区 |
 | `dependencies.lock` | 固定依赖版本的可迁移模板 |
 
-工程不读取 S3 或父目录文件。1.6.0 需要独立交付、经 SHA-256 校验的 C6 APP 附件 `c6_app.bin`，放入 `main/assets/` 后再构建；镜像被 Git 忽略，不随源码提交。单独下载源码而没有该附件不能构建，这是明确的外部构建输入。已用拟交付源码文件和单独附件在隔离目录完成 ESP-IDF 5.5.5 从零构建；ESP-IDF 和下载组件仍需按开发指南安装。
+工程不读取 S3 或父目录文件。构建前从[同版 Release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1) 下载 `c6_app.bin`，核对 SHA-256 后放入 `main/assets/`。该镜像是必需的构建输入，仅通过 Release 附件提供。ESP-IDF 安装和构建步骤见[开发指南](GETTING_STARTED_CN.md)。
 
 `main/` 保留启动入口、配置和仍被使用的板级、摄像头、视频呈现及内存策略。启动源文件由 `main/CMakeLists.txt` 指定，板级源文件由 `components/p4_hardware/CMakeLists.txt` 指定。界面与业务统一维护在 `components/starter_*`，不再保留旧 Monitor 的平行实现。
 

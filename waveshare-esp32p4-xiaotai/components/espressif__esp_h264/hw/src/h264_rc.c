@@ -108,7 +108,7 @@ void esp_h264_rc_start(esp_h264_rc_hd_t rc_hd, bool is_iframe, uint32_t *rate, u
 {
     esp_h264_rc_t *prc = (esp_h264_rc_t *)rc_hd;
     float mad_pred;
-    int target_frame_bits;
+    int64_t target_frame_bits;
     int target_mb_bits = 0;
 
     if (prc == NULL || rate == NULL || pred_mad == NULL || qp == NULL) {
@@ -116,9 +116,14 @@ void esp_h264_rc_start(esp_h264_rc_hd_t rc_hd, bool is_iframe, uint32_t *rate, u
     }
 
     mad_pred = prc->mad_last4_average;
-    target_frame_bits = (int)((prc->bits_per_frame * 10 - 4 * prc->frame_bits_last4_average) / 6);
+    /* Motion bursts can make the previous average exceed 2.5x the budget.
+     * Keep the subtraction signed so it cannot wrap to a huge target. */
+    target_frame_bits = ((int64_t)prc->bits_per_frame * 10 -
+                         (int64_t)prc->frame_bits_last4_average * 4) / 6;
     if (target_frame_bits < 1) {
         target_frame_bits = 1;
+    } else if (target_frame_bits > INT32_MAX) {
+        target_frame_bits = INT32_MAX;
     }
     prc->target_frame_bits = (uint32_t)target_frame_bits;
     if (prc->frame_bits_last4_average == 0) {

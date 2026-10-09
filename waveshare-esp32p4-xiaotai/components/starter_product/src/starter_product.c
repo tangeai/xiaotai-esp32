@@ -30,7 +30,6 @@
 #include "esp_lvgl_port.h"
 #include "esp_timer.h"
 #include "esp_netif.h"
-#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -190,6 +189,8 @@ static EXT_RAM_BSS_ATTR atomic_int s_c6_update_state;
 static EXT_RAM_BSS_ATTR atomic_uint s_c6_update_percent;
 static EXT_RAM_BSS_ATTR atomic_int s_c6_update_error;
 static EXT_RAM_BSS_ATTR atomic_bool s_c6_retry_requested;
+static portMUX_TYPE s_c6_identity_lock = portMUX_INITIALIZER_UNLOCKED;
+static char s_c6_identity[80];
 static bool s_started;
 static QueueHandle_t s_voice_queue;
 #if !CONFIG_IDF_TARGET_ESP32P4
@@ -339,6 +340,25 @@ void starter_product_set_c6_update(starter_product_c6_update_state_t state,
     atomic_store_explicit(&s_c6_update_state, state, memory_order_release);
 }
 
+void starter_product_set_c6_identity(const char *identity)
+{
+    char copy[sizeof(s_c6_identity)] = {0};
+    if (identity) (void)snprintf(copy, sizeof(copy), "%s", identity);
+    portENTER_CRITICAL(&s_c6_identity_lock);
+    memcpy(s_c6_identity, copy, sizeof(copy));
+    portEXIT_CRITICAL(&s_c6_identity_lock);
+}
+
+static void c6_identity_snapshot(char *buffer, size_t size)
+{
+    if (size == 0) return;
+    portENTER_CRITICAL(&s_c6_identity_lock);
+    size_t count = size < sizeof(s_c6_identity) ? size : sizeof(s_c6_identity);
+    memcpy(buffer, s_c6_identity, count);
+    portEXIT_CRITICAL(&s_c6_identity_lock);
+    buffer[count - 1] = '\0';
+}
+
 bool starter_product_take_c6_retry(void)
 {
     return atomic_exchange_explicit(&s_c6_retry_requested, false,
@@ -347,12 +367,18 @@ bool starter_product_take_c6_retry(void)
 
 bool starter_product_request_c6_retry(void)
 {
-    if (atomic_load_explicit(&s_c6_update_state, memory_order_acquire) !=
-            STARTER_C6_UPDATE_RECOVERY ||
-        atomic_load_explicit(&s_c6_update_error, memory_order_relaxed) ==
-            ESP_ERR_NOT_SUPPORTED)
+    int state = atomic_load_explicit(&s_c6_update_state, memory_order_acquire);
+    if (state != STARTER_C6_UPDATE_RECOVERY &&
+        state != STARTER_C6_UPDATE_PREVIOUS_ATTEMPT)
         return false;
+    int expected = state;
+    if (!atomic_compare_exchange_strong_explicit(&s_c6_update_state, &expected,
+            STARTER_C6_UPDATE_CHECKING, memory_order_acq_rel, memory_order_acquire))
+        return false;
+    atomic_store_explicit(&s_c6_update_percent, 0, memory_order_relaxed);
+    atomic_store_explicit(&s_c6_update_error, ESP_OK, memory_order_relaxed);
     atomic_store_explicit(&s_c6_retry_requested, true, memory_order_release);
+    ESP_LOGI(TAG, "C6 update manual retry accepted");
     return true;
 }
 

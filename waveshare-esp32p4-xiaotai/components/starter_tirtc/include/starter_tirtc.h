@@ -174,10 +174,10 @@ int starter_tirtc_subscribe_h5_video(uint32_t generation);
 #endif
 
 /**
- * 发送 G.711 A-law、8 kHz、16 bit、单声道音频。
+ * 发送 Opus、16 kHz、16 bit、单声道音频。
  * H5/设备呼叫/微信使用 stream 10，AI/多人对讲使用 stream 1。
  */
-int starter_tirtc_send_alaw(uint32_t timestamp_ms,
+int starter_tirtc_send_opus(uint32_t timestamp_ms,
                             const void *data,
                             uint32_t length);
 

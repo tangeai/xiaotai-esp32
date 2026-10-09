@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "esp_app_desc.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -925,65 +926,84 @@ static void request_device_profile(void)
         return;
     }
     /* One immutable, complete snapshot per scenario. These are product paths,
-     * not the SDK's codec list: all audio is A-law/8k/mono; P4 H5 and CALL
-     * receive H264, while VOIP receives MJPEG (p4_video_submit).
+     * not the SDK's codec list: uplink is Opus/16k/mono; H5 downlink also
+     * accepts A-law/8k and resamples it to the fixed 16k speaker path.
+     * P4 H5 and CALL receive H264, while VOIP receives MJPEG (p4_video_submit).
      * Stream IDs are device-relative: up=send 10/11, down=receive 14/15.
-     * Constants stay in rodata; the existing PSRAM HTTP pool copies the body. */
+     * The scene snapshot stays in rodata; the HTTP pool copies the completed body. */
 #if CONFIG_IDF_TARGET_ESP32P4
-    /* H5 already encodes portrait 960x1280; CALL encodes landscape 384x256.
+    /* H5 encodes portrait video; CALL encodes landscape 384x256.
      * Report those ratios without adding a receiver-side rotation or mirror.
      * WeChat alone retains its validated additional CCW90 UI correction.
      * down_video_rotation=0 and video_res_mode=auto explicitly preserve the
      * upstream defaults; local MJPEG rotation/scaling remains unchanged. */
     static const char profile[] =
         "{\"profiles\":{"
-        "\"stream\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"stream\":{\"up_audio_mt\":[\"opus\"],\"down_audio_mt\":[\"opus\",\"alaw\"],"
         "\"up_audio_streamid\":10,\"up_video_streamid\":11,"
         "\"down_audio_streamid\":14,\"down_video_streamid\":15,"
         "\"up_video_mt\":[\"h264\"],\"down_video_mt\":[\"h264\"],"
         "\"camera_rotation\":0,\"aspect_ratio\":\"3:4\","
         "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
-        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false},"
-        "\"call\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"audio_rate\":16000,\"audio_channels\":1,\"no_video\":false},"
+        "\"call\":{\"up_audio_mt\":[\"opus\"],\"down_audio_mt\":[\"opus\"],"
         "\"up_video_mt\":[\"h264\"],\"down_video_mt\":[\"h264\"],"
         "\"camera_rotation\":0,\"aspect_ratio\":\"3:2\","
         "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
-        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":false},"
+        "\"audio_rate\":16000,\"audio_channels\":1,\"no_video\":false},"
         "\"voip\":{\"screen_width\":480,\"screen_height\":320,"
         "\"camera_rotation\":270,\"aspect_ratio\":\"3:4\","
         "\"down_video_rotation\":0,\"video_res_mode\":\"auto\","
         "\"hor_mirror\":false,\"vert_mirror\":false,\"object_fit\":\"contain\","
-        "\"audio_rate\":8000,\"audio_channels\":1,"
+        "\"audio_rate\":16000,\"audio_channels\":1,"
         "\"up_video_mt\":\"h264\",\"down_video_mt\":\"mjpeg\","
-        "\"down_audio_mt\":\"alaw\",\"no_video\":false,\"calling_timeout_sec\":30}}}";
+        "\"down_audio_mt\":\"opus\",\"no_video\":false,\"calling_timeout_sec\":30}}}";
 #else
     static const char profile[] =
         "{\"profiles\":{"
-        "\"stream\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"stream\":{\"up_audio_mt\":[\"opus\"],\"down_audio_mt\":[\"opus\"],"
         "\"up_audio_streamid\":10,\"up_video_streamid\":11,"
         "\"down_audio_streamid\":14,\"down_video_streamid\":15,"
         "\"up_video_mt\":[],\"down_video_mt\":[],"
-        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":true},"
-        "\"call\":{\"up_audio_mt\":[\"alaw\"],\"down_audio_mt\":[\"alaw\"],"
+        "\"audio_rate\":16000,\"audio_channels\":1,\"no_video\":true},"
+        "\"call\":{\"up_audio_mt\":[\"opus\"],\"down_audio_mt\":[\"opus\"],"
         "\"up_video_mt\":[],\"down_video_mt\":[],"
-        "\"audio_rate\":8000,\"audio_channels\":1,\"no_video\":true},"
+        "\"audio_rate\":16000,\"audio_channels\":1,\"no_video\":true},"
         "\"voip\":{\"screen_width\":1,\"screen_height\":1,"
-        "\"audio_rate\":8000,\"audio_channels\":1,"
+        "\"audio_rate\":16000,\"audio_channels\":1,"
         "\"up_video_mt\":\"none\",\"down_video_mt\":\"none\","
-        "\"down_audio_mt\":\"alaw\",\"no_video\":true,"
+        "\"down_audio_mt\":\"opus\",\"no_video\":true,"
         "\"calling_timeout_sec\":30}}}";
 #endif
-    /* Keep below the existing 2048-byte request slot, including its NUL. */
+    /* The reported version must identify the image currently running, not a
+     * hard-coded release candidate. cJSON also escapes it before transmission. */
     _Static_assert(sizeof(profile) <= 2048U, "device profile exceeds HTTP request slot");
+    const esp_app_desc_t *app = esp_app_get_description();
+    cJSON *snapshot = cJSON_ParseWithLength(profile, sizeof(profile) - 1U);
+    cJSON *hardware = snapshot == NULL ? NULL : cJSON_AddObjectToObject(snapshot, "hardware");
+    char body[2048];
+    bool body_ready = app != NULL && hardware != NULL &&
+                      cJSON_AddStringToObject(hardware, "chip_model", "ESP32-P4") != NULL &&
+                      cJSON_AddStringToObject(hardware, "board_model",
+                                              "Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5") != NULL &&
+                      cJSON_AddStringToObject(snapshot, "firmware_version", app->version) != NULL &&
+                      cJSON_PrintPreallocated(snapshot, body, (int)sizeof(body), false);
+    cJSON_Delete(snapshot);
     ++s_device_profile_attempts;
+    if (!body_ready) {
+        ESP_LOGW(TAG, "device profile preparation failed: attempt=%u", s_device_profile_attempts);
+        s_voip_profile_retry_at_ms = s_device_profile_attempts < DEVICE_PROFILE_MAX_ATTEMPTS
+                                        ? now_ms() + VOIP_PROFILE_RETRY_MS : 0;
+        return;
+    }
     esp_err_t err = platform_client_request_timeout(
-        PLATFORM_SERVICE_DEVICE, "/v1/device/profile", profile,
+        PLATFORM_SERVICE_DEVICE, "/v1/device/profile", body,
         10000U, device_profile_response, NULL);
     if (err == ESP_OK) {
         s_voip_profile_inflight = true;
         s_voip_profile_retry_at_ms = 0;
         ESP_LOGI(TAG, "device profile queued: scenes=stream,call,voip bytes=%u attempt=%u",
-                 (unsigned)(sizeof(profile) - 1U), s_device_profile_attempts);
+                 (unsigned)strlen(body), s_device_profile_attempts);
     } else {
         s_voip_profile_retry_at_ms = s_device_profile_attempts < DEVICE_PROFILE_MAX_ATTEMPTS
                                         ? now_ms() + VOIP_PROFILE_RETRY_MS : 0;
@@ -1819,11 +1839,11 @@ static void send_ai_start(void)
               cJSON_AddStringToObject(root, "method", "start_session") &&
               cJSON_AddStringToObject(params, "device_id", s_device_id) &&
               cJSON_AddStringToObject(params, "role_id", s_ai_role_id) &&
-              cJSON_AddStringToObject(input, "codec", "alaw") &&
-              cJSON_AddNumberToObject(input, "sample_rate", 8000) &&
+              cJSON_AddStringToObject(input, "codec", "opus") &&
+              cJSON_AddNumberToObject(input, "sample_rate", 16000) &&
               cJSON_AddNumberToObject(input, "channels", 1) &&
-              cJSON_AddStringToObject(output, "codec", "alaw") &&
-              cJSON_AddNumberToObject(output, "sample_rate", 8000) &&
+              cJSON_AddStringToObject(output, "codec", "opus") &&
+              cJSON_AddNumberToObject(output, "sample_rate", 16000) &&
               cJSON_AddNumberToObject(output, "channels", 1);
     if (ok) {
         /* AddItem allocates the key; ownership moves only on success. */
@@ -1870,9 +1890,8 @@ static bool ai_audio_profile_valid(const cJSON *profile)
                                 ? cJSON_GetObjectItemCaseSensitive(profile, "channels")
                                 : NULL;
     bool codec_ok = cJSON_IsString(codec) && codec->valuestring != NULL &&
-                    (strcmp(codec->valuestring, "alaw") == 0 ||
-                     strcmp(codec->valuestring, "g711a") == 0);
-    return codec_ok && cJSON_IsNumber(rate) && rate->valueint == 8000 &&
+                    strcmp(codec->valuestring, "opus") == 0;
+    return codec_ok && cJSON_IsNumber(rate) && rate->valueint == 16000 &&
            cJSON_IsNumber(channels) && channels->valueint == 1;
 }
 
@@ -2086,7 +2105,7 @@ static void handle_connection(const runtime_event_t *event)
         publish_state(STARTER_RUNTIME_CALL_CONNECTING);
         /*
          * WHIP 成功仅表示传输连接建立。微信 VoIP 与参考工程一致，必须
-         * 再等待服务端的 0x2000 / CALL_CONNECTED，收到后才允许启动 A-law
+         * 再等待服务端的 0x2000 / CALL_CONNECTED，收到后才允许启动 Opus
          * 媒体；过早发音频会被服务端关闭，表现为无声后自动回首页。
          */
         if (event->mode == STARTER_TIRTC_VOIP) {

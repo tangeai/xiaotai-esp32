@@ -4,7 +4,6 @@
  * S3's ES7210 MMR wiring and multicore AFE settings do not apply to this board. */
 #include "starter_aec.h"
 #include "starter_agc.h"
-#include "starter_audio_resampler.h"
 #include "p4_capture_highpass.h"
 
 #include <stdbool.h>
@@ -31,8 +30,6 @@ typedef struct {
     int16_t *reference;
     int16_t *clean;
     int16_t *gain_16k;
-    int16_t *output_8k;
-    starter_audio_resampler_16k_to_8k_t resampler;
 } starter_aec_context_t;
 
 static const char *TAG = "starter_aec";
@@ -47,7 +44,6 @@ static void starter_aec_release(void)
     heap_caps_free(s_aec.clean);
     heap_caps_free(s_aec.gain_16k);
     starter_agc_deinit();
-    heap_caps_free(s_aec.output_8k);
     if (s_aec.handle != NULL) {
         aec_destroy(s_aec.handle);
     }
@@ -110,15 +106,12 @@ esp_err_t starter_aec_init(void)
                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_aec.gain_16k = allocate_samples(s_aec.frame_samples,
                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    s_aec.output_8k = allocate_samples(s_aec.frame_samples / 2U,
-                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (s_aec.gain_16k == NULL || !esp_ptr_external_ram(s_aec.gain_16k) ||
         s_aec.tdm == NULL || s_aec.mic == NULL || s_aec.reference == NULL ||
-        s_aec.clean == NULL || s_aec.output_8k == NULL ||
+        s_aec.clean == NULL ||
         !esp_ptr_internal(s_aec.tdm) || !esp_ptr_external_ram(s_aec.mic) ||
         !esp_ptr_external_ram(s_aec.reference) ||
-        !esp_ptr_external_ram(s_aec.clean) ||
-        !esp_ptr_external_ram(s_aec.output_8k)) {
+        !esp_ptr_external_ram(s_aec.clean)) {
         ESP_LOGE(TAG, "AEC aligned work-buffer allocation failed");
         starter_aec_release();
         return ESP_ERR_NO_MEM;
@@ -136,7 +129,7 @@ esp_err_t starter_aec_init(void)
     const size_t psram_after = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     ESP_LOGI(TAG,
              "ESP-SR AEC ready: mode=%s nlp=%s chunk=%u samples "
-             "ES8311 MIC-left+DAC-ref-right 16k->8k, used internal=%u PSRAM=%u bytes",
+             "ES8311 MIC-left+DAC-ref-right 16k Opus input, used internal=%u PSRAM=%u bytes",
              aec_get_mode_string(config.mode),
              aec_get_nlp_string(config.nlp_level),
              (unsigned)s_aec.frame_samples,
@@ -218,17 +211,6 @@ esp_err_t starter_aec_process_capture(size_t capture_bytes,
     starter_signal_level_t gain_level = starter_signal_measure(gain_pcm, s_aec.frame_samples);
     measurement_us += (uint32_t)(esp_timer_get_time() - measurement_start);
 
-    /* Keep the filter timeline across AEC blocks so 16 kHz content cannot
-     * alias into the 8 kHz A-law transport as a sharp remote voice. */
-    const size_t output_samples = s_aec.frame_samples / 2U;
-    if (starter_audio_resampler_16k_to_8k_process(&s_aec.resampler,
-                                                   gain_pcm,
-                                                   s_aec.frame_samples,
-                                                   s_aec.output_8k,
-                                                   output_samples) != output_samples) {
-        return ESP_FAIL;
-    }
-
     *output = (starter_aec_output_t) {
 #if CONFIG_XIAOTAI_WAKE_CAPTURE_AGC
         .pcm_16k = gain_pcm,
@@ -237,8 +219,8 @@ esp_err_t starter_aec_process_capture(size_t capture_bytes,
         .pcm_16k = s_aec.clean,
 #endif
         .samples_16k = s_aec.frame_samples,
-        .pcm_8k = s_aec.output_8k,
-        .samples = output_samples,
+        .pcm_transport = gain_pcm,
+        .samples = s_aec.frame_samples,
         .mic_clipped = mic_clipped,
         .reference_clipped = reference_clipped,
         .level = {mic_level, ref_level, clean_level},

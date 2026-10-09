@@ -1,0 +1,119 @@
+diff --git a/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c b/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
+index 4a8c27f..975f34f 100644
+--- a/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
++++ b/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
+@@ -41,6 +41,9 @@
+ 
+ #include "esp_err.h"
+ #include "esp_log.h"
++#if CONFIG_IDF_TARGET_ESP32P4
++#include "esp_heap_caps.h"
++#endif
+ 
+ #include "eh_host_port_err.h"
+ #include "eh_host_port_dma.h"
+@@ -267,6 +270,15 @@ typedef struct {
+ 
+ static double_buf_t double_buf;
+ 
++#if CONFIG_IDF_TARGET_ESP32P4 && \
++    EH_HOST_PORT_SDIO_HOST_RX_MODE == EH_HOST_PORT_SDIO_HOST_STREAMING_MODE
++/* SDMMC needs internal DMA RAM, but queued packets only need CPU access.
++ * Keep one small bounce buffer instead of growing two DMA staging buffers
++ * after TLS and MQTT have fragmented the internal heap. */
++#define SDIO_RX_DMA_CHUNK_BYTES 4096U
++static uint8_t *sdio_rx_dma_bounce;
++#endif
++
+ /* Reset ring cursors to empty (buffers themselves are freed separately). */
+ static inline void sdio_rx_ring_reset(void)
+ {
+@@ -437,6 +449,14 @@ static void bus_deinit_internal(void *bus_handle)
+ 		sdio_tx_aggr_cap = 0;
+ 	}
+ 
++#if CONFIG_IDF_TARGET_ESP32P4 && \
++    EH_HOST_PORT_SDIO_HOST_RX_MODE == EH_HOST_PORT_SDIO_HOST_STREAMING_MODE
++	if (sdio_rx_dma_bounce) {
++		eh_host_port_dma_free(sdio_rx_dma_bounce);
++		sdio_rx_dma_bounce = NULL;
++	}
++#endif
++
+ #if defined(USE_DRIVER_LOCK)
+ 	if (sdio_bus_lock) {
+ 		eh_host_port_mutex_destroy(sdio_bus_lock);
+@@ -1324,9 +1344,15 @@ static uint8_t * sdio_rx_get_buffer(uint32_t len)
+ 			*buf = NULL;
+ 			double_buf.buffer[index].buf_size = 0;
+ 		}
+-		*buf = (uint8_t *)eh_host_port_dma_alloc_aligned(len, HOSTED_MEM_ALIGNMENT_64);
++		*buf = (uint8_t *)
++#if CONFIG_IDF_TARGET_ESP32P4 && \
++    EH_HOST_PORT_SDIO_HOST_RX_MODE == EH_HOST_PORT_SDIO_HOST_STREAMING_MODE
++			heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
++#else
++			eh_host_port_dma_alloc_aligned(len, HOSTED_MEM_ALIGNMENT_64);
++#endif
+ 		if (!*buf) {
+-			ESP_LOGW(TAG, "dma_alloc(%lu) failed; dropping read",
++			ESP_LOGW(TAG, "rx staging alloc(%lu) failed; dropping read",
+ 			         (unsigned long)len);
+ 			return NULL;
+ 		}
+@@ -1669,17 +1695,25 @@ static void sdio_read_task(void *pvParameters)
+ 
+ 		do {
+ 			len_to_read = data_left;
++#if CONFIG_IDF_TARGET_ESP32P4 && \
++    EH_HOST_PORT_SDIO_HOST_RX_MODE == EH_HOST_PORT_SDIO_HOST_STREAMING_MODE
++			if (len_to_read > SDIO_RX_DMA_CHUNK_BYTES)
++				len_to_read = SDIO_RX_DMA_CHUNK_BYTES;
++			uint8_t *read_target = sdio_rx_dma_bounce;
++#else
++			uint8_t *read_target = pos;
++#endif
+ 
+ #if EH_HOST_PORT_SDIO_RX_BLOCK_ONLY_XFER
+ 			/* Round up to block size; slave pads with 0. */
+ 			uint32_t block_read_len = ((len_to_read + ESP_BLOCK_SIZE - 1) / ESP_BLOCK_SIZE) * ESP_BLOCK_SIZE;
+ 			ret = eh_host_port_sdio_read_block(sdio_handle,
+ 					ESP_SLAVE_CMD53_END_ADDR - data_left,
+-					pos, block_read_len, ACQUIRE_LOCK);
++					read_target, block_read_len, ACQUIRE_LOCK);
+ #else
+ 			ret = eh_host_port_sdio_read_block(sdio_handle,
+ 					ESP_SLAVE_CMD53_END_ADDR - data_left,
+-					pos, len_to_read, ACQUIRE_LOCK);
++					read_target, len_to_read, ACQUIRE_LOCK);
+ #endif
+ 			if (ret) {
+ 				ESP_LOGE(TAG, "%s: Failed to read data - %d %ld %ld",
+@@ -1687,6 +1721,10 @@ static void sdio_read_task(void *pvParameters)
+ 				sdio_rx_free_buffer(rxbuff);
+ 				break;
+ 			}
++#if CONFIG_IDF_TARGET_ESP32P4 && \
++    EH_HOST_PORT_SDIO_HOST_RX_MODE == EH_HOST_PORT_SDIO_HOST_STREAMING_MODE
++			memcpy(pos, read_target, len_to_read);
++#endif
+ 			data_left -= len_to_read;
+ 			pos += len_to_read;
+ 		} while (data_left);
+@@ -1858,6 +1896,16 @@ static void *bus_init_internal(void)
+ 
+ 	show_config();
+ 
++#if CONFIG_IDF_TARGET_ESP32P4 && \
++    EH_HOST_PORT_SDIO_HOST_RX_MODE == EH_HOST_PORT_SDIO_HOST_STREAMING_MODE
++	sdio_rx_dma_bounce = eh_host_port_dma_alloc_aligned(
++		SDIO_RX_DMA_CHUNK_BYTES, HOSTED_MEM_ALIGNMENT_64);
++	if (!sdio_rx_dma_bounce) {
++		ESP_LOGE(TAG, "SDIO RX DMA bounce allocation failed");
++		return NULL;
++	}
++#endif
++
+ 	sdio_tx_buf_count = 0;
+ 	sdio_rx_byte_count = 0;
+ 

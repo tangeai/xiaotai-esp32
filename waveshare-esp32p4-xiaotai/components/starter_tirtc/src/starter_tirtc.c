@@ -454,8 +454,12 @@ static void on_audio(tirtc_conn_t connection,
      * 对端下行流号。设备呼叫和 VoIP 均可能从服务端收到不同的流号。
      * H5 严格接收本代主动订阅的 14；其他业务保留各自的流号契约。
      */
-    bool expected = frame->media == TIRTC_AUDIO_ALAW &&
-                    frame->flags == TIRTC_AUDIOSAMPLE_8K16B1C &&
+    bool supported_format =
+        (frame->media == TIRTC_AUDIO_OPUS &&
+         frame->flags == TIRTC_AUDIOSAMPLE_16K16B1C) ||
+        (frame->media == TIRTC_AUDIO_ALAW &&
+         frame->flags == TIRTC_AUDIOSAMPLE_8K16B1C);
+    bool expected = supported_format &&
                     (mode != STARTER_TIRTC_H5 ||
                      (frame->stream_id == H5_TALKBACK_AUDIO_STREAM &&
                       generation != 0U && generation == atomic_load_explicit(
@@ -686,6 +690,7 @@ static void on_update_bitrate(tirtc_conn_t connection, uint8_t stream_id,
     }
     taskEXIT_CRITICAL(&s_bitrate_lock);
 }
+
 
 #endif
 
@@ -1169,7 +1174,7 @@ int starter_tirtc_subscribe_h5_video(uint32_t generation)
 }
 #endif
 
-int starter_tirtc_send_alaw(uint32_t timestamp_ms,
+int starter_tirtc_send_opus(uint32_t timestamp_ms,
                             const void *data,
                             uint32_t length)
 {
@@ -1193,8 +1198,8 @@ int starter_tirtc_send_alaw(uint32_t timestamp_ms,
         .stream_id = mode == STARTER_TIRTC_ROOM ? ROOM_AUDIO_STREAM :
                      mode == STARTER_TIRTC_AI ? AI_AUDIO_STREAM :
                      mode == STARTER_TIRTC_H5 ? H5_AUDIO_STREAM : CALL_AUDIO_STREAM,
-        .media = TIRTC_AUDIO_ALAW,
-        .flags = TIRTC_AUDIOSAMPLE_8K16B1C,
+        .media = TIRTC_AUDIO_OPUS,
+        .flags = TIRTC_AUDIOSAMPLE_16K16B1C,
         .ts = timestamp_ms,
         .length = length,
     };

@@ -102,21 +102,6 @@ static const media_governor_camera_policy_t s_policy_idle = {
     .dma_largest_min_bytes = 12U * 1024U,
 };
 
-static void media_governor_select_native_capture_size(const media_governor_video_config_t *config,
-                                                       uint16_t *width,
-                                                       uint16_t *height)
-{
-    *width = MEDIA_GOVERNOR_CAPTURE_WIDTH;
-    *height = MEDIA_GOVERNOR_CAPTURE_HEIGHT;
-
-    if (config != NULL &&
-        config->width <= MEDIA_GOVERNOR_COMPACT_CAPTURE_WIDTH &&
-        config->height <= MEDIA_GOVERNOR_COMPACT_CAPTURE_HEIGHT) {
-        *width = MEDIA_GOVERNOR_COMPACT_CAPTURE_WIDTH;
-        *height = MEDIA_GOVERNOR_COMPACT_CAPTURE_HEIGHT;
-    }
-}
-
 static media_governor_camera_policy_t media_governor_make_rtc_av_policy(const media_governor_video_config_t *config)
 {
     media_governor_video_config_t safe_config = {0};
@@ -151,7 +136,6 @@ static media_governor_camera_policy_t media_governor_make_rtc_av_policy(const me
             safe_config.h264_max_qp = safe_config.h264_min_qp;
         }
     }
-    media_governor_select_native_capture_size(&safe_config, &capture_width, &capture_height);
 
     return (media_governor_camera_policy_t) {
         .capture_width = capture_width,

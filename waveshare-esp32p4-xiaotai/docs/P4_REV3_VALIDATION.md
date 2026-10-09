@@ -1,6 +1,6 @@
 # P4 rev3.2 版本说明
 
-1.6.0 芯片要求为 P4 rev3.2 及以上。版本改动见[版本记录](../CHANGELOG.md)，构建和验证范围见同版 Release 的 `release-manifest.json`。
+1.6.1 芯片要求为 P4 rev3.2 及以上。版本改动见[版本记录](../CHANGELOG.md)，构建和验证范围见同版 Release 的 `release-manifest.json`。
 
 ## 烧录前
 

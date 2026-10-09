@@ -47,6 +47,8 @@ esp_err_t wifi_manager_control_error(void);
 uint32_t wifi_manager_signal_revision(void);
 /** 读取后台最近采样的 RSSI（dBm）；无有效样本时返回 false。 */
 bool wifi_manager_signal_dbm(int8_t *rssi);
+/** 复制当前配置的 STA SSID 快照；不执行 C6 RPC，也不返回密码。 */
+bool wifi_manager_copy_station_ssid(char *ssid, size_t capacity);
 
 /** 配网未启用时返回空字符串；返回值由模块持有。 */
 const char *wifi_manager_provisioning_ssid(void);

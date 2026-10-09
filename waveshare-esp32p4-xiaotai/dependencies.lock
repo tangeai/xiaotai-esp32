@@ -2,19 +2,19 @@ dependencies:
   esp_cam_sensor:
     dependencies: []
     source:
-      path: components/esp_cam_sensor
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/esp_cam_sensor'
       type: local
     version: 2.6.0
   esp_ipa:
     dependencies: []
     source:
-      path: components/esp_ipa
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/esp_ipa'
       type: local
     version: 2.4.0
   esp_sccb_intf:
     dependencies: []
     source:
-      path: components/esp_sccb_intf
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/esp_sccb_intf'
       type: local
     version: 0.0.9
   espressif/cjson:
@@ -64,7 +64,7 @@ dependencies:
   espressif/esp-dl:
     dependencies: []
     source:
-      path: components/espressif__esp-dl
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/espressif__esp-dl'
       type: local
     version: 3.3.12
   espressif/esp-dsp:
@@ -80,13 +80,13 @@ dependencies:
   espressif/esp-nn:
     dependencies: []
     source:
-      path: components/espressif__esp-nn
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/espressif__esp-nn'
       type: local
     version: 1.4.1
   espressif/esp-sr:
     dependencies: []
     source:
-      path: components/espressif__esp-sr
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/espressif__esp-sr'
       type: local
     version: 2.5.4
   espressif/esp-tflite-micro:
@@ -114,13 +114,13 @@ dependencies:
   espressif/esp_codec_dev:
     dependencies: []
     source:
-      path: components/espressif__esp_codec_dev
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/espressif__esp_codec_dev'
       type: local
     version: 1.6.2
   espressif/esp_h264:
     dependencies: []
     source:
-      path: components/espressif__esp_h264
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/espressif__esp_h264'
       type: local
     version: 1.4.1
   espressif/esp_hosted:
@@ -246,13 +246,13 @@ dependencies:
   espressif/esp_video:
     dependencies: []
     source:
-      path: components/espressif__esp_video
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/espressif__esp_video'
       type: local
     version: 2.5.0
   espressif/esp_wifi_remote:
     dependencies: []
     source:
-      path: components/espressif__esp_wifi_remote
+      path: '@XIAOTAI_P4_PROJECT_DIR@/components/espressif__esp_wifi_remote'
       type: local
     version: 1.6.5
   espressif/quirc:

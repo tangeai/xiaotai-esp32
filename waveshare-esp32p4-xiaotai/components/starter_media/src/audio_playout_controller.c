@@ -39,7 +39,7 @@ static const audio_playout_tuning_t s_tunings[] = {
         .min_delay_ms = 120,
         .max_delay_ms = 560,
         .emergency_margin_ms = 320,
-        .stable_windows_before_decay = 8,
+        .stable_windows_before_decay = 3,
     },
     [AUDIO_PLAYOUT_PROFILE_JITTER_SAFE] = {
         .initial_delay_ms = 120,
@@ -48,6 +48,14 @@ static const audio_playout_tuning_t s_tunings[] = {
         .max_delay_ms = 320,
         .emergency_margin_ms = 320,
         .stable_windows_before_decay = 6,
+    },
+    [AUDIO_PLAYOUT_PROFILE_VOIP] = {
+        .initial_delay_ms = 20,
+        .base_delay_ms = 40,
+        .min_delay_ms = 20,
+        .max_delay_ms = 100,
+        .emergency_margin_ms = 160,
+        .stable_windows_before_decay = 3,
     },
 };
 
@@ -58,18 +66,23 @@ static const audio_playout_tuning_t s_tunings[] = {
 #define AUDIO_PLAYOUT_RECOVERY_HOLD_WINDOWS    4U
 #define AUDIO_PLAYOUT_STABLE_JITTER_MS         8U
 #define AUDIO_PLAYOUT_STABLE_TIMING_ERROR_MS   10U
+#define AUDIO_PLAYOUT_CALL_DECAY_JITTER_MS     16U
+#define AUDIO_PLAYOUT_CALL_DECAY_PEAK_MS       40U
+#define AUDIO_PLAYOUT_CALL_DECAY_STEP_MS       20U
 #define AUDIO_PLAYOUT_SOURCE_DELTA_MAX_MS      1000U
 #define AUDIO_PLAYOUT_ARRIVAL_DELTA_MAX_MS     5000U
 #define AUDIO_PLAYOUT_ACCELERATE_PERMILLE      12
 #define AUDIO_PLAYOUT_FAST_ACCELERATE_PERMILLE 25
 #define AUDIO_PLAYOUT_EXPAND_PERMILLE          (-12)
+#define AUDIO_PLAYOUT_VOIP_EXPAND_PERMILLE     (-30)
 #define AUDIO_PLAYOUT_OUTPUT_FLOOR_MS          120U
 
 static bool audio_playout_profile_valid(audio_playout_profile_t profile)
 {
     return profile == AUDIO_PLAYOUT_PROFILE_LOW_LATENCY ||
            profile == AUDIO_PLAYOUT_PROFILE_ADAPTIVE_CALL ||
-           profile == AUDIO_PLAYOUT_PROFILE_JITTER_SAFE;
+           profile == AUDIO_PLAYOUT_PROFILE_JITTER_SAFE ||
+           profile == AUDIO_PLAYOUT_PROFILE_VOIP;
 }
 
 static const audio_playout_tuning_t *audio_playout_get_tuning(audio_playout_profile_t profile)
@@ -350,11 +363,15 @@ void audio_playout_controller_update_window(audio_playout_controller_t *controll
     }
 
     const audio_playout_tuning_t *tuning = audio_playout_get_tuning(controller->profile);
+    const bool adaptive_call = controller->profile == AUDIO_PLAYOUT_PROFILE_ADAPTIVE_CALL;
+    const uint32_t stable_jitter_ms = adaptive_call ?
+        AUDIO_PLAYOUT_CALL_DECAY_JITTER_MS : AUDIO_PLAYOUT_STABLE_JITTER_MS;
+    const uint32_t stable_peak_ms = adaptive_call ?
+        AUDIO_PLAYOUT_CALL_DECAY_PEAK_MS : AUDIO_PLAYOUT_STABLE_TIMING_ERROR_MS;
     bool local_pressure = window->local_write_drop_ms > 0U || window->local_wait_ms > 0U;
     bool network_pressure = window->underflows > 0U ||
                             window->hard_trim_ms > 0U ||
-                            controller->peak_timing_error_ms >
-                                AUDIO_PLAYOUT_STABLE_TIMING_ERROR_MS;
+                            controller->peak_timing_error_ms > stable_peak_ms;
     bool cadence_stable = window->received_ms + AUDIO_PLAYOUT_TARGET_QUANTUM_MS >=
                           window->played_ms;
 
@@ -365,7 +382,7 @@ void audio_playout_controller_update_window(audio_playout_controller_t *controll
                                         audio_playout_suggested_target_ms(controller));
         }
     } else if (cadence_stable &&
-               audio_playout_jitter_ms(controller) <= AUDIO_PLAYOUT_STABLE_JITTER_MS) {
+               audio_playout_jitter_ms(controller) <= stable_jitter_ms) {
         if (controller->stable_windows < UINT8_MAX) {
             controller->stable_windows++;
         }
@@ -378,8 +395,10 @@ void audio_playout_controller_update_window(audio_playout_controller_t *controll
     } else if (controller->stable_windows >= tuning->stable_windows_before_decay) {
         uint32_t suggested_ms = audio_playout_suggested_target_ms(controller);
         if (controller->target_delay_ms > suggested_ms) {
+            uint32_t decay_ms = adaptive_call ?
+                AUDIO_PLAYOUT_CALL_DECAY_STEP_MS : AUDIO_PLAYOUT_TARGET_DECAY_MS;
             uint32_t next_ms = controller->target_delay_ms -
-                               AUDIO_PLAYOUT_TARGET_DECAY_MS;
+                               decay_ms;
             controller->target_delay_ms = next_ms < suggested_ms ?
                                           suggested_ms : next_ms;
         }
@@ -437,7 +456,11 @@ void audio_playout_controller_decide(const audio_playout_controller_t *controlle
     } else if (buffered_ms < low_limit_ms &&
                buffered_ms > chunk_ms) {
         decision->action = AUDIO_PLAYOUT_ACTION_EXPAND;
-        decision->rate_adjust_permille = AUDIO_PLAYOUT_EXPAND_PERMILLE;
+        /* VoIP downlink produced about 9.7 s of PCM per 10 s of DAC time.
+         * Limit this stronger expansion to a depleted VoIP buffer. */
+        decision->rate_adjust_permille = controller->profile == AUDIO_PLAYOUT_PROFILE_VOIP ?
+                                         AUDIO_PLAYOUT_VOIP_EXPAND_PERMILLE :
+                                         AUDIO_PLAYOUT_EXPAND_PERMILLE;
     }
 }
 

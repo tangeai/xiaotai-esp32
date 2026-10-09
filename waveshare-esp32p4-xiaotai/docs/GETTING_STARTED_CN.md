@@ -1,6 +1,6 @@
 # P4 开发指南
 
-本指南适用于小钛 P4 `1.6.0`，芯片要求 rev3.2 及以上。先核对[芯片与构建配置](P4_REV3_VALIDATION.md)，再按顺序完成编译、烧录、热点配网和平台绑定。
+本指南适用于小钛 P4 `1.6.1`，芯片要求 rev3.2 及以上。先核对[芯片与构建配置](P4_REV3_VALIDATION.md)，再按顺序完成编译、烧录、热点配网和平台绑定。
 
 ## 准备源码与硬件
 
@@ -32,7 +32,7 @@ riscv32-esp-elf-gcc --version
 
 ### 2. 编译
 
-下载[同版 C6 附件](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.0/c6_app.bin)，核对 [C6 指南](C6_PREPARATION.md#恢复基线)中的长度和 SHA-256，再放入 `main/assets/c6_app.bin`。该文件是 P4 APP 的内置只读资源，不在源码 Git 中；缺少或摘要不匹配时不要借用其他版本的镜像。
+下载[同版 C6 附件](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/c6_app.bin)，核对 [C6 指南](C6_PREPARATION.md#恢复基线)中的长度和 SHA-256，再放入 `main/assets/c6_app.bin`。该文件是 P4 APP 的内置只读资源，不在源码 Git 中；缺少或摘要不匹配时不要借用其他版本的镜像。
 
 ```sh
 idf.py build
@@ -78,7 +78,7 @@ idf.py -p PORT flash monitor
 
 IDF 按生成的参数写入 bootloader、分区表和应用。下载模式未自动进入时，按板卡 BOOT/RESET 步骤重试。退出日志监视使用 `Ctrl+]`。
 
-启动日志应显示 `xiaotai_esp32p4`、版本 `1.6.0` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
+启动日志应显示 `xiaotai_esp32p4`、版本 `1.6.1` 和本次 ELF 摘要，随后出现配网或已配置设备的页面。
 
 **单独的应用 BIN 不能写到 0x0。** 日常使用上述完整烧录命令，保留 NVS 中的 Wi-Fi 和绑定信息。若旧固件分区不同，先比较[分区表](../partitions.csv)，不要直接整片擦除。
 

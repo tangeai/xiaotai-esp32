@@ -46,6 +46,7 @@ static uint32_t s_health_last_conversion_fail, s_health_last_overflow, s_health_
 static bool s_health_last_subscribed;
 static uint32_t s_bitrate_registered_generation;
 static int64_t s_bitrate_step_us;
+static int64_t s_bitrate_floor_log_us;
 
 /* Keep the proven governor as the only encoder controller. The SDK callback
  * only coalesces a target; this media owner applies it outside all UI/SDK locks. */
@@ -53,6 +54,7 @@ static void configure_bitrate(uint32_t generation)
 {
     s_bitrate_registered_generation = 0;
     s_bitrate_step_us = 0;
+    s_bitrate_floor_log_us = 0;
 #if CONFIG_APP_RTC_SDK_VIDEO_ADAPT_ENABLE
     media_governor_transport_bitrate_range_t range = {0};
     media_governor_get_transport_bitrate_range(&range);
@@ -95,6 +97,16 @@ static void maintain_bitrate(void)
     esp_err_t ret = ESP_OK;
     int64_t now = esp_timer_get_time();
     if (starter_tirtc_take_video_bitrate(generation, &target)) {
+        media_governor_transport_bitrate_range_t range = {0};
+        media_governor_get_transport_bitrate_range(&range);
+        if (target < range.min_bitrate_bps &&
+            now - s_bitrate_floor_log_us >= 5000000) {
+            s_bitrate_floor_log_us = now;
+            ESP_LOGW("p4_video", "bitrate floor: sdk=%lu min=%lu txbuf=%u",
+                     (unsigned long)target,
+                     (unsigned long)range.min_bitrate_bps,
+                     (unsigned)starter_tirtc_send_buffer_used());
+        }
         ret = media_governor_apply_transport_bitrate_target(target, &changed);
     } else if (now >= s_bitrate_step_us) {
         ret = media_governor_step_transport_adaptation(&changed);

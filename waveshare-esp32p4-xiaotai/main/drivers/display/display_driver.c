@@ -17,8 +17,7 @@ static const char *TAG = "display_driver";
 
 #define DISPLAY_DRIVER_LANDSCAPE_ROTATION LV_DISP_ROT_270
 #define DISPLAY_DRIVER_PORTRAIT_ROTATION  LV_DISP_ROT_NONE
-#define DISPLAY_DRIVER_DRAW_LINES 32
-#define DISPLAY_DRIVER_TRANSFER_LINES 16
+#define DISPLAY_DRIVER_FRAME_PIXELS (BSP_LCD_H_RES * BSP_LCD_V_RES)
 #define DISPLAY_DRIVER_LVGL_TASK_PRIORITY 6
 #define DISPLAY_DRIVER_TOUCH_SCROLL_LIMIT_PX  18
 #define DISPLAY_DRIVER_TOUCH_SCROLL_THROW     0
@@ -59,19 +58,17 @@ esp_err_t display_driver_init(display_driver_handles_t *handles)
 
 	bsp_display_cfg_t cfg = {
 		.lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG(),
-		.buffer_size = BSP_LCD_V_RES * DISPLAY_DRIVER_DRAW_LINES,
-		.trans_size = BSP_LCD_V_RES * DISPLAY_DRIVER_TRANSFER_LINES,
-		.double_buffer = true,
+		.buffer_size = DISPLAY_DRIVER_FRAME_PIXELS,
+		.trans_size = 0,
+		.double_buffer = false,
 		.flags = {
 			/*
-			 * Draw in PSRAM and reserve one 16-line internal DMA transport
-			 * buffer at display startup. LVGL uses this path for normal pages
-			 * and while call controls are visible; 16 lines reduce a 480x320
-			 * refresh from 80 synchronous SPI chunks to 20. Once controls
-			 * auto-hide, call video switches to one frame-sized PSRAM DMA
-			 * transaction. ESP-Hosted RX keeps its own fixed DMA buffers.
+			 * Compose video and call controls into one full-frame PSRAM buffer.
+			 * SPI2 can DMA from PSRAM; the synchronous flush keeps this buffer
+			 * owned until the transfer completes. Avoid multiple LCD address
+			 * windows per frame without reserving a full internal DMA buffer.
 			 */
-			.buff_dma = false,
+			.buff_dma = true,
 			.buff_spiram = true,
 		},
 	};
@@ -103,15 +100,14 @@ esp_err_t display_driver_init(display_driver_handles_t *handles)
 	}
 
 	ESP_LOGI(TAG,
-		 "display ready: physical=%dx%d ui=%ux%u rotation=%u draw_buf=%uB buffers=2 "
-		 "caps=psram lvgl_transfer=%uB caps=internal-dma direct_video=psram-dma",
+		 "display ready: physical=%dx%d ui=%ux%u rotation=%u draw_buf=%uB buffers=1 "
+		 "caps=psram-dma lvgl_transfer=full-frame",
 		 BSP_LCD_H_RES,
 		 BSP_LCD_V_RES,
 		 display_driver_width(),
 		 display_driver_height(),
 		 (unsigned)DISPLAY_DRIVER_LANDSCAPE_ROTATION,
-		 (unsigned)(BSP_LCD_V_RES * DISPLAY_DRIVER_DRAW_LINES * sizeof(lv_color_t)),
-		 (unsigned)(BSP_LCD_V_RES * DISPLAY_DRIVER_TRANSFER_LINES * sizeof(lv_color_t)));
+		 (unsigned)(DISPLAY_DRIVER_FRAME_PIXELS * sizeof(lv_color_t)));
 	return ESP_OK;
 }
 

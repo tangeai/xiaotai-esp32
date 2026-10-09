@@ -1,7 +1,7 @@
 idf_component_register(
  SRCS "src/starter_media.c" "src/starter_aec.c" "src/p4_capture_highpass.c"
       "src/p4_audio_playout.c" "src/audio_playout_controller.c" "src/p4_playback_resampler.c"
-      "${CMAKE_CURRENT_LIST_DIR}/src/starter_audio_resampler.c" "${CMAKE_CURRENT_LIST_DIR}/src/starter_preroll.c"
+      "${CMAKE_CURRENT_LIST_DIR}/src/starter_preroll.c"
       "${CMAKE_CURRENT_LIST_DIR}/src/starter_agc.c"
  INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include"
  PRIV_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/src"

@@ -153,6 +153,10 @@ bool platform_client_provisioning(void);
 
 /** 仅绑定等待期间返回验证码，否则返回空字符串；返回值由模块持有。 */
 const char *platform_client_verification_code(void);
+/** Uses the temporary MQTT token expiry when available; zero once expired. */
+unsigned platform_client_verification_seconds_remaining(void);
+bool platform_client_last_verification_expired(void);
+bool platform_client_binding_retry_pending(void);
 
 /**
  * json_body 为 NULL 时发送 GET，否则发送 POST。请求复制进固定队列后立即返回；

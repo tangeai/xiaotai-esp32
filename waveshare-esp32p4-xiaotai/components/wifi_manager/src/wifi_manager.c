@@ -66,6 +66,7 @@ static portMUX_TYPE s_signal_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_signal_epoch;
 static uint32_t s_signal_revision;
 static int s_cached_rssi = 1; /* positive sentinel: no sample */
+static char s_station_ssid[WIFI_MANAGER_SSID_MAX + 1];
 
 static void signal_connection_changed(void)
 {
@@ -955,10 +956,12 @@ static esp_err_t configure_p4_realtime_wifi(void)
     /* One bounded readback before start; no extra diagnostic RPCs in the UI or
      * event callback. Report requested capabilities, not negotiated link speed.
      * Country/channel and rate-dependent PHY power caps remain driver-owned. */
-    ESP_LOGI(TAG, "P4 Wi-Fi perf: ps=%u bw_limit=20MHz proto_cfg=0x%02x sdio_max_khz=%u lines=%u",
+    ESP_LOGI(TAG, "P4 Wi-Fi perf: ps=%u bw_limit=20MHz proto_cfg=0x%02x sdio_max_khz=%u lines=%u ext_dma_largest=%u",
              (unsigned)power_save, (unsigned)protocol,
              (unsigned)CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ,
-             (unsigned)CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH);
+             (unsigned)CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH,
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM |
+                                                       MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
     return ESP_OK;
 }
 #endif
@@ -1159,14 +1162,30 @@ esp_err_t wifi_manager_start(void)
         station.sta.threshold.authmode = credentials.password[0] == '\0'
                                              ? WIFI_AUTH_OPEN
                                              : WIFI_AUTH_WPA2_PSK;
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &station));
+        err = esp_wifi_set_mode(WIFI_MODE_STA);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Wi-Fi STA mode rejected: %s", esp_err_to_name(err));
+            return err;
+        }
+        err = esp_wifi_set_config(WIFI_IF_STA, &station);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Wi-Fi STA config rejected: %s", esp_err_to_name(err));
+            return err;
+        }
+        taskENTER_CRITICAL(&s_signal_lock);
+        memset(s_station_ssid, 0, sizeof(s_station_ssid));
+        memcpy(s_station_ssid, credentials.ssid, strlen(credentials.ssid));
+        taskEXIT_CRITICAL(&s_signal_lock);
         ESP_LOGI(TAG, "connecting to configured SSID=%s", credentials.ssid);
     } else {
         if (credentials_err != ESP_ERR_NVS_NOT_FOUND)
             ESP_LOGE(TAG, "Wi-Fi config load failed: %s", esp_err_to_name(credentials_err));
         s_has_saved_credentials = false;
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+        err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Wi-Fi APSTA mode rejected: %s", esp_err_to_name(err));
+            return err;
+        }
     }
 #if CONFIG_IDF_TARGET_ESP32S3
     err = configure_s3_realtime_wifi();
@@ -1227,6 +1246,18 @@ bool wifi_manager_signal_dbm(int8_t *rssi)
     if (cached > 0) return false;
     *rssi = (int8_t)cached;
     return s_connected;
+}
+
+bool wifi_manager_copy_station_ssid(char *ssid, size_t capacity)
+{
+    if (ssid == NULL || capacity == 0) return false;
+    taskENTER_CRITICAL(&s_signal_lock);
+    size_t length = strnlen(s_station_ssid, sizeof(s_station_ssid));
+    bool valid = length > 0 && length < capacity;
+    if (valid) memcpy(ssid, s_station_ssid, length + 1);
+    taskEXIT_CRITICAL(&s_signal_lock);
+    if (!valid) ssid[0] = '\0';
+    return valid;
 }
 
 bool wifi_manager_provisioning(void)

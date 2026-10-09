@@ -33,6 +33,7 @@
 #include "media_dma_reserve.h"
 #include "media_governor.h"
 #include "media_tuning.h"
+#include "starter_tirtc.h"
 #include "video_yuv420_scaler.h"
 
 static const char *TAG = "camera_pipeline";
@@ -135,6 +136,8 @@ typedef struct {
     uint8_t min_luma;
     uint8_t max_luma;
     uint8_t mean_luma;
+    uint8_t mean_u;
+    uint8_t mean_v;
     uint32_t hash;
 } camera_pipeline_luma_probe_t;
 
@@ -148,6 +151,10 @@ typedef struct {
     uint8_t window_max_luma;
     uint8_t window_min_mean;
     uint8_t window_max_mean;
+    uint8_t window_min_u;
+    uint8_t window_max_u;
+    uint8_t window_min_v;
+    uint8_t window_max_v;
     bool previous_valid;
 } camera_pipeline_luma_stats_t;
 
@@ -243,6 +250,8 @@ static bool camera_pipeline_probe_ouev_luma(const uint8_t *data,
     uint8_t max_luma = 0U;
     uint32_t hash = 2166136261U;
     uint32_t luma_sum = 0U;
+    uint32_t u_sum = 0U;
+    uint32_t v_sum = 0U;
     size_t sample_index = 0U;
     for (uint32_t row = 0U; row < CAMERA_PIPELINE_LUMA_PROBE_GRID; ++row) {
         uint32_t y = ((row * 2U + 1U) * height) /
@@ -260,6 +269,10 @@ static bool camera_pipeline_probe_ouev_luma(const uint8_t *data,
             size_t offset = (size_t)y * row_stride +
                             ((size_t)x / 2U) * 3U + 1U + (x & 1U);
             uint8_t luma = data[offset];
+            size_t chroma_column = ((size_t)x / 2U) * 3U;
+            size_t chroma_row = (size_t)(y & ~1U) * row_stride;
+            u_sum += data[chroma_row + chroma_column];
+            v_sum += data[chroma_row + row_stride + chroma_column];
             probe->samples[sample_index++] = luma;
             luma_sum += luma;
             if (luma < min_luma) {
@@ -275,6 +288,8 @@ static bool camera_pipeline_probe_ouev_luma(const uint8_t *data,
     probe->min_luma = min_luma;
     probe->max_luma = max_luma;
     probe->mean_luma = (uint8_t)(luma_sum / CAMERA_PIPELINE_LUMA_PROBE_SAMPLES);
+    probe->mean_u = (uint8_t)(u_sum / CAMERA_PIPELINE_LUMA_PROBE_SAMPLES);
+    probe->mean_v = (uint8_t)(v_sum / CAMERA_PIPELINE_LUMA_PROBE_SAMPLES);
     probe->hash = hash;
     return true;
 }
@@ -291,6 +306,8 @@ static void camera_pipeline_luma_stats_update(camera_pipeline_luma_stats_t *stat
         stats->window_max_luma = probe->max_luma;
         stats->window_min_mean = probe->mean_luma;
         stats->window_max_mean = probe->mean_luma;
+        stats->window_min_u = stats->window_max_u = probe->mean_u;
+        stats->window_min_v = stats->window_max_v = probe->mean_v;
     } else {
         if (probe->min_luma < stats->window_min_luma) {
             stats->window_min_luma = probe->min_luma;
@@ -304,6 +321,10 @@ static void camera_pipeline_luma_stats_update(camera_pipeline_luma_stats_t *stat
         if (probe->mean_luma > stats->window_max_mean) {
             stats->window_max_mean = probe->mean_luma;
         }
+        if (probe->mean_u < stats->window_min_u) stats->window_min_u = probe->mean_u;
+        if (probe->mean_u > stats->window_max_u) stats->window_max_u = probe->mean_u;
+        if (probe->mean_v < stats->window_min_v) stats->window_min_v = probe->mean_v;
+        if (probe->mean_v > stats->window_max_v) stats->window_max_v = probe->mean_v;
     }
     stats->sample_count++;
 
@@ -348,6 +369,8 @@ static void camera_pipeline_luma_stats_reset_window(camera_pipeline_luma_stats_t
     stats->window_max_luma = 0U;
     stats->window_min_mean = 0U;
     stats->window_max_mean = 0U;
+    stats->window_min_u = stats->window_max_u = 0U;
+    stats->window_min_v = stats->window_max_v = 0U;
 }
 
 static bool camera_pipeline_time_due(TickType_t now, TickType_t *last_tick, uint32_t interval_ms)
@@ -785,24 +808,6 @@ static bool camera_pipeline_select_h264_internal_fit(uint16_t requested_width,
                     largest_internal;
     uint16_t candidate_width = camera_pipeline_align_down_u16(requested_width,
                                                              CAMERA_PIPELINE_H264_DIM_ALIGN);
-
-    /*
-     * If the requested profile no longer fits, prefer the tested compact ISP
-     * output over the largest arbitrary encoder width. An arbitrary size such
-     * as 1216x912 keeps more pixels but forces a full-frame PPA resize from
-     * 1280x960. On P4 that extra pass can exceed the entire 20 fps frame
-     * budget. The compact pair lets camera output and H264 input match, so the
-     * hot path remains YUV420 direct.
-     */
-    if (camera_pipeline_h264_ref_internal_estimate(candidate_width) > budget &&
-        requested_width >= MEDIA_GOVERNOR_COMPACT_CAPTURE_WIDTH &&
-        requested_height >= MEDIA_GOVERNOR_COMPACT_CAPTURE_HEIGHT &&
-        camera_pipeline_h264_ref_internal_estimate(
-            MEDIA_GOVERNOR_COMPACT_CAPTURE_WIDTH) <= budget) {
-        *width = MEDIA_GOVERNOR_COMPACT_CAPTURE_WIDTH;
-        *height = MEDIA_GOVERNOR_COMPACT_CAPTURE_HEIGHT;
-        return true;
-    }
 
     while (candidate_width >= CAMERA_PIPELINE_H264_MIN_WIDTH &&
            camera_pipeline_h264_ref_internal_estimate(candidate_width) > budget) {
@@ -2029,6 +2034,7 @@ static void camera_pipeline_task(void *arg)
     uint64_t frame_gap_us_total = 0;
     uint64_t max_frame_gap_us = 0;
     uint64_t last_frame_start_us = 0;
+    int64_t last_motion_probe_log_us = 0;
     uint64_t stream_start_us = 0;
     uint64_t capture_us_total = 0;
     uint64_t convert_us_total = 0;
@@ -2108,11 +2114,6 @@ static void camera_pipeline_task(void *arg)
                                                      &h264_fallback_height)) {
             open_width = h264_fallback_width;
             open_height = h264_fallback_height;
-            if (open_width == MEDIA_GOVERNOR_COMPACT_CAPTURE_WIDTH &&
-                open_height == MEDIA_GOVERNOR_COMPACT_CAPTURE_HEIGHT) {
-                capture_width = open_width;
-                capture_height = open_height;
-            }
             ESP_LOGI(TAG,
                      "H264 encoder resource-fit profile: requested=%ux%u selected=%ux%u capture=%ux%u path=%s internal_largest=%u ref_est=%u",
                      preopen_width,
@@ -2268,12 +2269,13 @@ static void camera_pipeline_task(void *arg)
         capture_sample_count++;
         camera_stale_frame_drain_count += frame.stale_frames_dropped;
 
+        uint64_t frame_gap_us = 0;
         if (last_frame_start_us != 0U &&
             capture_done_us > (int64_t)last_frame_start_us) {
-            uint64_t gap_us = (uint64_t)capture_done_us - last_frame_start_us;
-            frame_gap_us_total += gap_us;
-            if (gap_us > max_frame_gap_us) {
-                max_frame_gap_us = gap_us;
+            frame_gap_us = (uint64_t)capture_done_us - last_frame_start_us;
+            frame_gap_us_total += frame_gap_us;
+            if (frame_gap_us > max_frame_gap_us) {
+                max_frame_gap_us = frame_gap_us;
             }
         }
         last_frame_start_us = (uint64_t)capture_done_us;
@@ -2712,6 +2714,25 @@ static void camera_pipeline_task(void *arg)
             slow_loop_count++;
         }
 
+        if ((frame_gap_us >= 95000U || capture_us >= 70000 ||
+             convert_us >= 70000 || encode_us >= 70000 ||
+             callback_us >= 70000 ||
+             (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE)) &&
+            (last_motion_probe_log_us == 0 ||
+             callback_start_us - last_motion_probe_log_us >= 500000)) {
+            last_motion_probe_log_us = callback_start_us;
+            ESP_LOGW(TAG,
+                     "MFR gap=%llums cap/scale/enc/hw/send/loop=%lld/%lld/%lld/%lld/%lld/%lldus bytes=%u key=%d txbuf=%u drain=%lu rc=%s",
+                     (unsigned long long)(frame_gap_us / 1000ULL),
+                     (long long)capture_us, (long long)convert_us,
+                     (long long)encode_us, (long long)h264_timing.hw_us,
+                     (long long)callback_us, (long long)loop_us,
+                     (unsigned)h264_len, key_frame ? 1 : 0,
+                     (unsigned)starter_tirtc_send_buffer_used(),
+                     (unsigned long)source_stale_frames_dropped,
+                     esp_err_to_name(ret));
+        }
+
         bool trace_initial = trace_frame_count <= CAMERA_PIPELINE_FRAME_TRACE_INITIAL_COUNT;
         bool trace_large = (uint32_t)h264_len >= CAMERA_PIPELINE_FRAME_TRACE_LARGE_PAYLOAD_BYTES;
         bool trace_slow = capture_us > CAMERA_PIPELINE_FRAME_TRACE_SLOW_STAGE_US ||
@@ -2869,27 +2890,32 @@ static void camera_pipeline_task(void *arg)
                  now_tick - last_quality_log_tick >= pdMS_TO_TICKS(30000U))) {
                 last_quality_log_tick = now_tick;
                 ESP_LOGI(TAG,
-                         "CAM %ux%u@%u br=%lu/%luk f=%lu.%lu payload=%lu/%lu drop=%lu/%lu/%lu luma=s/e:%lu.%lu/%lu.%lu mean=s/e:%u-%u/%u-%u",
+                         "CAM %ux%u@%u f=%lu.%lu br=%lu/%lu gap=%llums sz=%lu/%lu k=%lu d=%lu/%lu/%lu q=%u t=%lu/%lu/%lu cb=%lu lag=%llums Y=%lu.%lu/%lu.%lu",
                          (unsigned)h264.width,
                          (unsigned)h264.height,
                          (unsigned)policy.rtc_video_fps,
-                         (unsigned long)measured_bitrate_kbps,
-                         (unsigned long)(policy.h264_bitrate_bps / 1000U),
                          (unsigned long)(measured_fps_x10 / 10U),
                          (unsigned long)(measured_fps_x10 % 10U),
+                         (unsigned long)measured_bitrate_kbps,
+                         (unsigned long)(policy.h264_bitrate_bps / 1000U),
+                         (unsigned long long)(max_frame_gap_us / 1000ULL),
                          (unsigned long)avg_payload,
                          (unsigned long)max_payload_bytes,
+                         (unsigned long)key_frame_count,
                          (unsigned long)drop_count,
                          (unsigned long)backpressure_skip_count,
                          (unsigned long)transport_guard_drop_count,
+                         (unsigned)starter_tirtc_send_buffer_used(),
+                         (unsigned long)(capture_sample_count > 0U ? capture_us_total / capture_sample_count / 1000U : 0U),
+                         (unsigned long)(convert_sample_count > 0U ? convert_us_total / convert_sample_count / 1000U : 0U),
+                         (unsigned long)(encode_sample_count > 0U ? encode_us_total / encode_sample_count / 1000U : 0U),
+                         (unsigned long)(callback_sample_count > 0U ?
+                             callback_us_total / callback_sample_count : 0U),
+                         (unsigned long long)(max_media_timestamp_lag_us / 1000ULL),
                          (unsigned long)(source_luma_delta_x10 / 10U),
                          (unsigned long)(source_luma_delta_x10 % 10U),
                          (unsigned long)(encoder_luma_delta_x10 / 10U),
-                         (unsigned long)(encoder_luma_delta_x10 % 10U),
-                         (unsigned)source_luma_stats.window_min_mean,
-                         (unsigned)source_luma_stats.window_max_mean,
-                         (unsigned)encoder_luma_stats.window_min_mean,
-                         (unsigned)encoder_luma_stats.window_max_mean);
+                         (unsigned long)(encoder_luma_delta_x10 % 10U));
             }
 #endif
 #if CONFIG_APP_MEDIA_PERIODIC_DIAGNOSTICS

@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "eh_host_core.h"
@@ -13,6 +14,7 @@
 #include "esp_app_desc.h"
 #include "esp_app_format.h"
 #include "esp_log.h"
+#include "esp_log_buffer.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
@@ -254,6 +256,7 @@ static esp_err_t c6_stream_image(size_t image_size, bool old_end_activates,
     esp_err_t err = eh_host_cp_ota_begin();
     if (err != ESP_OK) return err;
     ESP_LOGI(TAG, "OTA begin ok; bytes=%u", (unsigned)image_size);
+    starter_product_set_c6_update(STARTER_C6_UPDATE_WRITING, 5, ESP_OK);
     for (size_t offset = 0; offset < image_size; offset += C6_OTA_CHUNK_BYTES) {
         size_t count = image_size - offset;
         if (count > C6_OTA_CHUNK_BYTES) count = C6_OTA_CHUNK_BYTES;
@@ -285,21 +288,50 @@ static esp_err_t c6_stream_image(size_t image_size, bool old_end_activates,
 
 esp_err_t c6_updater_run(bool manual_retry)
 {
+    starter_product_c6_update_state_t failure_state = STARTER_C6_UPDATE_RECOVERY;
+    starter_product_set_c6_identity(NULL);
     starter_product_set_c6_update(STARTER_C6_UPDATE_CHECKING, 0, ESP_OK);
     if (eh_host_wait_auto_init_ready(C6_HANDSHAKE_TIMEOUT_MS) != 0) {
+        ESP_LOGE(TAG, "C6 Hosted link not ready within %u ms", C6_HANDSHAKE_TIMEOUT_MS);
         starter_product_set_c6_update(STARTER_C6_UPDATE_RECOVERY, 0, ESP_ERR_TIMEOUT);
         return ESP_ERR_TIMEOUT;
     }
+    char link_identity[80];
+    (void)snprintf(link_identity, sizeof(link_identity), "C6 %02X FW %08lX\nCAP %02lX EXT %02lX",
+                   (unsigned)eh_host_mcu_transport_get_chip_id(),
+                   (unsigned long)eh_host_mcu_transport_get_fw_version(),
+                   (unsigned long)eh_host_mcu_transport_get_capabilities(),
+                   (unsigned long)eh_host_mcu_transport_get_ext_capabilities());
+    starter_product_set_c6_identity(link_identity);
     starter_product_set_c6_update(STARTER_C6_UPDATE_VERIFYING, 1, ESP_OK);
     esp_app_desc_t target;
     size_t image_size = 0;
     esp_err_t err = c6_validate_image(&target, &image_size);
-    if (err != ESP_OK) goto failed;
+    if (err != ESP_OK) {
+        failure_state = STARTER_C6_UPDATE_BAD_IMAGE;
+        goto failed;
+    }
     eh_host_coprocessor_fwver_t hosted = {0};
     esp_hosted_app_desc_t running = {0};
     bool legacy_ota = false;
     err = c6_read_identity(&hosted, &running, &legacy_ota);
-    if (err != ESP_OK) goto failed;
+    if (err != ESP_OK) {
+        uint8_t chip_id = eh_host_mcu_transport_get_chip_id();
+        if (chip_id != 0 && chip_id != C6_CHIP_ID) {
+            ESP_LOGE(TAG, "unsupported coprocessor chip id=0x%02x", chip_id);
+            failure_state = STARTER_C6_UPDATE_UNSUPPORTED;
+        }
+        goto failed;
+    }
+    if (!legacy_ota) {
+        char identity[80];
+        (void)snprintf(identity, sizeof(identity), "APP %.18s\nID %02X%02X%02X%02X  H%u.%u.%u",
+                       running.version, running.app_elf_sha256[0],
+                       running.app_elf_sha256[1], running.app_elf_sha256[2],
+                       running.app_elf_sha256[3], (unsigned)hosted.major1,
+                       (unsigned)hosted.minor1, (unsigned)hosted.patch1);
+        starter_product_set_c6_identity(identity);
+    }
     uint8_t attempt = 0;
     err = c6_read_attempt(&attempt);
     if (err != ESP_OK) goto failed;
@@ -319,26 +351,51 @@ esp_err_t c6_updater_run(bool manual_retry)
         return ESP_OK;
     }
     if (s_transfer_started_this_boot) {
+        ESP_LOGW(TAG, "C6 OTA already started this boot; power cycle required");
         err = ESP_ERR_INVALID_STATE;
         goto failed;
     }
 
     const c6_approved_source_t *source = legacy_ota ? NULL :
         c6_approved_source(&hosted, &running, image_size);
+    if (!legacy_ota && !source && !attempt &&
+        hosted.major1 == 3 && hosted.minor1 == 0 && hosted.patch1 == 7 &&
+        (running.magic_word == ESP_APP_DESC_MAGIC_WORD || running.magic_word == 0) &&
+        running.project_name[0] && running.version[0]) {
+        /* An unknown APP/partition layout is not an OTA target. The matching
+         * Hosted protocol can still try normal Wi-Fi without writing C6. */
+        ESP_LOGW(TAG, "C6 OTA source unapproved: retaining installed APP and trying Wi-Fi; project=%s version=%s",
+                 running.project_name, running.version);
+        starter_product_set_c6_update(STARTER_C6_UPDATE_READY, 100, ESP_OK);
+        return ESP_OK;
+    }
     if ((legacy_ota && image_size > C6_LEGACY_OTA_SLOT_BYTES) ||
         (!legacy_ota && !source)) {
+        ESP_LOGE(TAG, "C6 OTA source not approved: legacy=%u hosted=%u.%u.%u project=%s version=%s image=%u",
+                 (unsigned)legacy_ota, (unsigned)hosted.major1,
+                 (unsigned)hosted.minor1, (unsigned)hosted.patch1,
+                 legacy_ota ? "legacy-v2" : running.project_name,
+                 legacy_ota ? "unknown" : running.version,
+                 (unsigned)image_size);
+        if (!legacy_ota) {
+            ESP_LOGE(TAG, "C6 APP ELF SHA256:");
+            ESP_LOG_BUFFER_HEX_LEVEL(TAG, running.app_elf_sha256,
+                                     sizeof(running.app_elf_sha256), ESP_LOG_ERROR);
+        }
+        failure_state = STARTER_C6_UPDATE_UNSUPPORTED;
         err = ESP_ERR_NOT_SUPPORTED;
         goto failed;
     }
     ESP_LOGI(TAG, "C6 OTA source=%s image=%u", legacy_ota ? "legacy-v2" :
              running.version, (unsigned)image_size);
     if (attempt && !manual_retry) {
+        ESP_LOGW(TAG, "previous C6 OTA attempt recorded; waiting for manual retry");
+        failure_state = STARTER_C6_UPDATE_PREVIOUS_ATTEMPT;
         err = ESP_ERR_INVALID_STATE;
         goto failed;
     }
     err = c6_write_attempt(true);
     if (err != ESP_OK) goto failed;
-    starter_product_set_c6_update(STARTER_C6_UPDATE_WRITING, 5, ESP_OK);
     s_transfer_started_this_boot = true;
     bool activation_may_have_started = false;
     err = c6_stream_image(image_size, legacy_ota || source->end_activates,
@@ -359,7 +416,7 @@ esp_err_t c6_updater_run(bool manual_retry)
 failed:
     ESP_LOGE(TAG, "C6 update blocked: %s", esp_err_to_name(err));
     starter_product_set_c6_update(s_transfer_started_this_boot
-        ? STARTER_C6_UPDATE_RECOVERY_POWER_CYCLE : STARTER_C6_UPDATE_RECOVERY,
+        ? STARTER_C6_UPDATE_RECOVERY_POWER_CYCLE : failure_state,
         0, err);
     return err;
 }

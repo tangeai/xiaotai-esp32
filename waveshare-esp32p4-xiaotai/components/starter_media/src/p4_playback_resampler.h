@@ -25,6 +25,9 @@ esp_err_t p4_playback_resampler_reset(p4_playback_resampler_t *s, int16_t first)
 /* Returns interleaved stereo values, exactly 4 * count; zero on invalid input. */
 size_t p4_playback_resampler_process(p4_playback_resampler_t *s,
     const int16_t *input, size_t count, int16_t *stereo, size_t capacity);
+/* Returns 2 * count mono samples for 8 kHz talkback into 16 kHz playout. */
+size_t p4_playback_resampler_process_mono(p4_playback_resampler_t *s,
+    const int16_t *input, size_t count, int16_t *mono, size_t capacity);
 /* Natural gap/end only. Never drain a cancelled or superseded conversation. */
 size_t p4_playback_resampler_finish(p4_playback_resampler_t *s,
     int16_t *stereo, size_t capacity);

@@ -3,7 +3,7 @@
 
 _Static_assert(P4_PLAYOUT_CAPACITY > (560U + 320U) * (P4_PLAYOUT_RATE / 1000U),
                "PCM capacity must exceed the largest legacy emergency watermark");
-_Static_assert(P4_PLAYOUT_CHUNK * 2U == 240U,
+_Static_assert(P4_PLAYOUT_CHUNK == 240U,
                "Network output quantum must fill one 16 kHz DMA descriptor");
 
 static uint32_t duration_ms(size_t samples)
@@ -13,7 +13,7 @@ static uint32_t duration_ms(size_t samples)
 
 void p4_audio_playout_init(p4_audio_playout_t *q, audio_playout_profile_t profile)
 {
-    /* Do not clear 16 KB of PCM on each session: head/count own validity. */
+    /* Do not clear 32 KB of PCM on each session: head/count own validity. */
     q->head = q->count = q->phase = 0;
     q->started = q->have_packet = q->packet_failed = false;
     q->restart_pending = false;
@@ -71,10 +71,8 @@ bool p4_audio_playout_prepare(p4_audio_playout_t *q, uint32_t now_ms,
     if (!q || !out || !block) return false;
     *block = (p4_playout_block_t){0};
     if (!q->count) {
-        /* Empty software PCM is not yet an empty DAC. Keep history until
-         * only one output block remains, leaving time to write the FIR tail
-         * before DMA drains. Waiting 120 ms here would append the tail after
-         * audible silence. I2S, not a second timer, clocks continuous PCM. */
+        /* Empty software PCM is not yet an empty DAC. Keep output timing
+         * until DMA drains; I2S, not a second timer, clocks continuous PCM. */
         if (q->started && q->output_valid &&
             (now_ms - q->last_write_ms < duration_ms(P4_PLAYOUT_CHUNK) ||
              p4_audio_playout_pending_ms(q, now_ms) > duration_ms(P4_PLAYOUT_CHUNK))) return false;

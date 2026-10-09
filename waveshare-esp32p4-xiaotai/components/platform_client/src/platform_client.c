@@ -67,10 +67,13 @@
 /* 必须与组合根的联调 profile 一致，避免空配置时静默切回 HTTPS。 */
 #define PLATFORM_DEFAULT_DISCOVERY CONFIG_XIAOTAI_DISCOVERY_URL
 #define PLATFORM_DEFAULT_PROVISION_TIMEOUT_SECONDS 190U
+#define PLATFORM_FALLBACK_CODE_TTL_SECONDS 190U
 #define EXPERIENCE_PLATFORM_URL CONFIG_XIAOTAI_PORTAL_URL
 #define PROVISION_DONE_BIT BIT0
 #define PROVISION_ERROR_BIT BIT1
 #define PROVISION_READY_BIT BIT2
+#define PROVISION_CANCEL_BIT BIT3
+#define PROVISION_REFRESH_BIT BIT4
 
 /* 服务发现结果；生成的起步工程会裁剪未使用的服务字段。 */
 typedef struct {
@@ -155,6 +158,8 @@ static atomic_uint s_epoch;
 static uint32_t s_response_epoch;
 static EXT_RAM_BSS_ATTR int s_response_status;
 static atomic_bool s_binding_retry;
+static atomic_uint s_verification_deadline_s;
+static atomic_bool s_last_verification_expired;
 static volatile bool s_request_worker_ready;
 static atomic_bool s_mqtt_connected;
 static atomic_bool s_mqtt_transport_connected;
@@ -1494,13 +1499,43 @@ typedef struct {
     char code[17];
     char temp_token[1024];
     char temp_client_id[65];
+    int64_t expires_at_us;
 } provision_report_t;
 
 /* ===== 首次验证码绑定 / 服务端解绑后重绑 ===== */
 
-static esp_err_t report_for_provision(const platform_provision_config_t *config,
-                                      provision_report_t *report)
+static int64_t token_expiry_utc(const char *token)
 {
+    const char *first = strchr(token, '.');
+    const char *last = first == NULL ? NULL : strchr(first + 1, '.');
+    if (last == NULL) return 0;
+    size_t length = (size_t)(last - first - 1);
+    if (length == 0 || length > 1000) return 0;
+    char encoded[1024];
+    memcpy(encoded, first + 1, length);
+    for (size_t i = 0; i < length; ++i) {
+        if (encoded[i] == '-') encoded[i] = '+';
+        else if (encoded[i] == '_') encoded[i] = '/';
+    }
+    while ((length & 3U) != 0U) encoded[length++] = '=';
+    unsigned char decoded[768];
+    size_t decoded_length = 0;
+    if (mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &decoded_length,
+                              (const unsigned char *)encoded, length) != 0) return 0;
+    decoded[decoded_length] = '\0';
+    cJSON *payload = cJSON_Parse((const char *)decoded);
+    const cJSON *exp = payload == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(payload, "exp");
+    int64_t expiry = cJSON_IsNumber(exp) ? (int64_t)exp->valuedouble : 0;
+    cJSON_Delete(payload);
+    return expiry;
+}
+
+static esp_err_t report_for_provision(const platform_provision_config_t *config,
+                                      provision_report_t *report,
+                                      bool *stale_report)
+{
+    *stale_report = false;
+    const int64_t report_started_us = esp_timer_get_time();
     /* existing_device_* 同时存在时给上报加签；首次绑定只上报 MAC。 */
     cJSON *body_root = cJSON_CreateObject();
     if (body_root == NULL ||
@@ -1611,6 +1646,24 @@ static esp_err_t report_for_provision(const platform_provision_config_t *config,
         }
         return ESP_ERR_INVALID_RESPONSE;
     }
+    /* The Report token and code share the server's code_ttl. Prefer the JWT
+     * expiry; an opaque legacy token uses the documented default of 190s.
+     * A shorter local deadline would show "expired" while Report still
+     * idempotently returns the same valid code. */
+    report->expires_at_us = report_started_us +
+                            (int64_t)PLATFORM_FALLBACK_CODE_TTL_SECONDS * 1000000;
+    int64_t token_expiry = token_expiry_utc(report->temp_token);
+    int64_t remaining = token_expiry - (int64_t)time(NULL);
+    if (token_expiry > 0 && remaining <= 1) {
+        mbedtls_platform_zeroize(report, sizeof(*report));
+        *stale_report = true;
+        ESP_LOGW(TAG, "binding report replayed an expiring token; retrying after expiry");
+        return ESP_ERR_TIMEOUT;
+    }
+    if (token_expiry > 0 && remaining <= 3600) {
+        report->expires_at_us = esp_timer_get_time() +
+                                remaining * 1000000;
+    }
     ESP_LOGI(TAG, "temporary MQTT credentials obtained (values hidden)");
     return ESP_OK;
 }
@@ -1659,6 +1712,10 @@ static esp_err_t play_verification_prompt(
          url_length > 0 && (size_t)url_length < sizeof(url) &&
          attempt < PLATFORM_TTS_DOWNLOAD_ATTEMPTS;
          ++attempt) {
+        if (wifi_manager_manually_disconnected() || atomic_load(&s_binding_retry)) {
+            err = ESP_ERR_INVALID_STATE;
+            break;
+        }
         if (xEventGroupGetBits(events) & (PROVISION_DONE_BIT | PROVISION_ERROR_BIT)) {
             err = ESP_OK;
             break;
@@ -1693,6 +1750,11 @@ static esp_err_t play_verification_prompt(
         ESP_LOGI(TAG,
                  "verification prompt downloaded bytes=%u format=pcm_s16le_8k_mono",
                  (unsigned)pcm_bytes);
+        ESP_LOGI(TAG, "bind mem: stage=prompt dma=%u/%u internal=%u/%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         err = config->prompt_callback((const int16_t *)pcm,
                                       pcm_bytes / sizeof(int16_t),
                                       config->prompt_user_data);
@@ -1850,6 +1912,23 @@ static void provision_mqtt_event(void *handler_args,
     }
 }
 
+static EventBits_t wait_provision_bits(EventGroupHandle_t events,
+                                      EventBits_t wanted, TickType_t timeout)
+{
+    const TickType_t started = xTaskGetTickCount();
+    const TickType_t poll = pdMS_TO_TICKS(250);
+    for (;;) {
+        if (wifi_manager_manually_disconnected()) return PROVISION_CANCEL_BIT;
+        if (atomic_load(&s_binding_retry)) return PROVISION_REFRESH_BIT;
+        const TickType_t elapsed = xTaskGetTickCount() - started;
+        if (elapsed >= timeout) return xEventGroupGetBits(events);
+        const TickType_t remaining = timeout - elapsed;
+        const TickType_t wait = remaining < poll ? remaining : poll;
+        EventBits_t bits = xEventGroupWaitBits(events, wanted, pdFALSE, pdFALSE, wait);
+        if (bits & wanted) return bits;
+    }
+}
+
 static esp_err_t wait_for_auth_grant(const provision_report_t *report,
                                      const platform_provision_config_t *config,
                                      platform_provision_result_t *result)
@@ -1913,23 +1992,34 @@ static esp_err_t wait_for_auth_grant(const provision_report_t *report,
                                    ? PLATFORM_DEFAULT_PROVISION_TIMEOUT_SECONDS
                                    : config->timeout_seconds;
     TickType_t wait_started = xTaskGetTickCount();
-    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_seconds * 1000U);
-    EventBits_t bits = xEventGroupWaitBits(context.events,
-                                           PROVISION_READY_BIT |
-                                               PROVISION_DONE_BIT |
-                                               PROVISION_ERROR_BIT,
-                                           pdFALSE,
-                                           pdFALSE,
-                                           timeout_ticks);
+    int64_t remaining_us = report->expires_at_us - esp_timer_get_time();
+    uint32_t timeout_ms = remaining_us > 0 ? (uint32_t)((remaining_us + 999) / 1000) : 0;
+    if (timeout_ms > timeout_seconds * 1000U) timeout_ms = timeout_seconds * 1000U;
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    EventBits_t bits = wait_provision_bits(context.events,
+                                          PROVISION_READY_BIT |
+                                              PROVISION_DONE_BIT |
+                                              PROVISION_ERROR_BIT,
+                                          timeout_ticks);
     if ((bits & PROVISION_READY_BIT) != 0 &&
+        esp_timer_get_time() < report->expires_at_us &&
         (bits & (PROVISION_DONE_BIT | PROVISION_ERROR_BIT)) == 0) {
         /* A Report response alone is not a usable binding session. Publish
          * the code only after SUBACK, before the optional spoken prompt. */
         (void)snprintf(s_verification_code, sizeof(s_verification_code), "%s", report->code);
+        atomic_store_explicit(&s_verification_deadline_s,
+                              (unsigned)((report->expires_at_us + 999999) / 1000000),
+                              memory_order_release);
         ESP_LOGI(TAG, "binding code ready: mqtt_ms=%lu",
                  (unsigned long)((xTaskGetTickCount() - wait_started) * portTICK_PERIOD_MS));
+        ESP_LOGI(TAG, "bind mem: stage=ready dma=%u/%u internal=%u/%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         esp_err_t prompt_err = play_verification_prompt(report, config, context.events);
-        if (prompt_err != ESP_OK) {
+        if (prompt_err != ESP_OK && !wifi_manager_manually_disconnected() &&
+            !atomic_load(&s_binding_retry)) {
             /* 屏幕验证码仍然可用，语音失败不应破坏绑定凭证状态机。 */
             ESP_LOGW(TAG,
                      "verification prompt unavailable: %s",
@@ -1939,24 +2029,31 @@ static esp_err_t wait_for_auth_grant(const provision_report_t *report,
         TickType_t remaining = elapsed < timeout_ticks
                                    ? timeout_ticks - elapsed
                                    : 0;
-        bits |= xEventGroupWaitBits(context.events,
-                                    PROVISION_DONE_BIT | PROVISION_ERROR_BIT,
-                                    pdFALSE,
-                                    pdFALSE,
-                                    remaining);
+        bits |= wait_provision_bits(context.events,
+                                   PROVISION_DONE_BIT | PROVISION_ERROR_BIT,
+                                   remaining);
     }
     (void)esp_mqtt_client_stop(context.mqtt);
     (void)esp_mqtt_client_destroy(context.mqtt);
     vEventGroupDelete(context.events);
+    if ((bits & PROVISION_DONE_BIT) == 0 &&
+        (bits & (PROVISION_CANCEL_BIT | PROVISION_REFRESH_BIT))) {
+        ESP_LOGI(TAG, "binding cancelled: reason=%s",
+                 (bits & PROVISION_REFRESH_BIT) ? "refresh" : "Wi-Fi change");
+        mbedtls_platform_zeroize(&context, sizeof(context));
+        return ESP_ERR_INVALID_STATE;
+    }
     if ((bits & PROVISION_DONE_BIT) == 0) {
         if ((bits & PROVISION_ERROR_BIT) != 0) {
             ESP_LOGE(TAG, "verification binding failed");
             mbedtls_platform_zeroize(&context, sizeof(context));
             return ESP_FAIL;
         }
-        ESP_LOGE(TAG,
-                 "verification binding timed out after %u seconds",
-                 timeout_seconds);
+        atomic_store(&s_last_verification_expired,
+                     s_verification_code[0] != '\0' &&
+                     esp_timer_get_time() >= report->expires_at_us);
+        ESP_LOGW(TAG, "verification code expired or binding timed out: elapsed_ms=%lu",
+                 (unsigned long)((xTaskGetTickCount() - wait_started) * portTICK_PERIOD_MS));
         mbedtls_platform_zeroize(&context, sizeof(context));
         return ESP_ERR_TIMEOUT;
     }
@@ -1968,6 +2065,7 @@ static esp_err_t wait_for_auth_grant(const provision_report_t *report,
                    sizeof(result->device_secret),
                    "%s",
                    context.device_secret);
+    atomic_store(&s_binding_retry, false);
     mbedtls_platform_zeroize(&context, sizeof(context));
     return ESP_OK;
 }
@@ -1975,6 +2073,8 @@ static esp_err_t wait_for_auth_grant(const provision_report_t *report,
 esp_err_t platform_client_provision(const platform_provision_config_t *config,
                                     platform_provision_result_t *result)
 {
+    atomic_store_explicit(&s_verification_deadline_s, 0, memory_order_release);
+    atomic_store(&s_last_verification_expired, false);
     /* 这是同步编排入口；调用者负责把 result 安全持久化。 */
     if (config == NULL || result == NULL || config->mac_address == NULL ||
         config->mac_address[0] == '\0' ||
@@ -2005,7 +2105,13 @@ esp_err_t platform_client_provision(const platform_provision_config_t *config,
     }
     const int64_t services_ready = esp_timer_get_time();
     provision_report_t report = {0};
-    err = report_for_provision(config, &report);
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        bool stale_report = false;
+        err = report_for_provision(config, &report, &stale_report);
+        if (!stale_report || attempt == 2 ||
+            wifi_manager_manually_disconnected() || atomic_load(&s_binding_retry)) break;
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
     if (err != ESP_OK) {
         return err;
     }
@@ -2018,6 +2124,7 @@ esp_err_t platform_client_provision(const platform_provision_config_t *config,
     ESP_LOGW(TAG, "open device binding and enter the displayed code");
     err = wait_for_auth_grant(&report, config, result);
     s_provisioning = false;
+    atomic_store_explicit(&s_verification_deadline_s, 0, memory_order_release);
     mbedtls_platform_zeroize(s_verification_code,
                              sizeof(s_verification_code));
     mbedtls_platform_zeroize(&report, sizeof(report));
@@ -2271,6 +2378,23 @@ bool platform_client_provisioning(void)
 const char *platform_client_verification_code(void)
 {
     return s_verification_code;
+}
+
+unsigned platform_client_verification_seconds_remaining(void)
+{
+    unsigned deadline = atomic_load_explicit(&s_verification_deadline_s, memory_order_acquire);
+    unsigned now = (unsigned)(esp_timer_get_time() / 1000000);
+    return deadline > now ? deadline - now : 0;
+}
+
+bool platform_client_last_verification_expired(void)
+{
+    return atomic_load(&s_last_verification_expired);
+}
+
+bool platform_client_binding_retry_pending(void)
+{
+    return atomic_load(&s_binding_retry);
 }
 
 esp_err_t platform_client_request(platform_service_t service,

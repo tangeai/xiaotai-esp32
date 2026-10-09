@@ -40,13 +40,13 @@
 #define APP_MEDIA_CALL_VIDEO_MAX_QP                     51U
 
 /* Phone/browser uplink is separate from P4-to-P4's software decode budget.
- * Preserve the 15 fps capture cadence while allowing more detail per frame.
- * Transport feedback can reduce bitrate where that SDK path is supported. */
-/* Full sensor frame after board mounting correction (counterclockwise 90). */
-#define APP_MEDIA_WECHAT_VIDEO_WIDTH                    960U
-#define APP_MEDIA_WECHAT_VIDEO_HEIGHT                   1280U
+ * Leave headroom for motion after the board-mounting rotation: the full
+ * 960x1280 path consumed almost an entire 15 fps frame period even in a
+ * static scene. This 4:3 profile retains 960 vertical pixels. */
+#define APP_MEDIA_WECHAT_VIDEO_WIDTH                    720U
+#define APP_MEDIA_WECHAT_VIDEO_HEIGHT                   960U
 #define APP_MEDIA_WECHAT_VIDEO_FPS                      15U
-#define APP_MEDIA_WECHAT_VIDEO_BITRATE_BPS              3000000U
+#define APP_MEDIA_WECHAT_VIDEO_BITRATE_BPS              2000000U
 #define APP_MEDIA_WECHAT_VIDEO_MIN_QP                   26U
 #define APP_MEDIA_WECHAT_VIDEO_MAX_QP                   46U
 /* H264 encoder and transport protection. */

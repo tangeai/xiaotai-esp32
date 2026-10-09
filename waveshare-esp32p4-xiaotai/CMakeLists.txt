@@ -7,7 +7,7 @@ if(NOT DEFINED ENV{IDF_COMPONENT_CHECK_NEW_VERSION})
     set(ENV{IDF_COMPONENT_CHECK_NEW_VERSION} "0")
 endif()
 
-set(PROJECT_VER "1.6.0")
+set(PROJECT_VER "1.6.1")
 # This Kconfig is loaded through starter_voice's rsource. Track it explicitly
 # so incremental Ninja builds regenerate sdkconfig.h when its options change.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -30,27 +30,51 @@ idf_build_set_property(DEPENDENCIES_LOCK "${CMAKE_BINARY_DIR}/dependencies.lock"
 project(xiaotai_esp32p4)
 
 # Component Manager supplies the pinned 3.0.7 archive. Keep the APP descriptor
-# RPC extension and RX stack correction in source control, not ignored downloads.
+# RPC extension, RX stack correction and P4 DMA bounce in source control.
 find_package(Git REQUIRED)
 set(_hosted_dir "${CMAKE_CURRENT_LIST_DIR}/managed_components/espressif__esp_hosted")
+# Treat component paths as patch roots, not paths in an enclosing checkout.
+# Otherwise git apply can skip every file and still return success.
+set(_hosted_git_apply "${CMAKE_COMMAND}" -E env
+    --unset=GIT_DIR --unset=GIT_WORK_TREE --unset=GIT_INDEX_FILE
+    "GIT_CEILING_DIRECTORIES=${CMAKE_CURRENT_LIST_DIR}/managed_components"
+    "${GIT_EXECUTABLE}" apply)
 set(_hosted_patch "${CMAKE_CURRENT_LIST_DIR}/tools/patches/esp-hosted-3.0.7-app-desc.patch")
 if(NOT EXISTS "${_hosted_dir}/host/features/eh_host_feat_system/src/eh_host_sys.c")
     message(FATAL_ERROR "ESP-Hosted 3.0.7 component is missing")
 endif()
-execute_process(COMMAND "${GIT_EXECUTABLE}" apply --reverse --check --ignore-space-change "${_hosted_patch}"
+execute_process(COMMAND ${_hosted_git_apply} --reverse --check --ignore-space-change "${_hosted_patch}"
     WORKING_DIRECTORY "${_hosted_dir}" RESULT_VARIABLE _hosted_patch_applied
     OUTPUT_QUIET ERROR_QUIET)
 if(NOT _hosted_patch_applied EQUAL 0)
-    execute_process(COMMAND "${GIT_EXECUTABLE}" apply --check --ignore-space-change "${_hosted_patch}"
+    execute_process(COMMAND ${_hosted_git_apply} --check --ignore-space-change "${_hosted_patch}"
         WORKING_DIRECTORY "${_hosted_dir}" RESULT_VARIABLE _hosted_patch_clean
         OUTPUT_QUIET ERROR_VARIABLE _hosted_patch_error)
     if(NOT _hosted_patch_clean EQUAL 0)
         message(FATAL_ERROR "ESP-Hosted APP descriptor patch does not match pinned 3.0.7: ${_hosted_patch_error}")
     endif()
-    execute_process(COMMAND "${GIT_EXECUTABLE}" apply --ignore-space-change "${_hosted_patch}"
+    execute_process(COMMAND ${_hosted_git_apply} --ignore-space-change "${_hosted_patch}"
         WORKING_DIRECTORY "${_hosted_dir}" RESULT_VARIABLE _hosted_patch_result)
     if(NOT _hosted_patch_result EQUAL 0)
         message(FATAL_ERROR "Could not apply ESP-Hosted APP descriptor patch")
+    endif()
+endif()
+
+set(_hosted_rx_patch "${CMAKE_CURRENT_LIST_DIR}/tools/patches/esp-hosted-3.0.7-p4-sdio-rx-bounce.patch")
+execute_process(COMMAND ${_hosted_git_apply} --reverse --check --ignore-space-change "${_hosted_rx_patch}"
+    WORKING_DIRECTORY "${_hosted_dir}" RESULT_VARIABLE _hosted_rx_patch_applied
+    OUTPUT_QUIET ERROR_QUIET)
+if(NOT _hosted_rx_patch_applied EQUAL 0)
+    execute_process(COMMAND ${_hosted_git_apply} --check --ignore-space-change "${_hosted_rx_patch}"
+        WORKING_DIRECTORY "${_hosted_dir}" RESULT_VARIABLE _hosted_rx_patch_clean
+        OUTPUT_QUIET ERROR_VARIABLE _hosted_rx_patch_error)
+    if(NOT _hosted_rx_patch_clean EQUAL 0)
+        message(FATAL_ERROR "ESP-Hosted P4 SDIO RX patch does not match pinned 3.0.7: ${_hosted_rx_patch_error}")
+    endif()
+    execute_process(COMMAND ${_hosted_git_apply} --ignore-space-change "${_hosted_rx_patch}"
+        WORKING_DIRECTORY "${_hosted_dir}" RESULT_VARIABLE _hosted_rx_patch_result)
+    if(NOT _hosted_rx_patch_result EQUAL 0)
+        message(FATAL_ERROR "Could not apply ESP-Hosted P4 SDIO RX patch")
     endif()
 endif()
 

@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "esp_check.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_video_device.h"
@@ -61,6 +62,8 @@ static uint16_t s_target_height = HARDWARE_BOARD_CAMERA_HEIGHT;
 static uint8_t s_target_fps = 30;
 static uint8_t s_sensor_fps;
 static dw_gdma_channel_handle_t s_csi_dma_clock_guard;
+static i2c_master_dev_handle_t s_sensor_control;
+static esp_err_t camera_driver_config_antiflicker(void);
 
 static esp_err_t camera_driver_prepare_persistent_buffers(void)
 {
@@ -727,6 +730,9 @@ esp_err_t camera_driver_init(void)
 		camera_driver_config_frame_rate();
 	}
 	if (ret == ESP_OK) {
+		ret = camera_driver_config_antiflicker();
+	}
+	if (ret == ESP_OK) {
 		ret = camera_driver_prepare_buffers();
 	}
 	if (ret == ESP_OK) {
@@ -915,6 +921,56 @@ void camera_driver_release(camera_driver_frame_t *frame)
 
 	memset(frame, 0, sizeof(*frame));
 	xSemaphoreGive(s_lock);
+}
+
+static esp_err_t camera_driver_sensor_read(uint16_t reg, uint8_t *value)
+{
+	uint8_t address[] = {(uint8_t)(reg >> 8), (uint8_t)reg};
+	return i2c_master_transmit_receive(s_sensor_control, address, sizeof(address),
+	                                   value, 1, 20);
+}
+
+static esp_err_t camera_driver_sensor_write(uint16_t reg, uint8_t value)
+{
+	uint8_t command[] = {(uint8_t)(reg >> 8), (uint8_t)reg, value};
+	return i2c_master_transmit(s_sensor_control, command, sizeof(command), 20);
+}
+
+static esp_err_t camera_driver_config_antiflicker(void)
+{
+	if (s_sensor_control == NULL) {
+		i2c_master_bus_handle_t bus = hardware_board_get_i2c_bus_handle();
+		ESP_RETURN_ON_FALSE(bus != NULL, ESP_ERR_INVALID_STATE, TAG,
+		                    "camera I2C bus unavailable");
+		i2c_device_config_t config = {
+			.dev_addr_length = I2C_ADDR_BIT_LEN_7,
+			.device_address = 0x36,
+			.scl_speed_hz = HARDWARE_BOARD_CAMERA_I2C_FREQ_HZ,
+		};
+		ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus, &config, &s_sensor_control),
+		                    TAG, "camera sensor I2C unavailable");
+	}
+
+	uint8_t banding = 0;
+	uint8_t frequency = 0;
+	uint8_t selection = 0;
+	ESP_RETURN_ON_ERROR(camera_driver_sensor_read(0x3a00, &banding), TAG, "read banding control");
+	ESP_RETURN_ON_ERROR(camera_driver_sensor_read(0x3c00, &frequency), TAG, "read light frequency");
+	ESP_RETURN_ON_ERROR(camera_driver_sensor_read(0x3c01, &selection), TAG, "read frequency selection");
+
+	/* Dimmed LED lighting made automatic detection choose 60 Hz on this 50 Hz board. */
+	ESP_RETURN_ON_ERROR(camera_driver_sensor_write(0x3a00, banding | 0x20U),
+	                    TAG, "enable banding filter");
+	ESP_RETURN_ON_ERROR(camera_driver_sensor_write(0x3c00, frequency | 0x04U),
+	                    TAG, "select 50 Hz banding");
+	ESP_RETURN_ON_ERROR(camera_driver_sensor_write(0x3c01, selection | 0x80U),
+	                    TAG, "fix banding frequency");
+	ESP_RETURN_ON_ERROR(camera_driver_sensor_read(0x3c01, &selection),
+	                    TAG, "verify frequency selection");
+	ESP_RETURN_ON_ERROR(camera_driver_sensor_read(0x3c00, &frequency),
+	                    TAG, "verify light frequency");
+	return ((selection & 0x80U) != 0U && (frequency & 0x04U) != 0U) ?
+	       ESP_OK : ESP_ERR_INVALID_RESPONSE;
 }
 
 esp_err_t camera_driver_deinit(void)

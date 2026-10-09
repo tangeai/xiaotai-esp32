@@ -8,6 +8,7 @@ typedef enum {
     AUDIO_PLAYOUT_PROFILE_LOW_LATENCY = 0,
     AUDIO_PLAYOUT_PROFILE_ADAPTIVE_CALL,
     AUDIO_PLAYOUT_PROFILE_JITTER_SAFE,
+    AUDIO_PLAYOUT_PROFILE_VOIP,
 } audio_playout_profile_t;
 
 typedef enum {

@@ -332,8 +332,8 @@ static bool room_audio_format(const cJSON *profile)
     const cJSON *codec = cJSON_GetObjectItemCaseSensitive(profile, "codec");
     const cJSON *rate = cJSON_GetObjectItemCaseSensitive(profile, "sample_rate");
     const cJSON *channels = cJSON_GetObjectItemCaseSensitive(profile, "channels");
-    return cJSON_IsString(codec) && strcmp(codec->valuestring, "g711a") == 0 &&
-        cJSON_IsNumber(rate) && rate->valuedouble == 8000 &&
+    return cJSON_IsString(codec) && strcmp(codec->valuestring, "opus") == 0 &&
+        cJSON_IsNumber(rate) && rate->valuedouble == 16000 &&
         cJSON_IsNumber(channels) && channels->valuedouble == 1;
 }
 
@@ -365,8 +365,8 @@ static void room_connection(const runtime_event_t *event)
     const char *names[] = {"input_audio", "output_audio"};
     for (unsigned i = 0; ok && i < 2; ++i) {
         cJSON *audio = cJSON_AddObjectToObject(params, names[i]);
-        ok = audio && cJSON_AddStringToObject(audio, "codec", "g711a") &&
-            cJSON_AddNumberToObject(audio, "sample_rate", 8000) && cJSON_AddNumberToObject(audio, "channels", 1);
+        ok = audio && cJSON_AddStringToObject(audio, "codec", "opus") &&
+            cJSON_AddNumberToObject(audio, "sample_rate", 16000) && cJSON_AddNumberToObject(audio, "channels", 1);
     }
     char json[768];
     ok = ok && cJSON_PrintPreallocated(request, json, sizeof(json), false) && room_send(json);

@@ -11,9 +11,9 @@ static EXT_RAM_BSS_ATTR struct {
     starter_agc_stream_t stream;
 } s_agc;
 
-/* TX-owner only: fixed gain after resampling, never fed back into wake/AEC.
- * One 8 kHz/10 ms scratch frame avoids relying on vendor in-place support. */
-#define UPLINK_BOOST_SAMPLES 80U
+/* TX-owner only: fixed gain after AEC, never fed back into wake/AEC.
+ * One 16 kHz/10 ms scratch frame avoids relying on vendor in-place support. */
+#define UPLINK_BOOST_SAMPLES 160U
 /* ESP-SR accepts integer dB only. 10 dB plus this input attenuation gives
  * 9.5219 dB: nominally 1.5x the previous 6 dB stage, below limiter onset.
  * Attenuate before the vendor limiter, never amplify int16 PCM into clipping.
@@ -36,10 +36,10 @@ esp_err_t starter_agc_init(void)
         return ESP_ERR_NOT_SUPPORTED;
     }
     /* Preserve the 16 kHz adaptive frontend used by wake recognition.
-     * Recording gain belongs to the independent 8 kHz TX limiter below. */
+     * Recording gain belongs to the independent 16 kHz TX limiter below. */
     set_agc_config(s_agc.handle, CONFIG_XIAOTAI_CAPTURE_AGC_GAIN_DB, 1, 6);
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4
-    s_uplink_boost.handle = esp_agc_open(AGC_MODE_3, 8000);
+    s_uplink_boost.handle = esp_agc_open(AGC_MODE_3, 16000);
     if (!s_uplink_boost.handle || !esp_ptr_external_ram(s_uplink_boost.handle)) {
         esp_err_t err = s_uplink_boost.handle ? ESP_ERR_NOT_SUPPORTED : ESP_ERR_NO_MEM;
         starter_agc_deinit();
@@ -92,7 +92,7 @@ esp_err_t starter_agc_boost_uplink(int16_t *pcm, size_t samples)
                 (scaled + (scaled >= 0 ? 16384 : -16384)) / 32768);
         }
         if (esp_agc_process(s_uplink_boost.handle, s_uplink_boost.input, pcm + offset,
-                            UPLINK_BOOST_SAMPLES, 8000) < ESP_AGC_SUCCESS) return ESP_FAIL;
+                            UPLINK_BOOST_SAMPLES, 16000) < ESP_AGC_SUCCESS) return ESP_FAIL;
     }
     return ESP_OK;
 }

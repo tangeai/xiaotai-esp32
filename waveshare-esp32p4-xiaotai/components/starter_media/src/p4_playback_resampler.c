@@ -40,7 +40,7 @@ esp_err_t p4_playback_resampler_reset(p4_playback_resampler_t *s, int16_t first)
 }
 
 static size_t convert(p4_playback_resampler_t *s, const int16_t *input,
-                      size_t count, int16_t *stereo)
+                      size_t count, int16_t *output, bool stereo)
 {
     size_t written = 0;
     for (size_t offset = 0; offset < count;) {
@@ -55,8 +55,8 @@ static size_t convert(p4_playback_resampler_t *s, const int16_t *input,
             int32_t sample = (int32_t)(value + (value >= 0 ? 0.5f : -0.5f));
             if (sample > 32767) { sample = 32767; ++s->clipped; }
             if (sample < -32768) { sample = -32768; ++s->clipped; }
-            stereo[written++] = (int16_t)sample;
-            stereo[written++] = (int16_t)sample;
+            output[written++] = (int16_t)sample;
+            if (stereo) output[written++] = (int16_t)sample;
         }
         offset += n;
     }
@@ -68,7 +68,17 @@ size_t p4_playback_resampler_process(p4_playback_resampler_t *s,
 {
     if (!s || !s->initialized || !input || !stereo || !count || count > capacity / 4U)
         return 0;
-    size_t written = convert(s, input, count, stereo);
+    size_t written = convert(s, input, count, stereo, true);
+    s->pending_tail = true;
+    return written;
+}
+
+size_t p4_playback_resampler_process_mono(p4_playback_resampler_t *s,
+    const int16_t *input, size_t count, int16_t *mono, size_t capacity)
+{
+    if (!s || !s->initialized || !input || !mono || !count || count > capacity / 2U)
+        return 0;
+    size_t written = convert(s, input, count, mono, false);
     s->pending_tail = true;
     return written;
 }
@@ -78,7 +88,7 @@ size_t p4_playback_resampler_finish(p4_playback_resampler_t *s,
 {
     if (!s || !s->initialized || !s->pending_tail || !stereo ||
         capacity < P4_PLAYBACK_FIR_TAIL_INPUT * 4U) return 0;
-    size_t written = convert(s, NULL, P4_PLAYBACK_FIR_TAIL_INPUT, stereo);
+    size_t written = convert(s, NULL, P4_PLAYBACK_FIR_TAIL_INPUT, stereo, true);
     s->pending_tail = false;
     return written;
 }

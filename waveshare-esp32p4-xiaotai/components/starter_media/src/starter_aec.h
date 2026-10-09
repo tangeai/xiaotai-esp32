@@ -13,7 +13,7 @@ extern "C" {
 
 enum {
     STARTER_AEC_SAMPLE_RATE_HZ = 16000,
-    STARTER_AEC_TRANSPORT_RATE_HZ = 8000,
+    STARTER_AEC_TRANSPORT_RATE_HZ = 16000,
     /* ES8311 standard stereo: ADC microphone left, internal DAC reference right.
      * Two I2S channels do not mean two physical microphones. */
     STARTER_AEC_CAPTURE_DMA_CHANNELS = 2,
@@ -26,7 +26,7 @@ typedef struct {
     const int16_t *pcm_16k;
     size_t samples_16k;
     uint32_t wake_delay_ms;
-    const int16_t *pcm_8k;
+    const int16_t *pcm_transport;
     size_t samples;
     uint32_t mic_clipped;
     uint32_t reference_clipped;
@@ -50,7 +50,7 @@ int16_t *starter_aec_capture_buffer(void);
 
 /**
  * 将 ES8311 麦克风（左声道）和 DAC 回采（右声道）送入 AEC，同时返回只读的
- * 16 kHz AEC/AGC PCM 给本地识别，并抗混叠降采样到 8 kHz 给 TiRTC。
+ * 16 kHz AEC/AGC PCM 分别给本地识别和 TiRTC Opus 上行。
  * capture_bytes 必须等于 starter_aec_capture_bytes()。
  */
 esp_err_t starter_aec_process_capture(size_t capture_bytes,

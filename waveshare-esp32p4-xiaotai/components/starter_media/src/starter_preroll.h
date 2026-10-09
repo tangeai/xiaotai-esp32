@@ -5,9 +5,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Pure 8 kHz PCM queue. Caller serializes access; no SDK calls or allocation. */
-#define PREROLL_RATE 8000U
-#define PREROLL_HISTORY_SAMPLES 12000U
+/* Pure 16 kHz PCM queue. Caller serializes access; no SDK calls or allocation. */
+#define PREROLL_RATE 16000U
+#define PREROLL_HISTORY_SAMPLES 24000U
 #define PREROLL_CAPACITY_SAMPLES (PREROLL_RATE * 20U)
 #define PREROLL_TIMEOUT_MS 19000
 typedef struct {

@@ -6,12 +6,12 @@
 
 /* One audio-sink owner, no locks/allocations/I2S in this module. Store the
  * complete object in PSRAM. Fixed capacity is not the adaptive delay target. */
-#define P4_PLAYOUT_RATE 8000U
-#define P4_PLAYOUT_CHUNK 120U /* 15 ms: one complete 240-frame I2S DMA block. */
-#define P4_PLAYOUT_CAPACITY 8000U
+#define P4_PLAYOUT_RATE 16000U
+#define P4_PLAYOUT_CHUNK 240U /* 15 ms: one complete 240-frame I2S DMA block. */
+#define P4_PLAYOUT_CAPACITY 16000U
 #define P4_PLAYOUT_TAIL_MS 120U
 #define P4_PLAYOUT_DMA_MS 90U /* Six 240-frame descriptors at 16 kHz. */
-#define P4_PLAYOUT_FADE_SAMPLES 40U /* 5 ms at 8 kHz, only on a restart */
+#define P4_PLAYOUT_FADE_SAMPLES 80U /* 5 ms at 16 kHz, only on a restart */
 
 typedef struct {
     size_t samples, consumed;

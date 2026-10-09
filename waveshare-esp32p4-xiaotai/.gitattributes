@@ -28,7 +28,7 @@ components/esp_ipa/** -whitespace
 components/espressif__esp-dl/** -whitespace
 components/espressif__esp-nn/** -whitespace
 components/espressif__esp-sr/** -whitespace
-tools/patches/*.patch -whitespace
+tools/patches/*.patch -text -whitespace
 
 # Maintenance entries are local documentation, not public source exports.
 docs/history export-ignore

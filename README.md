@@ -37,11 +37,11 @@
 | 开发板 | 完整 BIN 下载（16 MB） | 功能 |
 | --- | --- | --- |
 | 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.5.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.5.0/xiaotai-esp32-s3-app-v1.5.0-full-16MB.bin) | 语音通话、AI 对讲、H5 摄像头查看 |
-| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.6.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.0/xiaotai-esp32-p4-app-v1.6.0-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
+| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.6.1](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/xiaotai-esp32-p4-app-v1.6.1-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
 
 芯片要求：**S3 rev 0.0–0.99；ESP32-P4 rev3.2 及以上**。按芯片选择固件；烧录工具提示不兼容时，请停止，不要跳过校验。
 
-当前固件为体验版（Pre-release）。[S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.0)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
+当前固件为体验版（Pre-release）。[S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
 
 **P4 只需通过一个 USB 烧录上述完整包。** 包内已带配套 C6 镜像，首次启动会检查并按兼容范围更新 C6，请保持供电直到进入配网或主页。无需另刷 C6 附件；出现恢复提示时按 [C6 指南](waveshare-esp32p4-xiaotai/docs/C6_PREPARATION.md)处理，不反复擦除或强刷。
 

@@ -1,6 +1,6 @@
 # 小钛 P4
 
-小钛 P4 是微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 上的音视频设备应用，版本为 **1.6.0**。通过 TiRTC/WebRTC 支持 AI 语音对讲、设备间语音/视频呼叫、微信通话、多人对讲和 H5 实时查看，包含热点配网、设备绑定和联系人管理。
+小钛 P4 是微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 上的音视频设备应用，版本为 **1.6.1**。通过 TiRTC/WebRTC 支持 AI 语音对讲、设备间语音/视频呼叫、微信通话、多人对讲和 H5 实时查看，包含热点配网、设备绑定和联系人管理。
 
 ## 准备什么
 
@@ -12,13 +12,13 @@
 | 编译环境 | ESP-IDF 5.5.5 及配套 RISC-V 工具链 |
 | 体验条件 | 可联网的 Wi-Fi、平台账号和手机；设备互呼需要第二台已绑定设备 |
 
-本工程可独立构建。编译前需下载[同版 C6 附件](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.0/c6_app.bin)，核对 [SHA-256](docs/C6_PREPARATION.md#恢复基线) 后放入 `main/assets/c6_app.bin`；首次编译还需联网下载组件依赖。
+本工程可独立构建。编译前需下载[同版 C6 附件](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/c6_app.bin)，核对 [SHA-256](docs/C6_PREPARATION.md#恢复基线) 后放入 `main/assets/c6_app.bin`；首次编译还需联网下载组件依赖。
 
 ## 开始使用
 
-1. 下载 [1.6.0 完整 16 MB 烧录包](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.0/xiaotai-esp32-p4-app-v1.6.0-full-16MB.bin)，按[网页烧录说明](../README.md#用浏览器烧录)从 `0x0` 写入，无需自行编译。完整包会清除配网、绑定和用户设置，请先备份；校验清单见[发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.0)。首次启动会检查 C6，更新期间保持供电，等待进入配网页；无需单独刷 C6 附件。
+1. 下载 [1.6.1 完整 16 MB 烧录包](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/xiaotai-esp32-p4-app-v1.6.1-full-16MB.bin)，按[网页烧录说明](../README.md#用浏览器烧录)从 `0x0` 写入，无需自行编译。完整包会清除配网、绑定和用户设置，请先备份；校验清单见[发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1)。首次启动会检查 C6，更新期间保持供电，等待进入配网页；无需单独刷 C6 附件。
 2. 手机连接设备显示的 `XiaoTai-XXXX` 开放热点，访问 `http://192.168.6.1`，选择扫描到的 Wi-Fi 并输入密码；已保存网络可直接复用密码。
-3. 设备联网后显示六位验证码。在[平台“我的设备”](https://xiaotai.chat/devices)中添加设备并填写验证码。
+3. 设备联网后显示六位验证码。在[平台“我的设备”](https://xiaotai.chat/devices)中添加设备并填写验证码。验证码过期后可在设备上刷新，也可返回更换 Wi-Fi。
 4. 完成绑定后，按[功能体验](docs/GETTING_STARTED_CN.md#功能体验)配置 AI、联系人或微信授权，开始通话。
 
 ## 使用范围
