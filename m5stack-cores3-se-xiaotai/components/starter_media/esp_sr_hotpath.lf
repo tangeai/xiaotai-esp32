@@ -1,0 +1,6 @@
+# The official FFT is the only measured useful placement. Keep the BSS
+# orchestration in flash; moving it did not remove the feed overload.
+[mapping:cores3_sr_fft]
+archive: libesp_audio_processor.a
+entries:
+    test_fft_ins (noflash_text)
