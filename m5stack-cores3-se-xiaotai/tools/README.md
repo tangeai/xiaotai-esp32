@@ -23,11 +23,13 @@ python tools/check_build_policies.py --policy aec
 bash tools/run_host_tests.sh
 ```
 
-入口运行 66 项脚本，缺少工具或依赖时提前报错。测试覆盖部分实际 C 函数、模拟平台交互和资源契约；通过不代表设备时序、真实网络或听感通过。仅运行主机测试时，不要在 WSL 重新配置 Windows 的 `build/`。
+入口运行 68 项脚本，缺少工具或依赖时提前报错。测试覆盖部分实际 C 函数、模拟平台交互和资源契约；通过不代表设备时序、真实网络或听感通过。仅运行主机测试时，不要在 WSL 重新配置 Windows 的 `build/`。
 
-`test_audio_only.py` 检查 CoreS3-SE 的音频订阅、分场景编码、旧连接隔离及所有模式拒绝视频订阅。
-`test_h5_video_send.py` 是保留的 JPEG 适配器函数单测，以模拟订阅检查代次、积压、错误返回和断连保护；
-它不代表本板启用了摄像头或视频，也不证明硬件 DMA 或远端帧率。
+`test_audio_only.py` 检查音频订阅、分场景编码、旧连接隔离及仅 H5 接受视频订阅。
+`test_h5_video_send.py` 检查 JPEG 发送的代次、积压、错误返回和断连保护；
+`test_cores3_board_contract.py` 检查 GC0308 引脚与摄像头供电/复位，`test_camera_pacing.py` 检查 12 fps 节拍。
+`test_camera_lifecycle.py` 执行实际打开/关闭函数，检查 1000 轮资源释放、初始化失败、取消订阅与退出错误。
+这些主机模拟不证明传感器、硬件 DMA、双向听感或远端实际帧率。
 
 `test_device_profile.py` 检查上报三个场景的实际 JSON、编码声明、在线/在途互斥与失败后的相同快照重试。
 
@@ -36,7 +38,7 @@ bash tools/run_host_tests.sh
 
 `test_room.py` 和 `test_room_ui.py` 检查房间状态机、按住讲话门控、页面生命周期与数字键盘；`test_home_wake_hint.py` 检查首页提示与会话状态的一致性。
 
-`test_cores3_afe_continuity.py` 执行实际 AFE feed/fetch 配对，检查环满丢块计数、迟到时间戳跳过和在数据流中标记的丢失样本；`test_media_uplink_gates.py` 检查 Room 松手按采集时间排空、上行时间轴跳过丢失时长和提示音插值顺序。`test_tirtc_connection_lock.py` 检查音频、命令、缓冲查询与断开共用的连接生命周期锁。`test_wechat_ringback.py` 检查微信外呼回铃按 call_id/wx_from/OpenID 关联；`test_call_room_recovery.py` 另覆盖拨号 HTTP 返回前挂断时迟到房间的取消。`test_touch_wake.py` 用真实 LVGL 检查熄屏时第一次触摸只亮屏。
+`test_cores3_afe_continuity.py` 执行实际 AFE feed/fetch 配对，检查环满丢块计数、迟到时间戳跳过和在数据流中标记的丢失样本；`test_media_uplink_gates.py` 检查 Room 松手按采集时间排空、上行时间轴跳过丢失时长和提示音插值顺序。`test_tirtc_connection_lock.py` 检查音频、命令与缓冲查询的连接生命周期锁、JPEG 并发发送及断开等待在途调用。`test_wechat_ringback.py` 检查微信外呼回铃按 call_id/wx_from/OpenID 关联；`test_call_room_recovery.py` 另覆盖拨号 HTTP 返回前挂断时迟到房间的取消。`test_touch_wake.py` 用真实 LVGL 检查熄屏时第一次触摸只亮屏。
 
 `test_ui_routes.py` 执行当前 14 个页面的实际路由和销毁逻辑，检查重复切换、房间退出、待处理意图保留及非法页面报错；具体布局和绘制由房间、表情等测试分别覆盖。
 

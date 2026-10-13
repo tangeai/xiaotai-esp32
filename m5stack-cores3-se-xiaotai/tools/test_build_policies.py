@@ -120,10 +120,10 @@ class PortablePoliciesTest(unittest.TestCase):
 
     def test_elf_call_video_and_removed_wake_symbols_still_fail(self):
         for symbol in ("starter_tirtc_send_h264", "starter_tirtc_subscribe_call_video",
-                       "starter_media_submit_video", "esp_camera_init", "esp32_camera_gc2145_detect"):
+                       "starter_media_submit_video", "esp32_camera_gc2145_detect"):
             with self.subTest(symbol=symbol), patch.object(self.context, "symbols",
                     return_value=f"1 T {symbol}\n"):
-                with self.assertRaisesRegex(policies.PolicyFailure, "absent camera"):
+                with self.assertRaisesRegex(policies.PolicyFailure, "must not link"):
                     policies.viewing_scope(self.context)
         with patch.object(self.context, "symbols", return_value="1 T esp_mn_init\n"):
             with self.assertRaisesRegex(policies.PolicyFailure, "MultiNet"):

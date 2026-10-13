@@ -18,7 +18,7 @@ FILES = {
     "s3_face": "components/starter_product/src/starter_product_s3_face.inc",
     "platform": "components/platform_client/src/platform_client.c",
     "media": "components/starter_media/src/starter_media.c",
-    "camera": "components/starter_media/src/starter_camera_unavailable.c",
+    "camera": "components/starter_media/src/starter_camera.c",
     "board": "components/starter_board/starter_board.c",
     "aec": "components/starter_media/src/starter_aec.c",
     "aec_header": "components/starter_media/src/starter_aec.h",
@@ -389,16 +389,39 @@ def session_priority(c):
 
 
 def viewing_scope(c):
-    require(not has_line(c.symbols("--defined-only"),
-            r" (starter_tirtc_send_h264|starter_tirtc_subscribe_call_video|starter_media_submit_video|esp_camera_init|esp32_camera_gc2145_detect)$"),
-            "CoreS3-SE image must not initialize an absent camera or video decoder")
-    c.need("camera", "return ESP_ERR_NOT_SUPPORTED;")
-    c.need("media_cmake", '"src/starter_camera_unavailable.c"')
-    c.need("media", "starter_camera_set_session(0)")
-    c.need("runtime", '\\"up_video_mt\\":[]', '\\"no_video\\":true')
+    if c.elf:
+        symbols = c.symbols("--defined-only")
+        require(not has_line(symbols,
+                r" (starter_tirtc_send_h264|starter_tirtc_subscribe_call_video|starter_media_submit_video|esp32_camera_gc2145_detect)$"),
+                "CoreS3-Lite viewing must not link call video, a decoder or GC2145")
+        require(has_line(symbols, r" esp_camera_init$") and
+                has_line(symbols, r" esp32_camera_gc0308_detect$"),
+                "CoreS3-Lite GC0308 camera is missing from ELF")
+    c.need("media_cmake", '"src/starter_camera.c"', "esp32-camera", "esp_new_jpeg")
+    c.need("camera", "sensor->id.PID!=GC0308_PID", ".pin_xclk=-1",
+           ".pin_sccb_sda=-1", ".sccb_i2c_port=0", ".pin_d0=39", ".pin_d1=40",
+           ".pin_d2=41", ".pin_d3=42", ".pin_d4=15", ".pin_d5=16", ".pin_d6=48",
+           ".pin_d7=47", ".pin_vsync=46", ".pin_href=38", ".pin_pclk=45",
+           ".xclk_freq_hz=20000000", ".fb_count=2", ".fb_location=CAMERA_FB_IN_PSRAM",
+           ".grab_mode=CAMERA_GRAB_LATEST", "JPEG_PIXEL_FORMAT_YCbYCr",
+           "starter_media_h5_current(generation)", "starter_tirtc_video_ready()",
+           "MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT", compact=True)
+    c.need("board", "starter_board_camera_power", "{0x03,0x82}",
+           "write_reg(s_axp,0x94,28)", "update_reg(s_axp,0x90,0x14,0x14)",
+           "update_reg(s_axp,0x90,0x14,0)", compact=True)
+    c.need("media", "starter_camera_set_session(0)", "starter_camera_prepare(generation)",
+           "starter_board_camera_power(enabled)")
+    c.need("runtime", '\\"up_video_mt\\":[\\"mjpeg\\"]', '\\"no_video\\":false',
+           '\\"up_video_mt\\":[],\\"down_video_mt\\":[]', '\\"no_video\\":true')
+    for name in ("defaults", "resolved"):
+        c.need(name, "CONFIG_GC0308_SUPPORT=y", "# CONFIG_GC2145_SUPPORT is not set",
+               "CONFIG_SCCB_HARDWARE_I2C_DRIVER_NEW=y", "CONFIG_SCCB_HARDWARE_I2C_PORT0=y",
+               "# CONFIG_CAMERA_PSRAM_DMA is not set", "CONFIG_CAMERA_DMA_BUFFER_SIZE_MAX=16384",
+               "CONFIG_CAMERA_TASK_STACK_SIZE=4096", "CONFIG_CAMERA_CORE1=y")
     video = line_range(c.text("tirtc"), "^static int on_subscribe_video", "^}")
-    require("return -1;" in video and "return 0;" not in video,
-            "unsupported video subscriptions must be rejected, not acknowledged")
+    for token in ("connection_matches(connection)", "STARTER_TIRTC_H5", "stream_id == H5_VIDEO_STREAM",
+                  "s_video_subscribed, true", "return accepted ? 0 : -1;"):
+        require(token in video, "video subscriptions must be current H5 TX only: " + token)
 
 
 def media_cpu_fairness(c):

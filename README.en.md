@@ -20,7 +20,7 @@
 [![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
 [![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#wechat-calls)
 
-[Download firmware](#download-firmware) · [LCKFB S3 changelog](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md) · [CoreS3-SE changelog](m5stack-cores3-se-xiaotai/CHANGELOG.md) · [P4 changelog](waveshare-esp32p4-xiaotai/CHANGELOG.md) · [Browser flasher](https://espressif.github.io/esptool-js/) · [Demo platform](https://xiaotai.chat/) · [Server & mini program](https://github.com/tangeai/tirtc-server-example)
+[Download firmware](#download-firmware) · [LCKFB S3 changelog](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md) · [CoreS3-Lite changelog](m5stack-cores3-se-xiaotai/CHANGELOG.md) · [P4 changelog](waveshare-esp32p4-xiaotai/CHANGELOG.md) · [Browser flasher](https://espressif.github.io/esptool-js/) · [Demo platform](https://xiaotai.chat/) · [Server & mini program](https://github.com/tangeai/tirtc-server-example)
 
 </div>
 
@@ -37,12 +37,12 @@ Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi**
 | Board | Full BIN download (16 MB) | Features |
 | --- | --- | --- |
 | LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | [Download S3 1.5.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.5.0/xiaotai-esp32-s3-app-v1.5.0-full-16MB.bin) | Voice calls, AI voice chat, and browser camera viewing |
-| M5Stack CoreS3-SE | [Download CoreS3-SE 1.5.0](https://github.com/tangeai/xiaotai-esp32/releases/download/m5stack-cores3-se-app-v1.5.0/xiaotai-m5stack-cores3-se-app-v1.5.0-full-16MB.bin) | Voice calls, AI voice chat, and browser two-way audio; no video |
+| M5Stack CoreS3-Lite | [Download CoreS3-Lite 1.5.1](https://github.com/tangeai/xiaotai-esp32/releases/download/m5stack-cores3-lite-app-v1.5.1/xiaotai-m5stack-cores3-lite-app-v1.5.1-full-16MB.bin) | Voice calls, AI voice chat, and browser camera viewing with two-way audio |
 | Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.6.1](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/xiaotai-esp32-p4-app-v1.6.1-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
 
-Chip requirements: **S3 rev 0.0–0.99; ESP32-P4 rev3.2 or later**. Match the board, not just the chip: LCKFB S3 and CoreS3-SE firmware are not interchangeable. If the flasher reports an incompatible chip, stop rather than bypassing the check.
+Chip requirements: **S3 rev 0.0–0.99; ESP32-P4 rev3.2 or later**. Match the board, not just the chip: LCKFB S3 and CoreS3-Lite firmware are not interchangeable. If the flasher reports an incompatible chip, stop rather than bypassing the check.
 
-These are **pre-release** images. The **Assets** section of the [LCKFB S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0), [CoreS3-SE release](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-se-app-v1.5.0), or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1) also includes `FLASHING_CN.md`, `SHA256SUMS.txt`, and `release-manifest.json`. The flashing guide is in Chinese. `Source code` is not a flashable image.
+These are **pre-release** images. The **Assets** section of the [LCKFB S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0), [CoreS3-Lite release](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1), or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1) also includes `FLASHING_CN.md`, `SHA256SUMS.txt`, and `release-manifest.json`. The flashing guide is in Chinese. `Source code` is not a flashable image.
 
 **P4 needs only one USB connection to flash the full image above.** It contains the paired C6 firmware. On startup, P4 checks C6 and updates supported versions; keep power connected until setup or the home screen appears. Do not flash the separate C6 attachment for this workflow. If a recovery screen appears, follow the [C6 guide](waveshare-esp32p4-xiaotai/docs/C6_PREPARATION.md) rather than repeatedly erasing or forcing an update.
 
@@ -84,7 +84,7 @@ Compare the results with `SHA256SUMS.txt` from the same release. On Linux, use `
 4. Click **Program** and wait for writing to finish without errors. Then click **Disconnect** and press the board's **RESET/RST** button to restart it.
 
 - **Which serial port?** Unplug and reconnect the board, then select the entry that disappears or appears. Its name may include `USB JTAG/serial debug unit`, `USB Serial`, or `COM…`. Do not select a Bluetooth port.
-- **Connection fails?** Check the data cable. For LCKFB S3/P4, hold **BOOT**, press and release **RESET**, then release BOOT. For **CoreS3-SE, hold the side RST button for about 2 seconds until the green LED lights up, then release it** and select the download-mode port. See [M5Stack's download-mode guide](https://docs.m5stack.com/en/arduino/m5cores3_se/program).
+- **Connection fails?** Check the data cable. For LCKFB S3/P4, hold **BOOT**, press and release **RESET**, then release BOOT. For **CoreS3-Lite, hold RST for about 3 seconds until the green LED lights up, then release it** and select the download-mode port. See [M5Stack's download-mode guide](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode).
 - **`Serial data stream stopped`?** Try a short data cable without a hub or extension. If it still fails, disconnect, lower **Program → Baudrate** to `115200`, and reconnect before retrying.
 
 ## Step 3: Connect to Wi-Fi
@@ -111,7 +111,7 @@ Live monitoring, WeChat calls, and AI voice chat each require one device. Device
 ### Live monitoring
 
 1. In the website's device list, click **Live (实时)** for your device.
-2. Click the sound button to hear audio from the device. LCKFB S3 and P4 provide live video with their supported cameras connected. LCKFB S3 uses a GC2145 at 240×176, targeting 12 fps. CoreS3-SE has no camera and provides two-way audio only.
+2. Click the sound button to hear audio from the device. LCKFB S3 and P4 provide live video with their supported cameras connected. LCKFB S3 uses a GC2145; CoreS3-Lite uses its built-in GC0308. Both default to 240×176, targeting 12 fps, with two-way audio.
 3. Allow microphone access in your browser. Press and hold **Hold to Talk (按住说话)** to send your voice to the device.
 
 ### WeChat calls
@@ -146,8 +146,8 @@ This feature requires room support on the platform and uses voice on both S3 and
 
 The linked development guides are in Chinese.
 
-- **Version changes:** [LCKFB S3 changelog](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md), [CoreS3-SE changelog](m5stack-cores3-se-xiaotai/CHANGELOG.md), and [P4 changelog](waveshare-esp32p4-xiaotai/CHANGELOG.md), each covering its own features, fixes, and dependency changes by version.
-- **Build and configuration:** [LCKFB S3 guide](lckfb-szpi-esp32s3-tirtc/README.md), [CoreS3-SE guide](m5stack-cores3-se-xiaotai/README.md), and [P4 guide](waveshare-esp32p4-xiaotai/README.md). Both S3 projects use ESP-IDF 5.5.4; P4 uses 5.5.5. Each builds independently. Before building P4, download the matching C6 attachment as described in its guide.
+- **Version changes:** [LCKFB S3 changelog](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md), [CoreS3-Lite changelog](m5stack-cores3-se-xiaotai/CHANGELOG.md), and [P4 changelog](waveshare-esp32p4-xiaotai/CHANGELOG.md), each covering its own features, fixes, and dependency changes by version.
+- **Build and configuration:** [LCKFB S3 guide](lckfb-szpi-esp32s3-tirtc/README.md), [CoreS3-Lite guide](m5stack-cores3-se-xiaotai/README.md), and [P4 guide](waveshare-esp32p4-xiaotai/README.md). Both S3 projects use ESP-IDF 5.5.4; P4 uses 5.5.5. Each builds independently. Before building P4, download the matching C6 attachment as described in its guide.
 - **Architecture and code:** [S3 communication and audio](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md) and [P4 communication, audio, and video](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md).
 - **Troubleshooting and limitations:** [S3 known issues](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md) and [P4 troubleshooting](waveshare-esp32p4-xiaotai/docs/TESTING.md).
 - **Server, Web, and WeChat mini program:** [tirtc-server-example](https://github.com/tangeai/tirtc-server-example). For self-hosting, see the [deployment guide](https://github.com/tangeai/tirtc-server-example/blob/main/thing-connect/deployment.md).

@@ -114,7 +114,7 @@ int main(void) {
             assert(on_subscribe_audio(8,id)==-1);
             s_video_subscribed=false;
             unsigned before=key_requests;
-            bool video=false; /* The actual CoreS3-SE board has no camera. */
+            bool video=mode==STARTER_TIRTC_H5 && id==H5_VIDEO_STREAM;
             assert(on_subscribe_video(7,id)==(video?0:-1));
             assert(s_video_subscribed==video);
             assert(key_requests==before+(video && CONFIG_IDF_TARGET_ESP32P4?1:0));

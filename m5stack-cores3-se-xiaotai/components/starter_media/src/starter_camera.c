@@ -1,4 +1,4 @@
-/* GC2145 viewing producer. One owner holds every camera/encoder resource;
+/* CoreS3-Lite GC0308 viewing producer. One owner holds camera/encoder resources;
  * SDK callbacks only publish subscription flags. Audio never waits for JPEG.
  * No capture, encoder, framebuffer or camera DMA allocation at boot. */
 #include "starter_camera.h"
@@ -101,8 +101,8 @@ static esp_err_t open_camera(camera_owner_t *owner, uint32_t generation, bool sm
     if (!admitted(generation)) return ESP_ERR_INVALID_STATE;
     atomic_store(&s_diag.phase, STARTER_CAMERA_STARTING);
     heap_log("open");
-    /* Full-system measurements, not the standalone JPEG benchmark, set the
-     * ceiling. QVGA exceeded the 83 ms budget with AFE/audio/UI running. */
+    /* Conservative software-JPEG budget with audio/AFE/UI still running.
+     * Actual full-system frame rate must be measured on CoreS3-Lite. */
     owner->width = small ? 160 : 240;
     owner->height = small ? 120 : 176;
     owner->quality = 45;
@@ -111,17 +111,17 @@ static esp_err_t open_camera(camera_owner_t *owner, uint32_t generation, bool sm
     vTaskDelay(pdMS_TO_TICKS(10));
     if (!admitted(generation)) return ESP_ERR_INVALID_STATE;
     const camera_config_t cfg = {
-        .pin_pwdn = -1, .pin_reset = -1, .pin_xclk = 5,
+        .pin_pwdn = -1, .pin_reset = -1, .pin_xclk = -1,
         .pin_sccb_sda = -1, .pin_sccb_scl = -1, .sccb_i2c_port = 0,
-        .pin_d0 = 16, .pin_d1 = 18, .pin_d2 = 8, .pin_d3 = 17,
-        .pin_d4 = 15, .pin_d5 = 6, .pin_d6 = 4, .pin_d7 = 9,
-        .pin_vsync = 3, .pin_href = 46, .pin_pclk = 7,
-        /* LCD_CAM uses an integer 160 MHz divider: 20 MHz is exact; a
-         * requested 24 MHz becomes 26.67 MHz in this driver. */
+        .pin_d0 = 39, .pin_d1 = 40, .pin_d2 = 41, .pin_d3 = 42,
+        .pin_d4 = 15, .pin_d5 = 16, .pin_d6 = 48, .pin_d7 = 47,
+        .pin_vsync = 46, .pin_href = 38, .pin_pclk = 45,
+        /* Board oscillator supplies 20 MHz; never drive audio MCLK/GPIO0.
+         * The driver still requires a nonzero frequency for its divider. */
         .xclk_freq_hz = 20000000, .ledc_timer = LEDC_TIMER_1, .ledc_channel = LEDC_CHANNEL_1,
         .pixel_format = PIXFORMAT_YUV422, .frame_size = small ? FRAMESIZE_QQVGA : FRAMESIZE_HQVGA,
         .jpeg_quality = 12, /* Ignored for raw capture; encoder quality is separate. */
-        /* Capture overlaps JPEG at this measured resolution. A one-entry
+        /* Capture overlaps JPEG. A one-entry
          * latest queue bounds age; the borrowed frame cannot be overwritten. */
         .fb_count = 2, .fb_location = CAMERA_FB_IN_PSRAM, .grab_mode = CAMERA_GRAB_LATEST,
     };
@@ -129,8 +129,8 @@ static esp_err_t open_camera(camera_owner_t *owner, uint32_t generation, bool sm
     if (err != ESP_OK) return err; /* Driver releases partial init on failure. */
     owner->initialized = true;
     sensor_t *sensor = esp_camera_sensor_get();
-    /* Use the sensor ID measured on the target board, not its product name. */
-    if (!sensor || sensor->id.PID != GC2145_PID || esp_camera_get_psram_mode()) {
+    /* Reject a different sensor instead of silently using the wrong driver. */
+    if (!sensor || sensor->id.PID != GC0308_PID || esp_camera_get_psram_mode()) {
         ESP_LOGE(TAG, "camera contract failed: pid=%x psram_dma=%d",
                  sensor ? sensor->id.PID : 0, esp_camera_get_psram_mode());
         return ESP_ERR_NOT_SUPPORTED;
@@ -144,7 +144,7 @@ static esp_err_t open_camera(camera_owner_t *owner, uint32_t generation, bool sm
     jpeg_enc_config_t jpeg_cfg = DEFAULT_JPEG_ENC_CONFIG();
     jpeg_cfg.width = owner->width;
     jpeg_cfg.height = owner->height;
-    /* GC2145 emits Y-Cb-Y-Cr directly. Avoid an RGB-to-YUV conversion on CPU. */
+    /* GC0308 YUV422 is Y-Cb-Y-Cr; avoid an RGB-to-YUV conversion on CPU. */
     jpeg_cfg.src_type = JPEG_PIXEL_FORMAT_YCbYCr;
     jpeg_cfg.subsampling = JPEG_SUBSAMPLE_420;
     jpeg_cfg.quality = owner->quality;
@@ -195,6 +195,7 @@ static void camera_worker(void *arg)
         int64_t last_frame = next, window = next;
         uint32_t sent_before = 0, pressure = 0;
         uint32_t encode_sum = 0, encode_count = 0, encode_peak = 0;
+        int last_send_ret = 0;
         while (err == ESP_OK && admitted(generation)) {
             int64_t now = esp_timer_get_time();
             if (now < next) {
@@ -268,7 +269,11 @@ static void camera_worker(void *arg)
                                                          owner.jpeg, (uint32_t)jpeg_size);
                     maximum(&s_diag.send_max_us, esp_timer_get_time() - send_begin);
                     if (sent > 0) atomic_fetch_add(&s_diag.sent, 1);
-                    else { atomic_fetch_add(&s_diag.send_failed, 1); ++pressure; }
+                    else {
+                        last_send_ret = sent;
+                        atomic_fetch_add(&s_diag.send_failed, 1);
+                        ++pressure;
+                    }
                 }
             }
             int64_t done = esp_timer_get_time();
@@ -279,11 +284,12 @@ static void camera_worker(void *arg)
             if (done - window >= 5000000) {
                 uint32_t sent = atomic_load(&s_diag.sent);
                 atomic_store(&s_diag.fps_x10, (uint32_t)((sent - sent_before) * 10000000ULL / (done - window)));
-                ESP_LOGI(TAG, "gen=%lu enqueue_fps10=%u captured=%u sent=%u stale=%u busy=%u fail=%u/%u enc_avg/peak_us=%u/%u send_us=%u age_ms=%u late=%u stack_free=%u",
+                ESP_LOGI(TAG, "gen=%lu enqueue_fps10=%u captured=%u sent=%u stale=%u busy=%u fail=%u/%u send_rc=%d enc_avg/peak_us=%u/%u send_us=%u age_ms=%u late=%u stack_free=%u",
                          (unsigned long)generation, atomic_load(&s_diag.fps_x10),
                          atomic_load(&s_diag.captured), sent,
                          atomic_load(&s_diag.stale), atomic_load(&s_diag.congested),
                          atomic_load(&s_diag.encode_failed), atomic_load(&s_diag.send_failed),
+                         last_send_ret,
                          encode_count ? encode_sum / encode_count : 0, encode_peak,
                          atomic_load(&s_diag.send_max_us),
                          atomic_load(&s_diag.age_max_ms), atomic_load(&s_diag.late),
@@ -335,7 +341,7 @@ static void camera_worker(void *arg)
 esp_err_t starter_camera_prepare(uint32_t generation)
 {
     if (s_task) return ESP_OK;
-    /* Keep the measured HQVGA worker placement below realtime audio/driver
+    /* Keep the JPEG worker placement below realtime audio/driver
      * tasks; raising its priority must not steal AFE or capture deadlines. */
     if (xTaskCreatePinnedToCoreWithCaps(camera_worker, "view_camera", VIEW_STACK_BYTES,
                                       NULL, 3, &s_task, 1,

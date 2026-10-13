@@ -1,4 +1,4 @@
-/* CoreS3-SE power sequence follows M5Unified / M5GFX (MIT).
+/* CoreS3-Lite power sequence follows M5Unified / M5GFX (MIT).
  * Audio codecs are owned by esp_codec_dev, not a second I2C/I2S driver. */
 #include "starter_board.h"
 #include <stdio.h>
@@ -61,7 +61,8 @@ esp_err_t starter_board_init(i2c_master_bus_handle_t bus)
     }
     s_control = xSemaphoreCreateMutexStatic(&s_control_storage);
     /* Keep USB as a device: USB_OTG_EN and BUS_OUT_EN remain off. */
-    static const uint8_t aw[][2] = {{0x02,0x05},{0x03,0x83},{0x04,0x18},
+    /* CAM_RST stays low until viewing; LCD_RST and BOOST_EN stay unchanged. */
+    static const uint8_t aw[][2] = {{0x02,0x05},{0x03,0x82},{0x04,0x18},
         {0x05,0x0c},{0x11,0x10},{0x12,0xff},{0x13,0xff}};
     static const uint8_t axp[][2] = {{0x92,13},{0x93,28},{0x95,28},
         {0x99,23},{0x90,0xab},{0x27,0x00},{0x69,0x11},{0x10,0x30},{0x30,0x0f}};
@@ -111,6 +112,27 @@ esp_err_t starter_board_backlight(bool enabled)
     if (!s_control) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_control, portMAX_DELAY);
     esp_err_t err = update_reg(s_axp, 0x90, 0x80, enabled ? 0x80 : 0);
+    xSemaphoreGive(s_control);
+    return err;
+}
+
+esp_err_t starter_board_camera_power(bool enabled)
+{
+    if (!s_power_ready) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_control, portMAX_DELAY);
+    esp_err_t err = update_reg(s_aw, 0x03, 0x01, 0);
+    if (enabled) {
+        /* ALDO3 supplies camera/oscillator 3.3 V; BLDO1 supplies AVDD.
+         * Preserve BLDO2 and all audio/LCD rails already owned by board init. */
+        if (err == ESP_OK) err = write_reg(s_axp, 0x94, 28);
+        if (err == ESP_OK) err = update_reg(s_axp, 0x90, 0x14, 0x14);
+        if (err == ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            err = update_reg(s_aw, 0x03, 0x01, 0x01);
+        }
+    } else if (err == ESP_OK) {
+        err = update_reg(s_axp, 0x90, 0x14, 0);
+    }
     xSemaphoreGive(s_control);
     return err;
 }

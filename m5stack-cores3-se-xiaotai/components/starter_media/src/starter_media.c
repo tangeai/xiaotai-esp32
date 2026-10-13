@@ -2022,7 +2022,7 @@ esp_err_t starter_media_select_lcd(bool selected)
 esp_err_t starter_media_camera_power(bool enabled)
 {
     if (!atomic_load(&s_ready)) return ESP_ERR_INVALID_STATE;
-    return enabled ? ESP_ERR_NOT_SUPPORTED : ESP_OK;
+    return starter_board_camera_power(enabled);
 }
 
 bool starter_media_h5_current(uint32_t generation)
@@ -2249,6 +2249,10 @@ esp_err_t starter_media_start(starter_tirtc_mode_t mode, uint32_t generation)
         (mode != STARTER_TIRTC_H5 && mode != STARTER_TIRTC_AI &&
          mode != STARTER_TIRTC_VOIP && mode != STARTER_TIRTC_CALL && mode != STARTER_TIRTC_ROOM)) {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (mode == STARTER_TIRTC_H5) {
+        esp_err_t camera_err = starter_camera_prepare(generation);
+        if (camera_err != ESP_OK) return camera_err;
     }
     xSemaphoreTake(s_preroll_mutex, portMAX_DELAY);
     bool preroll_ok = true;

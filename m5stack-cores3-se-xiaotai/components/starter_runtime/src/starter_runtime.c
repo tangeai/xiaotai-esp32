@@ -78,7 +78,7 @@
 #define VOIP_PROFILE_RETRY_MS 15000
 #define DEVICE_PROFILE_JSON_CAPACITY 1280U
 #define DEVICE_PROFILE_CHIP_MODEL "ESP32-S3"
-#define DEVICE_PROFILE_BOARD_MODEL "M5Stack-CoreS3-SE"
+#define DEVICE_PROFILE_BOARD_MODEL "M5Stack-CoreS3-Lite"
 #define CALL_COMMAND_CONNECT 0x2000U
 #define CALL_COMMAND_HANGUP 0x2001U
 
@@ -1033,8 +1033,8 @@ static void request_voip_profile(void)
         "\"stream\":{\"up_audio_streamid\":%u,\"up_video_streamid\":%u,"
         "\"down_audio_streamid\":%u,\"down_video_streamid\":%u,"
         "\"up_audio_mt\":[\"%s\"],\"down_audio_mt\":[\"%s\"],"
-        "\"up_video_mt\":[],\"down_video_mt\":[],"
-        "\"audio_rate\":%u,\"audio_channels\":1,\"no_video\":true,"
+        "\"up_video_mt\":[\"mjpeg\"],\"down_video_mt\":[],"
+        "\"audio_rate\":%u,\"audio_channels\":1,\"no_video\":false,"
         "\"camera_rotation\":0,\"hor_mirror\":false,\"vert_mirror\":false,"
         "\"aspect_ratio\":\"4:3\",\"object_fit\":\"contain\"},"
         "\"call\":{\"up_audio_mt\":[\"%s\"],\"down_audio_mt\":[\"%s\"],"
@@ -1082,7 +1082,7 @@ static void request_voip_profile(void)
         ESP_LOGI(TAG, "VoIP profile submission queued");
         ESP_LOGI(TAG, "VoIP profile: video enabled, up=h264 down=mjpeg screen=480x320 camera_rotation=270 aspect_ratio=0.75 mirror=none object_fit=contain");
 #else
-        ESP_LOGI(TAG, "device profile queued api=/v1/device/profile meta=3 fields=16/12/16 bytes=%u stream_tx=%u/%u stream_rx=%u/%u video=none h5_audio=%s/%u/1 other_audio=%s/%u/1 fw=%s",
+        ESP_LOGI(TAG, "device profile queued api=/v1/device/profile meta=3 fields=16/12/16 bytes=%u stream_tx=%u/%u stream_rx=%u/%u video=mjpeg/h5-only h5_audio=%s/%u/1 other_audio=%s/%u/1 fw=%s",
                  (unsigned)profile_length,
                  (unsigned)STARTER_H5_UP_AUDIO_STREAM_ID,
                  (unsigned)STARTER_H5_UP_VIDEO_STREAM_ID,

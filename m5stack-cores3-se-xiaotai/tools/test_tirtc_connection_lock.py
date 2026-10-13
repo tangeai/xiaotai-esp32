@@ -40,6 +40,7 @@ prefix = r'''
 #include <time.h>
 #include <unistd.h>
 #define CONFIG_IDF_TARGET_ESP32P4 0
+#define CONFIG_IDF_TARGET_ESP32S3 1
 #define pdTRUE 1
 #define portMAX_DELAY UINT32_MAX
 #define pdMS_TO_TICKS(ms) (ms)
@@ -53,6 +54,10 @@ prefix = r'''
 #define H5_AUDIO_STREAM STARTER_H5_UP_AUDIO_STREAM_ID
 #define AI_AUDIO_STREAM 1U
 #define CALL_AUDIO_STREAM 10U
+#define H5_VIDEO_STREAM STARTER_H5_UP_VIDEO_STREAM_ID
+#define H5_VIDEO_BACKLOG_BYTES (32U * 1024U)
+#define TIRTC_VIDEO_JPEG 9
+#define TIRTC_FRAME_FLAG_KEY_FRAME 1
 #define CONN_MAGIC 0x434f4e4eU
 typedef enum { STARTER_TIRTC_NONE, STARTER_TIRTC_H5, STARTER_TIRTC_AI,
                STARTER_TIRTC_VOIP, STARTER_TIRTC_CALL, STARTER_TIRTC_ROOM } starter_tirtc_mode_t;
@@ -78,6 +83,7 @@ static atomic_uint s_h5_audio_rx_generation;
 static pthread_mutex_t lock_storage;
 static SemaphoreHandle_t s_connection_lock = &lock_storage;
 static atomic_uint_fast32_t s_connection_lock_busy;
+static atomic_uint s_video_inflight;
 
 /* FreeRTOS mutex model: bounded waits are real timed waits. */
 static _Thread_local bool i_hold;
@@ -110,9 +116,11 @@ static void xSemaphoreGive(SemaphoreHandle_t m) {
     int rc = pthread_mutex_unlock(m);
     assert(rc == 0); (void)rc;
 }
+static void vTaskDelay(unsigned ticks) {assert(ticks == 1); usleep(1000);}
 
 static void (*mode_hook)(void);
 static uint32_t starter_tirtc_generation(void) { return (uint32_t)atomic_load(&s_active_generation); }
+static bool starter_tirtc_connected(void) {return atomic_load(&s_connection) != 0;}
 static starter_tirtc_mode_t starter_tirtc_mode(void) {
     if (mode_hook) mode_hook();
     return (starter_tirtc_mode_t)atomic_load(&s_mode);
@@ -127,6 +135,8 @@ static void notify_connection(starter_tirtc_mode_t mode, uint32_t generation, ui
 /* SDK fake: every handle use must hold the lock and see a live object. */
 static atomic_uint sdk_audio, sdk_commands, sdk_queries, sdk_disconnects;
 static atomic_bool block_audio, audio_in_sdk;
+static atomic_bool block_video, video_in_sdk;
+static atomic_uint sdk_video;
 static uint8_t expected_stream, expected_media;
 static void use_handle(tirtc_conn_t c) {
     assert(i_hold);
@@ -157,11 +167,21 @@ static size_t TiRtcGetSendBufferUsed(tirtc_conn_t c) {
     atomic_fetch_add(&sdk_queries, 1);
     return 123;
 }
+static int TiRtcSendVideoStream(tirtc_conn_t c, const TIRTCFRAMEINFO *f, const void *data) {
+    assert(!i_hold && atomic_load(&s_video_inflight) == 1 && c->magic == CONN_MAGIC);
+    assert(f && data && f->stream_id == 11 && f->length == 60);
+    atomic_store(&video_in_sdk, true);
+    while (atomic_load(&block_video)) sched_yield();
+    assert(c->magic == CONN_MAGIC);
+    atomic_fetch_add(&sdk_video, 1);
+    return (int)f->length;
+}
 static void on_disconnected(tirtc_conn_t connection);
 static _Atomic(tirtc_conn_t) closing;
 static atomic_bool closed, stop_sdk;
 static int TiRtcDisconnect(tirtc_conn_t c) {
     assert(i_hold && atomic_load(&s_connection) == 0 && atomic_load(&s_active_generation) == 0);
+    assert(!atomic_load(&s_video_inflight));
     atomic_store(&closed, false);
     atomic_store(&closing, c);
     /* Strictest model: wait for the SDK thread's callback and free. */
@@ -205,6 +225,11 @@ static void *blocked_sender(void *arg) {
 static void *disconnector(void *arg) {
     (void)arg;
     assert(starter_tirtc_disconnect() == 0);
+    return NULL;
+}
+static void *blocked_video_sender(void *arg) {
+    uint32_t gen = *(uint32_t *)arg;
+    assert(starter_tirtc_send_h5_jpeg(gen, 1, packet, sizeof(packet)) == 60);
     return NULL;
 }
 
@@ -329,6 +354,32 @@ int main(void) {
     pthread_join(closer, NULL);
     assert(sdk_disconnects == 1 && sdk_audio == 4 && notifications == 0);
 
+    /* A blocked JPEG enqueue cannot hold up audio. Disconnect still waits
+     * for that exact pinned handle before the SDK frees it. */
+    for (uint32_t gen = 4000; gen < 4100; ++gen) {
+        publish(STARTER_TIRTC_H5, gen);
+        atomic_store(&s_audio_subscribed, true);
+        atomic_store(&s_video_subscribed, true);
+        atomic_store(&video_in_sdk, false);
+        atomic_store(&block_video, true);
+        assert(pthread_create(&sender, NULL, blocked_video_sender, &gen) == 0);
+        while (!atomic_load(&video_in_sdk)) sched_yield();
+        unsigned before = atomic_load(&sdk_audio);
+        assert(starter_tirtc_send_audio(1, packet, sizeof(packet)) == 60);
+        assert(sdk_audio == before + 1 && s_video_inflight == 1);
+        unsigned closed_before = atomic_load(&sdk_disconnects);
+        assert(pthread_create(&closer, NULL, disconnector, NULL) == 0);
+        while (atomic_load(&s_connection)) sched_yield();
+        nanosleep(&delay, NULL);
+        assert(sdk_disconnects == closed_before && s_video_inflight == 1);
+        assert(starter_tirtc_send_h5_jpeg(gen, 1, packet, sizeof(packet)) < 0);
+        atomic_store(&block_video, false);
+        pthread_join(sender, NULL);
+        pthread_join(closer, NULL);
+        assert(sdk_disconnects == closed_before + 1 && !s_video_inflight);
+    }
+    assert(sdk_video == 100);
+
     /* Stress: senders race connect/disconnect cycles; ASan catches UAF. */
     pthread_t workers[3];
     assert(pthread_create(&workers[0], NULL, audio_sender, NULL) == 0);
@@ -343,7 +394,7 @@ int main(void) {
     for (unsigned i = 0; i < 3; ++i) pthread_join(workers[i], NULL);
     atomic_store(&stop_sdk, true);
     pthread_join(sdk, NULL);
-    assert(sdk_disconnects == 3001 && notifications == 0);
+    assert(sdk_disconnects == 3101 && notifications == 0);
     assert(audio_ok > 0 && command_ok > 0 && query_ok > 0);
     unsigned busy = (unsigned)atomic_load(&s_connection_lock_busy);
     unsigned dropped = atomic_load(&audio_busy) + atomic_load(&command_busy);
@@ -360,11 +411,12 @@ with tempfile.TemporaryDirectory(prefix="s3-tirtc-lock-") as tmp:
     path = Path(tmp)
     body = "\n".join(function(name) for name in (
         "clear_subscriptions", "connection_lock", "on_disconnected", "starter_tirtc_disconnect",
-        "starter_tirtc_send_command", "starter_tirtc_send_audio", "starter_tirtc_send_buffer_used"))
+        "starter_tirtc_send_command", "starter_tirtc_send_audio", "starter_tirtc_send_buffer_used",
+        "starter_tirtc_video_ready", "starter_tirtc_send_h5_jpeg"))
     (path / "test.c").write_text(constants + prefix + body + "\n#include <stdio.h>\n" + main)
     subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
                     "-fsanitize=address,undefined", "-pthread", str(path / "test.c"),
                     "-o", str(path / "test")], check=True)
     result = subprocess.run([str(path / "test")], check=True, stdout=subprocess.PIPE, text=True)
-print("PASS: TiRTC lifetime lock: send/command/query hold it, disconnect drains, busy counted;",
+print("PASS: TiRTC lifetime lock: JPEG/audio overlap, disconnect drains pins, 3100 concurrent cycles;",
       result.stdout.strip())

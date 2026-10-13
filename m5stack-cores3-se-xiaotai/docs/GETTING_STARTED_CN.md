@@ -1,10 +1,10 @@
-# CoreS3-SE 开发指南
+# CoreS3-Lite 开发指南
 
-本指南适用于小钛 CoreS3-SE 1.5.0。首次体验先按 [README](../README.md#用浏览器烧录)烧录完整 16 MB 包，再进行热点配网和平台绑定；修改源码时使用下文的编译流程。
+本指南适用于小钛 CoreS3-Lite 1.5.1。第一次体验按[首页的完整包烧录步骤](../README.md#用浏览器烧录)操作；准备二次开发时，再按本页编译源码。
 
 ## 准备源码与硬件
 
-准备完整的 `m5stack-cores3-se-xiaotai/` 目录，以及 M5Stack CoreS3-SE、USB 数据线、手机、2.4 GHz Wi-Fi 和[体验平台](https://xiaotai.chat/)账号。不要复制原立创板的 Octal PSRAM 配置。
+准备完整的 `m5stack-cores3-se-xiaotai/` 目录，以及 M5Stack CoreS3-Lite、USB 数据线、手机、2.4 GHz Wi-Fi 和[体验平台](https://xiaotai.chat/)账号。不要复制原立创板的 Octal PSRAM 配置。
 
 源码已包含 SDK、模型、字体和提示音。首次编译会下载其余组件；保留 [sdkconfig.defaults](../sdkconfig.defaults) 和 [dependencies.lock](../dependencies.lock)，无需复制其他电脑的 `sdkconfig` 或 `build/`。
 
@@ -16,15 +16,15 @@
 | 回声处理 | 官方 ESP-SR 2.5.0 单麦 MR AFE，16 kHz；没有双麦增强，不以双麦硬件数量推断算法能力 |
 | 网络音频 | AI、H5、多人房间为 PCMA 8 kHz；设备和微信通话为 Opus 16 kHz，上行均为 20 ms |
 | 播放 | 统一 16 kHz，初始缓冲 200 ms，自适应范围 60–500 ms，保留微幅调速 |
-| 视频 | 本板没有摄像头，H5 仅提供双向语音 |
+| 视频 | 板载 GC0308，仅用于 H5 MJPEG 查看；不提供视频通话或下行视频解码 |
 
-受控网络、异常清理及音频边界见[已知限制](../KNOWN_LIMITATIONS.md)。目标板的弱网、声学效果和长稳表现需按实际使用条件验证。
+部署条件与异常清理边界见[已知限制](../KNOWN_LIMITATIONS.md)。
 
 ## 编译与烧录
 
 ### 1. 打开 ESP-IDF 环境
 
-按[官方安装指南](https://docs.espressif.com/projects/esp-idf/en/v5.5.4/esp32s3/get-started/index.html)安装 ESP-IDF 5.5.4。Windows 打开对应版本的 ESP-IDF 终端；Linux/macOS 加载该版本的 `export.sh`。进入 CoreS3-SE 工程目录后执行：
+按[官方安装指南](https://docs.espressif.com/projects/esp-idf/en/v5.5.4/esp32s3/get-started/index.html)安装 ESP-IDF 5.5.4。Windows 打开对应版本的 ESP-IDF 终端；Linux/macOS 加载该版本的 `export.sh`。进入本工程目录后执行：
 
 ```sh
 idf.py --version
@@ -72,9 +72,9 @@ python -m esptool --port PORT chip_id
 idf.py -p PORT flash monitor
 ```
 
-先确认芯片是 ESP32-S3、MAC 对应 CoreS3-SE，再执行烧录。下载失败时，长按 RST 约 3 秒进入下载模式，再重试；GPIO0 是音频时钟，不是 BOOT 按键。退出监视器使用 `Ctrl+]`。首次覆盖原厂固件前完整备份 Flash，并核对 NVS 分区边界。
+先确认芯片是 ESP32-S3、MAC 对应 CoreS3-Lite，再执行烧录。下载失败时，长按 RST 约 3 秒进入下载模式，再重试；GPIO0 是音频时钟，不是 BOOT 按键。退出监视器使用 `Ctrl+]`。首次覆盖原厂固件前完整备份 Flash，并核对 NVS 分区边界。
 
-**预期结果：**启动日志显示 `m5stack_cores3_se_xiaotai`、版本 `1.5.0` 和本次 ELF 摘要，屏幕进入配网、绑定或首页。
+**预期结果：**启动日志显示 `m5stack_cores3_se_xiaotai`、版本 `1.5.1` 和本次 ELF 摘要，屏幕进入配网、绑定或首页。
 
 完整烧录使用 IDF 生成的参数。**单独的应用 BIN 不能写到 `0x0`**，当前应用地址为 `0x10000`。相同分区布局下正常烧录会保留 Wi-Fi 和绑定信息；迁入其他固件前先比较[分区表](../partitions.csv)，不要直接整片擦除。
 
@@ -154,11 +154,12 @@ idf.py -p PORT flash monitor
 
 ### H5 查看与对讲
 
-1. 在平台设备列表打开实时查看，开启声音，检查设备麦克风上行。
+1. 在平台设备列表打开实时查看，检查摄像头画面；开启声音，检查设备麦克风上行。
 2. 允许浏览器麦克风权限后，使用页面“按住说话”，检查设备扬声器播放。
 3. 在设备端点击“结束查看”，或在网页端断开，确认查看会话结束；再打开一次或切换到 AI 对话，检查音频资源是否正常交接。
 
-CoreS3-SE 没有摄像头。H5 仅测试听设备音频与向设备讲话，不要求视频画面；音频订阅和释放仍由原会话所有权控制。
+GC0308 仅在当前查看会话收到 stream 11 的订阅后启动采集。关闭视频订阅或结束查看后，驱动、编码器和帧缓冲由摄像头 worker 释放；音频仍由原会话所有权控制。
+1.5.1 已完成本板手机 H5 画面、音频收发及重复进入/退出的针对性验证。12 fps 是发送节拍目标，拥塞时优先丢弃视频帧；实际声音、弱网和长期运行仍需按使用环境验收。
 
 ### 其他交互
 
@@ -198,7 +199,7 @@ CoreS3-SE 没有摄像头。H5 仅测试听设备音频与向设备讲话，不�
 | 有 IP，但没有验证码或绑定确认 | 网络信息中的平台、消息服务状态，以及发现、HTTP、MQTT 日志 |
 | AI 无回复、联系人为空或呼叫失败 | AI 服务配置、联系人关系、微信授权和对端状态，再核对失败日志 |
 | H5 能听但不能说 | 浏览器麦克风权限、输入设备和“按住说话”状态 |
-| H5 已连接但没有画面 | 本板没有摄像头，视频不可用；需分别检查双向音频，不把无画面当作音频已通过 |
+| H5 已连接但没有画面 | 检查设备型号为 CoreS3-Lite、平台视频能力上报、stream 11 订阅和 `view_camera` 错误；双向音频需分别确认 |
 | 声音断续、回声或音量小 | 先取消弱网注入，分开检查上下行，保留日志和录音后再调参 |
 
 二次开发见[架构与代码入口](../ARCHITECTURE.md)，检查命令见[工具说明](../tools/README.md)。

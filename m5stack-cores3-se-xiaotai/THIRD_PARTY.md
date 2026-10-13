@@ -11,7 +11,8 @@
 | 提示音、铃声及 UI 资源 | 工程内嵌资源与原有来源记录 | 保留现有许可和来源，不改变原作者署名 |
 | 手机配网页图标 | [Lucide](https://github.com/lucide-icons/lucide)，内嵌于 [setup.html](components/wifi_manager/web/setup.html) | 保留页面中的 ISC 和 Feather 衍生图标 MIT 许可；无运行时 CDN 请求 |
 | IDF 组件及本地供应商补丁 | 各工程 dependencies.lock、组件 LICENSE/NOTICE 和 LOCAL_CHANGES | 保留依赖身份及补丁说明，项目 MIT 不替代供应商许可 |
-| CoreS3-SE 电源与屏幕初始化 | [M5Unified](https://github.com/m5stack/M5Unified)、[M5GFX](https://github.com/m5stack/M5GFX)，参考提交见下文 | 保留 [M5Stack MIT 许可](third_party/m5stack/LICENSE) 与初始化代码中的来源说明 |
+| CoreS3-Lite 电源、屏幕和摄像头接线 | [M5Unified](https://github.com/m5stack/M5Unified)、[M5GFX](https://github.com/m5stack/M5GFX)、[GC0308 参考](https://github.com/m5stack/M5CoreS3/blob/main/src/utility/GC0308.cpp) | 保留 [M5Stack MIT 许可](third_party/m5stack/LICENSE) 与初始化代码中的来源说明 |
+| 摄像头与 JPEG 编码 | espressif/esp32-camera 2.1.7、espressif/esp_new_jpeg 1.0.2，版本见依赖锁 | 保留各组件原始 Apache-2.0 许可，项目 MIT 不替代组件许可 |
 
 Voicute 参考源码提交为 `61e76c5a12ac33da0def7bceba2e07228ad03e63`，上游为 [onnx-wakeword](https://github.com/voicute/onnx-wakeword)。项目所有者的声明不改变上游仓库自身许可。
 

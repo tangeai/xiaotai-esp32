@@ -17,7 +17,7 @@
 | 会话切换、呼叫状态 | [starter_runtime](components/starter_runtime/include/starter_runtime.h) | AI、H5、设备、微信与多人对讲的业务仲裁及状态快照 |
 | 多人对讲 | [starter_room.inc](components/starter_runtime/src/starter_room.inc)、[房间页面](components/starter_product/src/starter_product_s3_room.inc) | 房间归属、连接、成员、租约及按住讲话 |
 | 采集、AEC、播放 | [starter_media](components/starter_media/include/starter_media.h) | Codec/I2S、AFE、增益、收发与播放队列 |
-| 无摄像头能力 | [starter_camera_unavailable.c](components/starter_media/src/starter_camera_unavailable.c) | 明确返回不支持视频，不初始化或声明摄像头；H5 保留音频 |
+| H5 摄像头上行 | [starter_camera.c](components/starter_media/src/starter_camera.c) | GC0308 YUV422 → 软件 JPEG；单一 worker 持有采集、编码和释放资源，只响应当前 H5 视频订阅 |
 | 唤醒识别 | [starter_voice](components/starter_voice/include/starter_voice.h) | 音频窗口、模型推理、唤醒意图 |
 | 页面、字幕、表情 | [starter_product](components/starter_product/src/starter_product.c) | LCD、触摸、LVGL 对象、背光 |
 | 电源键、开发命令 | `starter_button`、`starter_console` | PMIC 短按和 AT 向 runtime 提交操作；GPIO0 仅用于 MCLK |
@@ -116,7 +116,10 @@ TiRTC 下行
 
 修改采集、播放或提示音时，重点检查帧连续性、参考信号时序、输出锁和会话代次。参数变更应同时回归 AI、H5、设备、微信及多人对讲。
 
-H5 流号以设备为准：发送音频为 10，接收音频为 14。CoreS3-SE 没有摄像头，不发送 stream 11，也不订阅或解码视频 15。
+H5 流号以设备为准：发送音频为 10，接收音频为 14，发送 MJPEG 视频为 11，不订阅或解码视频 15。
+视频帧与 JPEG 缓冲放 PSRAM，摄像头驱动保留有界的内部 DMA 中转与描述符；
+worker 低于音频优先级，积压时丢弃过期视频，不阻塞音频等待。结束查看先撤销视频代次，再由 worker 返回借用帧、停止驱动、释放编码器与大缓冲。
+JPEG 发送在应用连接锁内固定句柄生命周期，随后释放锁再调用 SDK；音频继续使用原连接锁，断开先撤销句柄，再等待在途 JPEG 调用结束，不等待下一帧采集。
 设备先完成 `profiles.stream` 上报，再开放 H5 接入；连接后由控制任务订阅远端音频。
 音频共用 I2S0：四槽 TDM 采集要求 64fs BCLK。AW88298 的 PCM 位宽配置会写回 32fs，
 因此两个 codec 打开后只修正功放 BCK 字段为 64fs，并读回验证；不改变 16 位 PCM。

@@ -44,6 +44,7 @@ static atomic_uint s_active_generation, s_pending_request, s_expected_call_tag;
 static atomic_uint s_h5_audio_rx_generation;
 static atomic_int s_mode;
 static atomic_bool s_video_subscribed;
+static atomic_uint s_video_inflight;
 static int mutex_marker, *s_connection_lock = &mutex_marker;
 static bool locked;
 static int sends, closes, next_result = 4;
@@ -57,6 +58,7 @@ static int xSemaphoreTake(int *m, unsigned ticks) {
     locked = true; return pdTRUE;
 }
 static void xSemaphoreGive(int *m) {assert(m && locked); locked = false;}
+static void vTaskDelay(unsigned ticks) {assert(ticks == 1 && !s_video_inflight);}
 static bool starter_tirtc_connected(void) {return atomic_load(&s_connection) != 0;}
 static int starter_tirtc_mode(void) {return atomic_load(&s_mode);}
 static uint32_t starter_tirtc_generation(void) {return atomic_load(&s_active_generation);}
@@ -76,13 +78,13 @@ static size_t TiRtcGetSendBufferUsed(tirtc_conn_t c) {
     ++queries; return backlog;
 }
 static int TiRtcSendVideoStream(tirtc_conn_t c, const TIRTCFRAMEINFO *f, const void *p) {
-    assert(locked && c == (void *)7 && p);
+    assert(!locked && s_video_inflight == 1 && c == (void *)7 && p);
     assert(f->stream_id == 11 && f->media == TIRTC_VIDEO_JPEG);
     assert(f->flags == TIRTC_FRAME_FLAG_KEY_FRAME && f->ts == 123 && f->length == 4);
     ++sends; return next_result;
 }
 static int TiRtcDisconnect(tirtc_conn_t c) {
-    assert(locked && c == (void *)7);
+    assert(locked && !s_video_inflight && c == (void *)7);
     assert(!starter_tirtc_connected() && !s_active_generation && !s_video_subscribed);
     ++closes; return 0;
 }

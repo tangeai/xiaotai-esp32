@@ -1,4 +1,4 @@
-"""Exercise the CoreS3-SE capability snapshot and asynchronous owner."""
+"""Exercise the CoreS3-Lite capability snapshot and asynchronous owner."""
 import json
 import os
 from pathlib import Path
@@ -18,7 +18,7 @@ body_limit = int(re.search(r"#define PLATFORM_REQUEST_BODY_MAX\s+(\d+)", platfor
 match = re.search(r"static void request_voip_profile\(void\)\s*\{.*?\n\}", source, re.S)
 assert match
 board_macro = re.search(r'^#define DEVICE_PROFILE_BOARD_MODEL "([^"\n]+)"$', source, re.M)
-assert board_macro and board_macro[1] == "M5Stack-CoreS3-SE"
+assert board_macro and board_macro[1] == "M5Stack-CoreS3-Lite"
 prefix = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -32,7 +32,7 @@ prefix = r'''
 #define VOIP_PROFILE_RETRY_MS 15000
 #define DEVICE_PROFILE_JSON_CAPACITY 1280U
 #define DEVICE_PROFILE_CHIP_MODEL "ESP32-S3"
-#define DEVICE_PROFILE_BOARD_MODEL "M5Stack-CoreS3-SE"
+#define DEVICE_PROFILE_BOARD_MODEL "M5Stack-CoreS3-Lite"
 #define STARTER_H5_UP_AUDIO_STREAM_ID 10U
 #define STARTER_H5_UP_VIDEO_STREAM_ID 11U
 #define STARTER_H5_DOWN_AUDIO_STREAM_ID 14U
@@ -92,7 +92,7 @@ with tempfile.TemporaryDirectory(prefix="s3-profile-") as tmp:
     assert set(body) == {"hardware", "firmware_version", "profiles"}
     assert body["hardware"] == {
         "chip_model": "ESP32-S3",
-        "board_model": "M5Stack-CoreS3-SE",
+        "board_model": "M5Stack-CoreS3-Lite",
     }
     assert body["firmware_version"] == "1.5.0-test"
     profiles = body["profiles"]
@@ -118,7 +118,7 @@ with tempfile.TemporaryDirectory(prefix="s3-profile-") as tmp:
             assert type(profile[field]) is bool
         expected_rate = 8000 if name == "stream" else 16000
         assert profile["audio_rate"] == expected_rate and profile["audio_channels"] == 1
-        assert profile["no_video"] is True
+        assert profile["no_video"] is (name != "stream")
         assert profile["camera_rotation"] == 0
         assert profile["hor_mirror"] is False and profile["vert_mirror"] is False
         assert profile["aspect_ratio"] == "4:3" and profile["object_fit"] == "contain"
@@ -128,7 +128,7 @@ with tempfile.TemporaryDirectory(prefix="s3-profile-") as tmp:
     assert profiles["call"]["down_audio_mt"] == ["opus"]
     for name in ("stream", "call"):
         assert profiles[name]["down_video_mt"] == []
-    assert profiles["stream"]["up_video_mt"] == []
+    assert profiles["stream"]["up_video_mt"] == ["mjpeg"]
     assert profiles["stream"]["aspect_ratio"] == "4:3"
     assert profiles["call"]["up_video_mt"] == []
     assert profiles["voip"]["down_audio_mt"] == "opus"

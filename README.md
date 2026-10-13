@@ -20,7 +20,7 @@
 [![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
 [![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#微信呼叫)
 
-[下载固件](#下载固件) · [立创 S3 变更](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md) · [CoreS3-SE 变更](m5stack-cores3-se-xiaotai/CHANGELOG.md) · [P4 变更](waveshare-esp32p4-xiaotai/CHANGELOG.md) · [在线烧录](https://espressif.github.io/esptool-js/) · [体验平台](https://xiaotai.chat/) · [服务端与小程序](https://github.com/tangeai/tirtc-server-example)
+[下载固件](#下载固件) · [立创 S3 变更](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md) · [CoreS3-Lite 变更](m5stack-cores3-se-xiaotai/CHANGELOG.md) · [P4 变更](waveshare-esp32p4-xiaotai/CHANGELOG.md) · [在线烧录](https://espressif.github.io/esptool-js/) · [体验平台](https://xiaotai.chat/) · [服务端与小程序](https://github.com/tangeai/tirtc-server-example)
 
 </div>
 
@@ -37,12 +37,12 @@
 | 开发板 | 完整 BIN 下载（16 MB） | 功能 |
 | --- | --- | --- |
 | 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.5.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.5.0/xiaotai-esp32-s3-app-v1.5.0-full-16MB.bin) | 语音通话、AI 对讲、H5 摄像头查看 |
-| M5Stack CoreS3-SE | [下载 CoreS3-SE 1.5.0](https://github.com/tangeai/xiaotai-esp32/releases/download/m5stack-cores3-se-app-v1.5.0/xiaotai-m5stack-cores3-se-app-v1.5.0-full-16MB.bin) | 语音通话、AI 对讲、H5 双向语音；不提供视频 |
+| M5Stack CoreS3-Lite | [下载 CoreS3-Lite 1.5.1](https://github.com/tangeai/xiaotai-esp32/releases/download/m5stack-cores3-lite-app-v1.5.1/xiaotai-m5stack-cores3-lite-app-v1.5.1-full-16MB.bin) | 语音通话、AI 对讲、H5 摄像头查看与双向语音 |
 | 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.6.1](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/xiaotai-esp32-p4-app-v1.6.1-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
 
-芯片要求：**S3 rev 0.0–0.99；ESP32-P4 rev3.2 及以上**。按板型选择固件，立创 S3 和 CoreS3-SE 的固件不能互换；烧录工具提示不兼容时，请停止，不要跳过校验。
+芯片要求：**S3 rev 0.0–0.99；ESP32-P4 rev3.2 及以上**。按板型选择固件，立创 S3 和 CoreS3-Lite 的固件不能互换；烧录工具提示不兼容时，请停止，不要跳过校验。
 
-当前固件为体验版（Pre-release）。[立创 S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0)、[CoreS3-SE 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-se-app-v1.5.0)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
+当前固件为体验版（Pre-release）。[立创 S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0)、[CoreS3-Lite 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
 
 **P4 只需通过一个 USB 烧录上述完整包。** 包内已带配套 C6 镜像，首次启动会检查并按兼容范围更新 C6，请保持供电直到进入配网或主页。无需另刷 C6 附件；出现恢复提示时按 [C6 指南](waveshare-esp32p4-xiaotai/docs/C6_PREPARATION.md)处理，不反复擦除或强刷。
 
@@ -86,7 +86,7 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 4. 点击 **Program**，等待写入完成且无报错，再点击 **Disconnect**，按开发板的 **RESET/RST** 键重启。
 
 - **串口选哪个？** 拔插开发板，对比列表中消失或新增的一项；名称可能为 `USB JTAG/serial debug unit`、`USB Serial` 或 `COM…`，不要选蓝牙串口。
-- **连接失败？** 确认使用数据线。立创 S3/P4 按住 **BOOT**，按下并松开 **RESET**，再松开 BOOT；**CoreS3-SE 长按侧边 RST 约 2 秒，看到绿色指示灯亮后松开**，再选择下载模式串口。详见 [M5Stack 下载模式说明](https://docs.m5stack.com/en/arduino/m5cores3_se/program)。
+- **连接失败？** 确认使用数据线。立创 S3/P4 按住 **BOOT**，按下并松开 **RESET**，再松开 BOOT；**CoreS3-Lite 长按 RST 约 3 秒，看到绿色指示灯亮后松开**，再选择下载模式串口。详见 [M5Stack 下载模式说明](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode)。
 - **出现 `Serial data stream stopped`？** 先换短数据线、避开 Hub/延长线；仍失败时，断开连接，将 **Program → Baudrate** 降到 `115200` 后重连重试。
 
 ## 步骤 3：连接 Wi-Fi
@@ -111,7 +111,7 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 ### 实时查看
 
 1. 在网站设备列表中，点击目标设备的 **实时**。
-2. 点击声音按钮，收听设备端声音。立创 S3/P4 接入对应摄像头后可查看实时画面；立创 S3 使用 GC2145，默认 240×176、目标 12fps。CoreS3-SE 没有摄像头，仅提供双向语音。
+2. 点击声音按钮，收听设备端声音。立创 S3/P4 接入对应摄像头后可查看实时画面；立创 S3 使用 GC2145，CoreS3-Lite 使用板载 GC0308，两者默认 240×176、目标 12 fps，同时支持双向语音。
 3. 允许浏览器使用麦克风，点击并按住 **按住说话**，向设备端发送语音。
 
 ### 微信呼叫
@@ -134,7 +134,7 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 2. 其他设备输入同一个六位房间号加入；设有密码时填写对应的四位密码。
 3. 等待房间连接后，按住讲话，松开收听。返回菜单会断开对讲并保留房间关系；“退出房间”才会解除关系。
 
-多人对讲需要平台提供房间服务，三个板型都使用语音。详细操作见 [立创 S3 指南](lckfb-szpi-esp32s3-tirtc/docs/GETTING_STARTED_CN.md#多人对讲)、[CoreS3-SE 指南](m5stack-cores3-se-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)、[P4 指南](waveshare-esp32p4-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)。
+多人对讲需要平台提供房间服务，三个板型都使用语音。详细操作见 [立创 S3 指南](lckfb-szpi-esp32s3-tirtc/docs/GETTING_STARTED_CN.md#多人对讲)、[CoreS3-Lite 指南](m5stack-cores3-se-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)、[P4 指南](waveshare-esp32p4-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)。
 
 ### AI 对讲
 
@@ -144,8 +144,8 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 
 ## 开发资料
 
-- **版本改动**：[立创 S3 变更记录](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md)、[CoreS3-SE 变更记录](m5stack-cores3-se-xiaotai/CHANGELOG.md)、[P4 变更记录](waveshare-esp32p4-xiaotai/CHANGELOG.md)，分别查看各版本的功能、修正与依赖变化。
-- **构建与配置**：[立创 S3 开发指南](lckfb-szpi-esp32s3-tirtc/README.md)、[CoreS3-SE 开发指南](m5stack-cores3-se-xiaotai/README.md)、[P4 开发指南](waveshare-esp32p4-xiaotai/README.md)。两个 S3 工程使用 ESP-IDF 5.5.4，P4 使用 5.5.5；各工程独立构建。编译 P4 前需按指南下载同版 C6 附件。
+- **版本改动**：[立创 S3 变更记录](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md)、[CoreS3-Lite 变更记录](m5stack-cores3-se-xiaotai/CHANGELOG.md)、[P4 变更记录](waveshare-esp32p4-xiaotai/CHANGELOG.md)，分别查看各版本的功能、修正与依赖变化。
+- **构建与配置**：[立创 S3 开发指南](lckfb-szpi-esp32s3-tirtc/README.md)、[CoreS3-Lite 开发指南](m5stack-cores3-se-xiaotai/README.md)、[P4 开发指南](waveshare-esp32p4-xiaotai/README.md)。两个 S3 工程使用 ESP-IDF 5.5.4，P4 使用 5.5.5；各工程独立构建。编译 P4 前需按指南下载同版 C6 附件。
 - **架构与代码入口**：[S3 通信与音频链路](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)、[P4 通信与音视频链路](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md)。
 - **排障与使用限制**：[S3 已知问题](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md)、[P4 排障说明](waveshare-esp32p4-xiaotai/docs/TESTING.md)。
 - **服务端、Web 与微信小程序**：[tirtc-server-example](https://github.com/tangeai/tirtc-server-example)。自建服务请参阅[部署指南](https://github.com/tangeai/tirtc-server-example/blob/main/thing-connect/deployment.md)。

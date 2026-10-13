@@ -5,7 +5,7 @@ idf_component_register(
         "src/starter_audio_resampler.c"
         "src/starter_preroll.c"
         "src/starter_playout.c"
-        "src/starter_camera_unavailable.c"
+        "src/starter_camera.c"
         "src/starter_media.c"
     INCLUDE_DIRS "include"
     LDFRAGMENTS "esp_sr_hotpath.lf"
@@ -20,6 +20,8 @@ idf_component_register(
         log
         esp_codec_dev
         esp_audio_codec
+        esp32-camera
+        esp_new_jpeg
         esp-sr
         perfmon
 )

@@ -74,12 +74,16 @@ static atomic_int s_pending_mode;
 static atomic_uint_fast32_t s_expected_call_tag;
 static bool s_initialized;
 /* Connection-lifetime lock, internal control object only, no frame storage.
- * Every task-side SDK call on the slot handle holds it, and local disconnect
- * holds it around TiRtcDisconnect, so a loaded handle cannot be freed under a
- * caller. Holders make one non-blocking SDK call; SDK callbacks never take it. */
+ * Audio/control calls hold it. JPEG pins its handle under this lock, then uses
+ * the SDK's concurrent-send contract without holding up audio. Disconnect
+ * drains both kinds of caller before releasing the handle; callbacks never
+ * take this lock. */
 static StaticSemaphore_t s_connection_lock_storage;
 static SemaphoreHandle_t s_connection_lock;
 static atomic_uint_fast32_t s_connection_lock_busy;
+#if CONFIG_IDF_TARGET_ESP32S3
+static atomic_uint s_video_inflight; /* Handle lifetime, no frame storage. */
+#endif
 /* Media and diagnostics drop rather than queue behind another SDK call.
  * Control words outwait one in-flight audio enqueue (room TX max ~18 ms). */
 #define CONNECTION_LOCK_MEDIA_MS 2U
@@ -492,10 +496,11 @@ static int on_subscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
 
 static int on_subscribe_video(tirtc_conn_t connection, uint8_t stream_id)
 {
-    (void)connection;
-    (void)stream_id;
-    ESP_LOGI(TAG, "video subscribe stream=%u unsupported on CoreS3-SE", (unsigned)stream_id);
-    return -1;
+    bool accepted = connection_matches(connection) &&
+                    starter_tirtc_mode() == STARTER_TIRTC_H5 && stream_id == H5_VIDEO_STREAM;
+    if (accepted) atomic_store_explicit(&s_video_subscribed, true, memory_order_release);
+    ESP_LOGI(TAG, "video subscribe stream=%u accepted=%d", (unsigned)stream_id, accepted);
+    return accepted ? 0 : -1;
 }
 
 static void on_unsubscribe_audio(tirtc_conn_t connection, uint8_t stream_id)
@@ -784,6 +789,11 @@ int starter_tirtc_disconnect(void)
      * loaded this handle, never capture/encoding; TiRtcDisconnect only posts
      * the close, and no SDK callback takes this lock. */
     xSemaphoreTake(s_connection_lock, portMAX_DELAY);
+#if CONFIG_IDF_TARGET_ESP32S3
+    /* No new frame can pin the revoked slot. JPEG completion does not need
+     * this mutex, so draining cannot deadlock with the video worker. */
+    while (atomic_load_explicit(&s_video_inflight, memory_order_acquire)) vTaskDelay(1);
+#endif
     int ret = TiRtcDisconnect(connection);
     xSemaphoreGive(s_connection_lock);
     return ret;
@@ -1021,8 +1031,12 @@ int starter_tirtc_send_h5_jpeg(uint32_t generation, uint32_t timestamp_ms,
         .stream_id = H5_VIDEO_STREAM, .media = TIRTC_VIDEO_JPEG,
         .flags = TIRTC_FRAME_FLAG_KEY_FRAME, .ts = timestamp_ms, .length = length,
     };
-    int ret = TiRtcSendVideoStream(connection, &frame, data);
+    atomic_fetch_add_explicit(&s_video_inflight, 1, memory_order_relaxed);
     xSemaphoreGive(s_connection_lock);
+    /* tiRTC.h media contract permits concurrent audio/video sends. Keep only
+     * the lifetime pin across JPEG enqueue, not the application mutex. */
+    int ret = TiRtcSendVideoStream(connection, &frame, data);
+    atomic_fetch_sub_explicit(&s_video_inflight, 1, memory_order_release);
     return ret;
 }
 #endif
