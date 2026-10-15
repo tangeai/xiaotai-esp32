@@ -9,6 +9,7 @@
 [![MIT License](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](LICENSE)
 [![ESP32-S3](https://img.shields.io/badge/ESP32-S3-E7352C?style=flat-square&logo=espressif&logoColor=white)](lckfb-szpi-esp32s3-tirtc/README.md)
 [![ESP32-P4](https://img.shields.io/badge/ESP32-P4-E7352C?style=flat-square&logo=espressif&logoColor=white)](waveshare-esp32p4-xiaotai/README.md)
+[![ESP32-C3](https://img.shields.io/badge/ESP32-C3-E7352C?style=flat-square&logo=espressif&logoColor=white)](mz28-ai-xiaotai/README.md)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.5.4%20%7C%205.5.5-0969DA?style=flat-square)](#开发资料)
 [![GitHub Stars](https://img.shields.io/github/stars/tangeai/xiaotai-esp32?style=flat-square&label=Stars&color=B8860B)](https://github.com/tangeai/xiaotai-esp32)
 [![GitHub Issues](https://img.shields.io/github/issues/tangeai/xiaotai-esp32?style=flat-square&label=Issues&color=0969DA)](https://github.com/tangeai/xiaotai-esp32/issues)
@@ -26,6 +27,8 @@
 
 小钛通过 TiRTC/WebRTC 提供实时查看、微信呼叫、设备互呼、多人对讲和 AI 对讲功能。下载对应固件，按以下步骤完成烧录、配网和绑定即可体验，无需编译或自建服务器。
 
+各板型的功能见下表。无屏 MZ28 专注微信双向语音，通过语音播报码、BOOT 按键和 RGB 灯操作；不使用下文的屏幕菜单、H5 查看或 AI 功能。
+
 **下载 BIN → USB 烧录 → Wi-Fi 配网 → 网站绑定 → 开始体验**
 
 <a id="下载固件"></a>
@@ -34,26 +37,31 @@
 
 准备一块开发板、一根 USB 数据线、一台电脑和可上网的 **2.4 GHz Wi-Fi**。平台注册需要邮箱。按板型下载对应固件：
 
-| 开发板 | 完整 BIN 下载（16 MB） | 功能 |
+| 开发板 | 完整 BIN 下载 | 功能 |
 | --- | --- | --- |
 | 立创·实战派 ESP32-S3 V1.0.1/N16R8 | [下载 S3 1.5.0](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-s3-app-v1.5.0/xiaotai-esp32-s3-app-v1.5.0-full-16MB.bin) | 语音通话、AI 对讲、H5 摄像头查看 |
 | M5Stack CoreS3-Lite | [下载 CoreS3-Lite 1.5.1](https://github.com/tangeai/xiaotai-esp32/releases/download/m5stack-cores3-lite-app-v1.5.1/xiaotai-m5stack-cores3-lite-app-v1.5.1-full-16MB.bin) | 语音通话、AI 对讲、H5 摄像头查看与双向语音 |
 | 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.6.1](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/xiaotai-esp32-p4-app-v1.6.1-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
+| MZ28-AI-PPD V1.2（ESP32-C3，无屏） | [下载 MZ28 1.0.0（8 MB）](https://github.com/tangeai/xiaotai-esp32/releases/download/mz28-ai-app-v1.0.0/xiaotai-mz28-1.0.0-full-8MB.bin) | 微信双向语音、语音绑定码、BOOT 操作与七颗 RGB 灯 |
 
 芯片要求：**S3 rev 0.0–0.99；ESP32-P4 rev3.2 及以上**。按板型选择固件，立创 S3 和 CoreS3-Lite 的固件不能互换；烧录工具提示不兼容时，请停止，不要跳过校验。
 
-当前固件为体验版（Pre-release）。[立创 S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0)、[CoreS3-Lite 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
+MZ28 使用 **8 MB Flash、C3 rev 0.3–1.99**，不能刷入 S3/P4 的 16 MB 包。下载后按 [MZ28 使用说明](mz28-ai-xiaotai/docs/USER_GUIDE.md)完成配网、语音验证码绑定和微信通话授权。
+
+立创 S3、CoreS3-Lite 和 P4 当前为体验版（Pre-release）。[立创 S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0)、[CoreS3-Lite 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
+
+[MZ28 1.0.0 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/mz28-ai-app-v1.0.0)提供正式版完整包及上述校验文件；另附固件 ZIP，包含同一次构建的 APP、启动分段和许可，用于已核对相同分区的保留配置升级。
 
 **P4 只需通过一个 USB 烧录上述完整包。** 包内已带配套 C6 镜像，首次启动会检查并按兼容范围更新 C6，请保持供电直到进入配网或主页。无需另刷 C6 附件；出现恢复提示时按 [C6 指南](waveshare-esp32p4-xiaotai/docs/C6_PREPARATION.md)处理，不反复擦除或强刷。
 
 <details>
 <summary>校验下载文件与查看构建记录</summary>
 
-完整 BIN 应为 **16,777,216 字节**。在下载目录打开 PowerShell，核对大小和 SHA-256：
+S3/P4 完整 BIN 为 **16,777,216 字节**，MZ28 为 **8,388,608 字节**。在下载目录打开 PowerShell，核对大小和 SHA-256：
 
 ```powershell
-Get-Item ./*-full-16MB.bin | Select-Object Name, Length
-Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
+Get-Item ./*-full-*.bin | Select-Object Name, Length
+Get-FileHash ./*-full-*.bin -Algorithm SHA256
 ```
 
 结果须与同一发布页的 `SHA256SUMS.txt` 一致。Linux 可运行 `sha256sum -c SHA256SUMS.txt`，macOS 可运行 `shasum -a 256 -c SHA256SUMS.txt`；先下载清单列出的全部文件。
@@ -79,17 +87,19 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 
    图示为 S3，串口号以实际设备为准，不必与图中的 `COM42` 一致。
 
-3. 点击 **Add File**，只添加一个对应板型的 `*-full-16MB.bin`，**Flash Address 填 `0x0`**（图中的 `0` 与 `0x0` 相同）；Flash Mode、Flash Frequency、Flash Size 均选 **`keep`**，无需另点 **Erase Flash**。
+3. 点击 **Add File**，只添加一个对应板型的完整 BIN（MZ28 为 `full-8MB.bin`，其余为 `full-16MB.bin`），**Flash Address 填 `0x0`**（图中的 `0` 与 `0x0` 相同）；Flash Mode、Flash Frequency、Flash Size 均选 **`keep`**，无需另点 **Erase Flash**。
 
    <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-program.png" alt="选择完整 16 MB BIN，地址为 0，三项 Flash 参数选 keep，再点击 Program" width="760">
 
 4. 点击 **Program**，等待写入完成且无报错，再点击 **Disconnect**，按开发板的 **RESET/RST** 键重启。
 
 - **串口选哪个？** 拔插开发板，对比列表中消失或新增的一项；名称可能为 `USB JTAG/serial debug unit`、`USB Serial` 或 `COM…`，不要选蓝牙串口。
-- **连接失败？** 确认使用数据线。立创 S3/P4 按住 **BOOT**，按下并松开 **RESET**，再松开 BOOT；**CoreS3-Lite 长按 RST 约 3 秒，看到绿色指示灯亮后松开**，再选择下载模式串口。详见 [M5Stack 下载模式说明](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode)。
+- **连接失败？** 确认使用数据线。立创 S3/P4/MZ28 按住 **BOOT**，按下并松开 **RESET**，再松开 BOOT；**CoreS3-Lite 长按 RST 约 3 秒，看到绿色指示灯亮后松开**，再选择下载模式串口。详见 [M5Stack 下载模式说明](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode)。
 - **出现 `Serial data stream stopped`？** 先换短数据线、避开 Hub/延长线；仍失败时，断开连接，将 **Program → Baudrate** 降到 `115200` 后重连重试。
 
 ## 步骤 3：连接 Wi-Fi
+
+**MZ28 无屏：**按语音提示连接 `XiaoTai-XXXX`，打开 `http://192.168.6.1` 选择 2.4 GHz 网络并输入密码；联网后会循环播报六位绑定码。四连击 BOOT 可重新配网。以下屏幕操作用于另外三款板型。
 
 1. 按设备屏幕提示使用热点配网，三个板型均可通过手机填写 Wi-Fi 信息。
 2. 用手机连接屏幕显示的 `XiaoTai-XXXX` 开放热点，访问 `http://192.168.6.1`。
@@ -101,7 +111,7 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 
 1. 打开[小钛体验平台](https://xiaotai.chat/)，注册并登录账号。
 2. 进入[我的设备](https://xiaotai.chat/devices)，点击 **添加设备 → 验证码绑定**。
-3. 输入设备屏幕上的 **6 位绑定码**，点击 **绑定设备**。
+3. 输入设备屏幕显示或 MZ28 语音播报的 **6 位绑定码**，点击 **绑定设备**。
 4. 返回设备列表，确认设备显示“在线”。绑定码过期时，按设备提示重新获取。
 
 ## 步骤 5：开始体验
@@ -115,6 +125,8 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 3. 允许浏览器使用麦克风，点击并按住 **按住说话**，向设备端发送语音。
 
 ### 微信呼叫
+
+**MZ28：**在正式版“小钛”微信小程序中授权通话。在线待机时单击 BOOT 呼叫第一位联系人，来电时单击接听；双击拒接或挂断。完整操作见 [MZ28 使用说明](mz28-ai-xiaotai/docs/USER_GUIDE.md)。以下是带屏工程的操作。
 
 1. 点击设备上的 **微信电话**。没有微信联系人时，屏幕会显示小程序二维码。
 2. 用微信扫码，按小程序提示授权设备发起语音/视频通话。
@@ -145,6 +157,7 @@ Get-FileHash ./*-full-16MB.bin -Algorithm SHA256
 ## 开发资料
 
 - **版本改动**：[立创 S3 变更记录](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md)、[CoreS3-Lite 变更记录](m5stack-cores3-se-xiaotai/CHANGELOG.md)、[P4 变更记录](waveshare-esp32p4-xiaotai/CHANGELOG.md)，分别查看各版本的功能、修正与依赖变化。
+- **MZ28 无屏应用**：[使用说明](mz28-ai-xiaotai/docs/USER_GUIDE.md)、[开发指南](mz28-ai-xiaotai/docs/GETTING_STARTED_CN.md)、[变更记录](mz28-ai-xiaotai/CHANGELOG.md)。ESP32-C3 / ESP-IDF 5.5.5 / TiRTC 2.5.0，工程独立构建。
 - **构建与配置**：[立创 S3 开发指南](lckfb-szpi-esp32s3-tirtc/README.md)、[CoreS3-Lite 开发指南](m5stack-cores3-se-xiaotai/README.md)、[P4 开发指南](waveshare-esp32p4-xiaotai/README.md)。两个 S3 工程使用 ESP-IDF 5.5.4，P4 使用 5.5.5；各工程独立构建。编译 P4 前需按指南下载同版 C6 附件。
 - **架构与代码入口**：[S3 通信与音频链路](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)、[P4 通信与音视频链路](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md)。
 - **排障与使用限制**：[S3 已知问题](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md)、[P4 排障说明](waveshare-esp32p4-xiaotai/docs/TESTING.md)。

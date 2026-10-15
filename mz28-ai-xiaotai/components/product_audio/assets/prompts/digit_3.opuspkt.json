@@ -1,0 +1,15 @@
+{
+  "codec": "opus",
+  "sample_rate": 16000,
+  "channels": 1,
+  "bitrate": 24000,
+  "packet_ms": 20,
+  "packet_count": 49,
+  "payload_bytes": 60,
+  "storage": "uint16le length + raw Opus packet",
+  "source_sha256": "4932f7362e473c7dabbce0bf456d5f6be5cbab004dd8f2510fbbec62deff2c4a",
+  "sha256": "57f4a07e84cdf8ee53fc3b858d7d8bfeb90864e764c9f616fe6896709e1b68e4",
+  "encoder": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+  "source_format": "VB6824 P3 (60 ms Opus packets)",
+  "source_license": "MIT"
+}

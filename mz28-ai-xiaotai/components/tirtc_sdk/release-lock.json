@@ -1,0 +1,12 @@
+{
+  "version": "0.1.1",
+  "target": "esp32c3",
+  "idf_version": "5.5.5",
+  "sdk_version": "2.5.0",
+  "package_variant": "mini",
+  "base_package_sha256": "9064cf2c92177dd0ff770ac7a6bab4cba2f29da4fc4a119045aef0cf926acee7",
+  "nano_commit": "9088239c",
+  "tgtrp_commit": "f72f5d3c",
+  "memory_profile": "c3-ram-tls",
+  "sdk_sha256": "dd9ee6548dd3e595e07289653f53aef78a4e664bb01c95d67eb9d8fd5603cae0"
+}

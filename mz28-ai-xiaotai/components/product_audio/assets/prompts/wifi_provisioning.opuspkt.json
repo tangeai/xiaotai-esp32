@@ -1,0 +1,17 @@
+{
+  "codec": "opus",
+  "sample_rate": 16000,
+  "channels": 1,
+  "bitrate": 24000,
+  "packet_ms": 20,
+  "packet_count": 212,
+  "payload_bytes": 60,
+  "storage": "uint16le length + raw Opus packet",
+  "source_sha256": "e2614e080062ada20985e6dd3c0b3d2b45a6a41669be67008ec06474329e2069",
+  "sha256": "c80fa52690d211170c5a8dd1cc5d13923f2cac2929b6921bfdd7cc6fe9f89ea3",
+  "encoder": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+  "source_license": "Microsoft Windows SAPI generated voice",
+  "source_kind": "Microsoft Huihui Desktop",
+  "source_voice": "Microsoft Huihui Desktop - Chinese (Simplified)",
+  "source_text": "请打开WiFi来为设备配置无线网络。"
+}

@@ -1,0 +1,15 @@
+{
+  "codec": "opus",
+  "sample_rate": 16000,
+  "channels": 1,
+  "bitrate": 24000,
+  "packet_ms": 20,
+  "packet_count": 13,
+  "payload_bytes": 60,
+  "storage": "uint16le length + raw Opus packet",
+  "source_sha256": "d4a211d2e146e67e50d547fc4adec8c54e9ba729ed87aa46283254c5f1d05a26",
+  "sha256": "c667fafa8ad9612b3ea5738421a7a39eef174ca1f3061e31e0cc809de26fff1a",
+  "encoder": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+  "source_license": "Original project-generated sound",
+  "source_kind": "original-telephone-outgoing-beep"
+}

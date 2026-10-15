@@ -1,0 +1,16 @@
+{
+  "codec": "opus",
+  "sample_rate": 16000,
+  "channels": 1,
+  "bitrate": 24000,
+  "packet_ms": 20,
+  "packet_count": 318,
+  "payload_bytes": 60,
+  "storage": "uint16le length + raw Opus packet",
+  "source_sha256": "cd15fe102239a88bc84cf7ee47f4220505fa369f4a4f3e9a7f2431479c3e7092",
+  "sha256": "e73e60268bb646aada5ba0f3d074e5de4bf6906d5cd525ce4c9bc2ebd41f3e6f",
+  "encoder": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+  "source_license": "Microsoft Windows SAPI generated voice",
+  "source_voice": "Microsoft Huihui Desktop",
+  "source_text": "登录微信小程序搜索小钛进行绑定，钛是金属钛的钛"
+}

@@ -1,0 +1,13 @@
+{
+  "codec": "opus",
+  "sample_rate": 16000,
+  "channels": 1,
+  "bitrate": 24000,
+  "packet_ms": 20,
+  "packet_count": 501,
+  "payload_bytes": 60,
+  "storage": "uint16le length + raw Opus packet",
+  "source_sha256": "807305ac8e76212b271c5de21d4fc082e08fa369e42b20dd44363a895a3e2d4f",
+  "sha256": "7671643c7e6409e53a809469bad0952af061401a5c59c8f865b6ba1caeba00ab",
+  "encoder": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+}

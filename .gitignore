@@ -6,6 +6,8 @@
 **/.clangd
 **/sdkconfig
 **/sdkconfig.old
+# MZ28 ships its credential-free, hash-locked build configuration.
+!/mz28-ai-xiaotai/sdkconfig
 **/local_config.h
 **/release_assets/
 **/firmware/

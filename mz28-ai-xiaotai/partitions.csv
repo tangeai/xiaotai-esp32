@@ -1,0 +1,6 @@
+# Name, Type, SubType, Offset, Size
+# The connected MZ28 reports 8 MiB flash. Keep NVS at the ESP-IDF default
+# location so development reflashes do not erase Wi-Fi and binding credentials.
+nvs, data, nvs, 0x9000, 0x6000
+phy_init, data, phy, 0xf000, 0x1000
+factory, app, factory, 0x10000, 0x5f0000

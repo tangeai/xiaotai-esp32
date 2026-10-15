@@ -1,0 +1,15 @@
+{
+  "codec": "opus",
+  "sample_rate": 16000,
+  "channels": 1,
+  "bitrate": 24000,
+  "packet_ms": 20,
+  "packet_count": 67,
+  "payload_bytes": 60,
+  "storage": "uint16le length + raw Opus packet",
+  "source_sha256": "a44363f81f2c3f9358920a3c37a4397042ac88da9759adf1e2097fdd1f9cd14c",
+  "sha256": "d40c76ebbf400fb9dbd7e7e72d79ce9c9407d458b9a841dd066cc6f5a45fba4b",
+  "encoder": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+  "source_license": "Original project-generated sound",
+  "source_kind": "original-bright-incoming-ring"
+}

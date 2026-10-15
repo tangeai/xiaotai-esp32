@@ -1,0 +1,3 @@
+# Preserve hash-locked SDK headers with their original trailing spaces.
+/components/tirtc_sdk/include/basedef.h whitespace=-blank-at-eol
+/components/tirtc_sdk/include/tiRTC.h whitespace=-blank-at-eol

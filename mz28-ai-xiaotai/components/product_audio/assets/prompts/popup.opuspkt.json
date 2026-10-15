@@ -1,0 +1,15 @@
+{
+  "codec": "opus",
+  "sample_rate": 16000,
+  "channels": 1,
+  "bitrate": 24000,
+  "packet_ms": 20,
+  "packet_count": 11,
+  "payload_bytes": 60,
+  "storage": "uint16le length + raw Opus packet",
+  "source_sha256": "6e04962e17c9486bb1c573b7b1c7567724cfba4e4630edf5219c365789dfe4d8",
+  "sha256": "5450da4936d6031cbcdab290a81aaf2497d3bb54fed0bf382c7c682362873511",
+  "encoder": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+  "source_license": "Original project-generated sound",
+  "source_kind": "original-crisp-tap"
+}
