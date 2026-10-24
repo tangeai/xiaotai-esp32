@@ -1,0 +1,194 @@
+{
+  "voice": "User-supplied 16 kHz WAV; archive SHA256 309173c3c8464e88d0681061e16748d9cc7733f0fb8e83fa00fa94df61ded8c4",
+  "rate": null,
+  "sample_rate": 8000,
+  "channels": 1,
+  "codec": "pcm_alaw",
+  "clips": [
+    {
+      "name": "startup",
+      "text": "小钛正在启动。",
+      "offset": 0,
+      "bytes": 11360,
+      "sha256": "dd0d038b83e226161eab191cafd1f9ac60fe0acf96eb3acf61d110e1cd917a4b",
+      "wav_sha256": "c968e549ecdffcbd0ef3d91e3adf71a8a7a52ccbec19ad46bcc43103dadd594d"
+    },
+    {
+      "name": "wifi_setup",
+      "text": "请打开手机的无线网络设置，连接小钛热点，再打开配网页面。",
+      "offset": 11360,
+      "bytes": 40800,
+      "sha256": "9d56eefceb0cba2964f09cdffa12263a00eddd0e5f664bbe59f4af0249234f37",
+      "wav_sha256": "749dc6a1023fa9817b83b9a8f4b5d241ece3c1ec53b22288fe440648cbef859e"
+    },
+    {
+      "name": "wifi_connecting",
+      "text": "正在连接无线网络，请稍候。",
+      "offset": 52160,
+      "bytes": 17760,
+      "sha256": "1854cd847cc2cdafa897ef7f3dbd86aae8ff5e1b2dfaa55e21c81f219bcde5eb",
+      "wav_sha256": "c66d3062b00b0096886a25915a297fbf0ddfeb9eabe965ad8ff176cdb0567cd4"
+    },
+    {
+      "name": "wifi_connected",
+      "text": "无线网络连接成功。",
+      "offset": 69920,
+      "bytes": 12960,
+      "sha256": "c157eb0d7a9a1c014a4bb6fc050760e7a47f05babd0e4b908496d7932ddefb64",
+      "wav_sha256": "0c1e054133294158bffcb7f1014402657bbb28f4fa81f0650d56451b34cedbc3"
+    },
+    {
+      "name": "wifi_failed",
+      "text": "无线网络连接失败，请检查密码和网络，然后重新配网。",
+      "offset": 82880,
+      "bytes": 33120,
+      "sha256": "36232509fb62ed4d7c5443fd8d4a747a27eab8307e145270c5502ac943d2cc46",
+      "wav_sha256": "1790a22f9f6857c2862ce7579af2cea874613865e2d73a779b4d9fff47430ee9"
+    },
+    {
+      "name": "binding",
+      "text": "打开微信，搜索小钛小程序。钛是金属钛的钛。请输入六位验证码绑定设备。验证码是。",
+      "offset": 116000,
+      "bytes": 73760,
+      "sha256": "4a0a9a8f484507c9cd6ac8d93895f1c5e4b32e4db92c8f51fa297787c579c5f2",
+      "wav_sha256": "cd77c910efab0e230daf1f6d21a2cde40ed0a94534cf786ac70ecb674eca25c9"
+    },
+    {
+      "name": "bound",
+      "text": "设备绑定成功。",
+      "offset": 189760,
+      "bytes": 13120,
+      "sha256": "7d0b6a5ab84267c96847296b3b35c90bf00748cf5a321999a244251c7b517684",
+      "wav_sha256": "e24a120a4c037de9ac7d93bb85824b04ed00e6d077865807c3af272bab538834"
+    },
+    {
+      "name": "offline",
+      "text": "网络已断开，正在等待网络恢复。",
+      "offset": 202880,
+      "bytes": 17440,
+      "sha256": "39b2465f2313e3df1f0fb473f512d560ccf8c3d9d52ef4999b8b5fca530885ad",
+      "wav_sha256": "dd87295b898c0c453433b5e9b120c15ee15845eef8efe93760f227f78ea01296"
+    },
+    {
+      "name": "online",
+      "text": "小钛已在线。",
+      "offset": 220320,
+      "bytes": 9760,
+      "sha256": "29a53b68333ef0fd5c007870ca04e583a3a559d9cdadf60a3feb02656e1c0682",
+      "wav_sha256": "d24e654de122004bced250cf6ba58fb161c021ac118f3a1aba604cbcd6e13f3c"
+    },
+    {
+      "name": "incoming",
+      "text": "您有新的来电。",
+      "offset": 230080,
+      "bytes": 9440,
+      "sha256": "e484e02a3481efc26901ffde475ce1148c7a2b0a4cb6db5a72b302217b13a2bf",
+      "wav_sha256": "40e9c256e595f3092bbb33c753975a3e9e4c2e3ebb863eb443b9efe9ab51e624"
+    },
+    {
+      "name": "dialing",
+      "text": "正在呼叫。",
+      "offset": 239520,
+      "bytes": 10080,
+      "sha256": "48b90eef80e973fd6e098537ab2253d05a51d30e0ce3f4cc14e68574db52fdfd",
+      "wav_sha256": "93cda86867819957ec302735d13d006a90d9363d62f5b1caf3f3176a2b28afb1"
+    },
+    {
+      "name": "ended",
+      "text": "通话已结束。",
+      "offset": 249600,
+      "bytes": 9440,
+      "sha256": "5743adfca8d69f3573a2a5103f7978746cab9465693b4ed6f118ab778c09f01f",
+      "wav_sha256": "d8f86e5d6b23418ac4c53851c8f8836877bd3eec2da9f967732a17b607107b77"
+    },
+    {
+      "name": "failed",
+      "text": "操作未完成，请查看屏幕提示。",
+      "offset": 259040,
+      "bytes": 22560,
+      "sha256": "c395016c4476b1e3dacedc939f517e3d6183c6870f84f7eae870b27b3b9e9ea6",
+      "wav_sha256": "e6d273d554f4a2657d697b875fbc62bfee0c45fa3f59c22289827e65952d5a19"
+    },
+    {
+      "name": "digit_0",
+      "text": "零。",
+      "offset": 281600,
+      "bytes": 5120,
+      "sha256": "3ce27d06f62f2c14c9159b9592bb710519080e2af577b2b0f20e5e90392f5b38",
+      "wav_sha256": "7f2d9122790fee67f78843325cd5636365414768853d26068c96aab24a9866c8"
+    },
+    {
+      "name": "digit_1",
+      "text": "一。",
+      "offset": 286720,
+      "bytes": 5440,
+      "sha256": "91234ec70049660e6142133fe27ad7b1761f7fd11d508b6f4d2e83a84c8ace7d",
+      "wav_sha256": "053ac127bfc9226a1df958bdc9c7d916750c572082d52f0d572e2daad68990e1"
+    },
+    {
+      "name": "digit_2",
+      "text": "二。",
+      "offset": 292160,
+      "bytes": 4480,
+      "sha256": "cd0f83bb4923a5c374005cc2d29af8b9872a5bec67d548338248b5586b1af3db",
+      "wav_sha256": "9f4518e6b1c24fcd358a7b2e7a2ace023618ffc840c86e1db57d09ebdcfc3b86"
+    },
+    {
+      "name": "digit_3",
+      "text": "三。",
+      "offset": 296640,
+      "bytes": 5760,
+      "sha256": "66089693b8062f45f21202e25c347d6093f6638209ff2eb84320ac14d2da6be4",
+      "wav_sha256": "53ba8313ee708134cd5c1caad42e48f41821ccfd25a05d5a5278a1ce561684c5"
+    },
+    {
+      "name": "digit_4",
+      "text": "四。",
+      "offset": 302400,
+      "bytes": 5600,
+      "sha256": "fbdda78e23777566a7552bc9dc0cd2f88540cc6f4ee9fa76ac60d46f5bad3031",
+      "wav_sha256": "832297a603f5fbafe3d540f118d5c11d3aff89f897b0a62e35fd6103db75da00"
+    },
+    {
+      "name": "digit_5",
+      "text": "五。",
+      "offset": 308000,
+      "bytes": 5600,
+      "sha256": "bd9674367fa63e454b0838281a5dcd24ee1a5ab0bd707de7c688ebbb36e6081e",
+      "wav_sha256": "a8d2f07a8cdd241fa0b3f4cfb460f4f9e63d0d1779016e10e3cc50f8ecd8f18b"
+    },
+    {
+      "name": "digit_6",
+      "text": "六。",
+      "offset": 313600,
+      "bytes": 6240,
+      "sha256": "88cd628cfa90f7935a158ff9cfd0d9b8ffa774e1702cd1c28fb2fc42361fab0f",
+      "wav_sha256": "71eab6167a5c71f3f38ccae83c1b31f3c4299dae5bfcda11b63708b358819657"
+    },
+    {
+      "name": "digit_7",
+      "text": "七。",
+      "offset": 319840,
+      "bytes": 4960,
+      "sha256": "6394301287bde6d64ea917d043996048e8d8e3646988b47d86c7a3f0601fff47",
+      "wav_sha256": "0e308b740519cb8e125ab0d0896dbab00818b141ffe79327fa045e7ef4ff9faa"
+    },
+    {
+      "name": "digit_8",
+      "text": "八。",
+      "offset": 324800,
+      "bytes": 4960,
+      "sha256": "2d538ff92dcab64311c007bb4b90e87147ff23b2e58a4712d9bceebdcb08199e",
+      "wav_sha256": "544f8cfd329a60198526f97fa080412f588202f5347bf678ed40c1f4635ba5ad"
+    },
+    {
+      "name": "digit_9",
+      "text": "九。",
+      "offset": 329760,
+      "bytes": 4960,
+      "sha256": "891896c78cfd3966bc4cfaeb43edf79b720ec32944dc99e650926299d25581a0",
+      "wav_sha256": "2063b472401239abd3b3e7ec71e5eef119ad25f0c4cf5276d8f86ece79aaa846"
+    }
+  ],
+  "bundle_sha256": "08b4ac79b49326deac855cc8b2d4868e7688b0587d3eda8f6271fe8885fd1dc6"
+}

@@ -29,6 +29,8 @@ XiaoTai uses TiRTC/WebRTC for live monitoring, WeChat calls, device-to-device ca
 
 Features depend on the board. Screenless MZ28 focuses on two-way WeChat voice calls, spoken binding codes, a BOOT button, and RGB feedback. The screen menus, H5 viewing, and AI features below do not apply to MZ28.
 
+Xmini-C3-V3 uses an OLED and one BOOT button for AI, WeChat, device calls, browser voice, and group voice chat. All are audio-only; this project has no video or voice wake-up.
+
 **Download BIN → Flash over USB → Connect to Wi-Fi → Bind on the website → Try the features**
 
 <a id="download-firmware"></a>
@@ -43,10 +45,13 @@ Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi**
 | M5Stack CoreS3-Lite | [Download CoreS3-Lite 1.5.1](https://github.com/tangeai/xiaotai-esp32/releases/download/m5stack-cores3-lite-app-v1.5.1/xiaotai-m5stack-cores3-lite-app-v1.5.1-full-16MB.bin) | Voice calls, AI voice chat, and browser camera viewing with two-way audio |
 | Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | [Download P4 1.6.1](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/xiaotai-esp32-p4-app-v1.6.1-full-16MB.bin) | Audio/video calls, live video, and AI voice chat |
 | MZ28-AI-PPD V1.2 (ESP32-C3, screenless) | [Download MZ28 1.0.0 (8 MB)](https://github.com/tangeai/xiaotai-esp32/releases/download/mz28-ai-app-v1.0.0/xiaotai-mz28-1.0.0-full-8MB.bin) | Two-way WeChat voice, spoken binding codes, BOOT control, and seven RGB LEDs |
+| Xmini-C3-V3 (ESP32-C3, OLED) | [Download Xmini 0.1.0 (16 MB)](https://github.com/tangeai/xiaotai-esp32/releases/download/xmini-c3-v3-app-v0.1.0/xiaotai-xmini-c3-v3-app-v0.1.0-full-16MB.bin) | AI, WeChat, device calls, browser voice, and group voice chat |
 
 Chip requirements: **S3 rev 0.0–0.99; ESP32-P4 rev3.2 or later**. Match the board, not just the chip: LCKFB S3 and CoreS3-Lite firmware are not interchangeable. If the flasher reports an incompatible chip, stop rather than bypassing the check.
 
 MZ28 requires **8 MB Flash and C3 rev 0.3–1.99**. Do not use a 16 MB S3/P4 image. Follow the [MZ28 user guide](mz28-ai-xiaotai/docs/USER_GUIDE.md) for voice-guided setup, binding, and WeChat authorization.
+
+Xmini-C3-V3 requires **16 MB Flash and C3 rev 0.3–1.99**. Its image is not interchangeable with MZ28. The [Xmini release](https://github.com/tangeai/xiaotai-esp32/releases/tag/xmini-c3-v3-app-v0.1.0) includes the evaluation firmware, flashing guide, checksums, and optional split-image ZIP.
 
 The LCKFB S3, CoreS3-Lite, and P4 images are **pre-release** builds. The **Assets** section of the [LCKFB S3 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0), [CoreS3-Lite release](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1), or [P4 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1) also includes `FLASHING_CN.md`, `SHA256SUMS.txt`, and `release-manifest.json`. The flashing guide is in Chinese. `Source code` is not a flashable image.
 
@@ -57,7 +62,7 @@ The [MZ28 1.0.0 release](https://github.com/tangeai/xiaotai-esp32/releases/tag/m
 <details>
 <summary>Verify downloads and view build records</summary>
 
-A full S3/P4 BIN is **16,777,216 bytes**; MZ28 is **8,388,608 bytes**. Open PowerShell in the download directory to check its size and SHA-256:
+A full S3/P4/Xmini BIN is **16,777,216 bytes**; MZ28 is **8,388,608 bytes**. Open PowerShell in the download directory to check its size and SHA-256:
 
 ```powershell
 Get-Item ./*-full-*.bin | Select-Object Name, Length
@@ -92,14 +97,14 @@ Compare the results with `SHA256SUMS.txt` from the same release. On Linux, use `
 4. Click **Program** and wait for writing to finish without errors. Then click **Disconnect** and press the board's **RESET/RST** button to restart it.
 
 - **Which serial port?** Unplug and reconnect the board, then select the entry that disappears or appears. Its name may include `USB JTAG/serial debug unit`, `USB Serial`, or `COM…`. Do not select a Bluetooth port.
-- **Connection fails?** Check the data cable. For LCKFB S3/P4/MZ28, hold **BOOT**, press and release **RESET**, then release BOOT. For **CoreS3-Lite, hold RST for about 3 seconds until the green LED lights up, then release it** and select the download-mode port. See [M5Stack's download-mode guide](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode).
+- **Connection fails?** Check the data cable. For LCKFB S3/P4/MZ28/Xmini, hold **BOOT**, press and release **RESET**, then release BOOT. For **CoreS3-Lite, hold RST for about 3 seconds until the green LED lights up, then release it** and select the download-mode port. See [M5Stack's download-mode guide](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode).
 - **`Serial data stream stopped`?** Try a short data cable without a hub or extension. If it still fails, disconnect, lower **Program → Baudrate** to `115200`, and reconnect before retrying.
 
 ## Step 3: Connect to Wi-Fi
 
-**Screenless MZ28:** follow its voice prompt, connect to `XiaoTai-XXXX`, and open `http://192.168.6.1` to enter your 2.4 GHz Wi-Fi details. After connecting, it repeats a six-digit binding code aloud. Press BOOT four times to set up Wi-Fi again. The screen instructions below are for the other three boards.
+**Screenless MZ28:** follow its voice prompt, connect to `XiaoTai-XXXX`, and open `http://192.168.6.1` to enter your 2.4 GHz Wi-Fi details. After connecting, it repeats a six-digit binding code aloud. Press BOOT four times to set up Wi-Fi again. The instructions below apply to screen-equipped boards.
 
-1. Follow the setup instructions on the device screen. All three boards support entering Wi-Fi details from your phone through hotspot setup.
+1. Follow the setup instructions on the device screen and enter Wi-Fi details from your phone through hotspot setup.
 2. Connect your phone to the open `XiaoTai-XXXX` hotspot shown on the screen, then visit `http://192.168.6.1`.
 3. Select your **2.4 GHz Wi-Fi** network from the list, enter its password, and submit. Saved networks can reuse their passwords; hidden networks can be entered manually. Once connected and synchronized with a time server, the device displays a **6-digit binding code**.
 
@@ -115,6 +120,8 @@ The instructions below include the Chinese interface labels to help you find eac
 4. Return to the device list and check that the device shows **Online (在线)**. If the code has expired, follow the device prompts to get a new one.
 
 ## Step 5: Try the features
+
+**Xmini-C3-V3:** press BOOT once to select, twice to confirm, or hold about 1.2 seconds to return or end a session. Start AI from its menu, not through the touch-screen or wake-word steps below. See the [Xmini guide](xmini-c3-v3-xiaotai/README.md) for its voice-only features.
 
 Live monitoring, WeChat calls, and AI voice chat each require one device. Device-to-device calls require two. Close the live view or end the current call before switching features.
 
@@ -160,6 +167,7 @@ The linked development guides are in Chinese.
 
 - **Version changes:** [LCKFB S3 changelog](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md), [CoreS3-Lite changelog](m5stack-cores3-se-xiaotai/CHANGELOG.md), and [P4 changelog](waveshare-esp32p4-xiaotai/CHANGELOG.md), each covering its own features, fixes, and dependency changes by version.
 - **Screenless MZ28:** [user guide](mz28-ai-xiaotai/docs/USER_GUIDE.md), [development guide](mz28-ai-xiaotai/docs/GETTING_STARTED_CN.md), and [changelog](mz28-ai-xiaotai/CHANGELOG.md). ESP32-C3 / ESP-IDF 5.5.5 / TiRTC 2.5.0; builds independently.
+- **Xmini voice terminal:** [user guide](xmini-c3-v3-xiaotai/README.md), [build and porting](xmini-c3-v3-xiaotai/docs/PORTING.md), and [changelog](xmini-c3-v3-xiaotai/CHANGELOG.md). Keep its PCMA 8 kHz profile and paired SDK/driver configuration.
 - **Build and configuration:** [LCKFB S3 guide](lckfb-szpi-esp32s3-tirtc/README.md), [CoreS3-Lite guide](m5stack-cores3-se-xiaotai/README.md), and [P4 guide](waveshare-esp32p4-xiaotai/README.md). Both S3 projects use ESP-IDF 5.5.4; P4 uses 5.5.5. Each builds independently. Before building P4, download the matching C6 attachment as described in its guide.
 - **Architecture and code:** [S3 communication and audio](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md) and [P4 communication, audio, and video](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md).
 - **Troubleshooting and limitations:** [S3 known issues](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md) and [P4 troubleshooting](waveshare-esp32p4-xiaotai/docs/TESTING.md).

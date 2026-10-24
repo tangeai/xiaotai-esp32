@@ -54,3 +54,10 @@
 /waveshare-esp32p4-xiaotai/port/CMakeLists.txt
 /waveshare-esp32p4-xiaotai/port/README.md
 /waveshare-esp32p4-xiaotai/tools/test_rtc_endpoint_policy.py
+
+# Keep the codec vendor's three original driver inputs, not release firmware.
+!/xmini-c3-v3-xiaotai/components/esp_codec_dev/device/zl38063/firmware/
+/xmini-c3-v3-xiaotai/components/esp_codec_dev/device/zl38063/firmware/*
+!/xmini-c3-v3-xiaotai/components/esp_codec_dev/device/zl38063/firmware/libfirmware.a
+!/xmini-c3-v3-xiaotai/components/esp_codec_dev/device/zl38063/firmware/zl38063_config.h
+!/xmini-c3-v3-xiaotai/components/esp_codec_dev/device/zl38063/firmware/zl38063_firmware.h

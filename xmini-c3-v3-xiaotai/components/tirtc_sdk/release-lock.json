@@ -1,0 +1,22 @@
+{
+  "version": "0.1.1",
+  "target": "esp32c3",
+  "idf_version": "5.5.5",
+  "sdk_version": "2.5.0",
+  "package_variant": "mini",
+  "base_package_sha256": "9064cf2c92177dd0ff770ac7a6bab4cba2f29da4fc4a119045aef0cf926acee7",
+  "nano_commit": "9088239c",
+  "tgtrp_commit": "f72f5d3c",
+  "memory_profile": "c3-ram-tls",
+  "patch_set": "xmini-c3-command-publication-20261016-private-test1",
+  "parent_sdk_sha256": "dd9ee6548dd3e595e07289653f53aef78a4e664bb01c95d67eb9d8fd5603cae0",
+  "previous_sdk_sha256": "ae740d7b03b2a646d4ec34cc4186bc3ad08c5bf0c408bbdcf3fe81bd4eabf153",
+  "lower_sha256": "715c867674d71eb4f7d7fd99abae64e03ddbb4e26b8c9ab6623894085e236fac",
+  "pending_close_contract": 1,
+  "header_sha256": "e08a64f93fa9da042c2b5fe66d1f3b6c481871ec8038f75e131477e155fe6fa3",
+  "basedef_sha256": "23883b8040838fcda10927523536def667cfe7be7fcd8b6f4a1c9410d3e03c04",
+  "sdk_sha256": "f95b97601c9ef6d541c1dd039196f272e589fb4139773c09586a77fb08b65ff5",
+  "command_source_freeze_sha256": "78f78ce54e1c81d482a54371d320b5793dbf4f9bf0e7fc2cd2f19f658d0b3d02",
+  "pending_command_requested_byte_budget": 16384,
+  "diagnostic_header_sha256": "be0ab5d3a164d2902c06114bea07f81fd3fc139939515f93abb5c5c043e3ad6f"
+}

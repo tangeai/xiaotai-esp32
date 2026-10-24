@@ -1,0 +1,6 @@
+dependencies:
+  idf: "==5.5.5"
+  espressif/esp_codec_dev:
+    version: "==1.6.2"
+    override_path: "../esp_codec_dev"
+  espressif/esp_audio_codec: "==2.4.0"

@@ -1,0 +1,5 @@
+# Name, Type, SubType, Offset, Size, Flags
+nvs, data, nvs, 0x9000, 0x4000,
+# Keep the original board's 0xD000..0xEFFF OTA data outside the NVS driver.
+phy_init, data, phy, 0xf000, 0x1000,
+factory, app, factory, 0x10000, 0x400000,

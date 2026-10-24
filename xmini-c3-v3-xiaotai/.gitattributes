@@ -1,0 +1,13 @@
+# Preserve original CRLF bytes while still checking other whitespace errors.
+* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# Keep reviewed supplier originals and patch context byte-identical.
+/components/esp_codec_dev/README.md whitespace=-blank-at-eol,-space-before-tab,cr-at-eol
+/components/esp_codec_dev/README_CN.md whitespace=-space-before-tab,cr-at-eol
+/components/esp_codec_dev/device/es7210/es7210.c whitespace=-blank-at-eol,cr-at-eol
+/components/esp_codec_dev/device/zl38063/Readme_twolf.txt whitespace=-blank-at-eol,cr-at-eol
+/components/esp_codec_dev/interface/audio_codec_if.h whitespace=-blank-at-eol,cr-at-eol
+/components/tirtc_sdk/include/basedef.h whitespace=-blank-at-eol,cr-at-eol
+/components/tirtc_sdk/include/tiRTC.h whitespace=-blank-at-eol,cr-at-eol
+/vendor/mbedtls-idf-5.5.5/bignum-workspace-lifetime.patch whitespace=-blank-at-eol,cr-at-eol
+/vendor/mbedtls-idf-5.5.5/bignum.c whitespace=-blank-at-eol,cr-at-eol

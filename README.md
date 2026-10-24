@@ -29,6 +29,8 @@
 
 各板型的功能见下表。无屏 MZ28 专注微信双向语音，通过语音播报码、BOOT 按键和 RGB 灯操作；不使用下文的屏幕菜单、H5 查看或 AI 功能。
 
+Xmini-C3-V3 使用 OLED 和 BOOT 单键，保留 AI、微信、设备互呼、网页语音与多人对讲，均为语音业务，不提供视频或语音唤醒。
+
 **下载 BIN → USB 烧录 → Wi-Fi 配网 → 网站绑定 → 开始体验**
 
 <a id="下载固件"></a>
@@ -43,10 +45,13 @@
 | M5Stack CoreS3-Lite | [下载 CoreS3-Lite 1.5.1](https://github.com/tangeai/xiaotai-esp32/releases/download/m5stack-cores3-lite-app-v1.5.1/xiaotai-m5stack-cores3-lite-app-v1.5.1-full-16MB.bin) | 语音通话、AI 对讲、H5 摄像头查看与双向语音 |
 | 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | [下载 P4 1.6.1](https://github.com/tangeai/xiaotai-esp32/releases/download/esp32-p4-app-v1.6.1/xiaotai-esp32-p4-app-v1.6.1-full-16MB.bin) | 音视频通话、实时画面、AI 对讲 |
 | MZ28-AI-PPD V1.2（ESP32-C3，无屏） | [下载 MZ28 1.0.0（8 MB）](https://github.com/tangeai/xiaotai-esp32/releases/download/mz28-ai-app-v1.0.0/xiaotai-mz28-1.0.0-full-8MB.bin) | 微信双向语音、语音绑定码、BOOT 操作与七颗 RGB 灯 |
+| Xmini-C3-V3（ESP32-C3，OLED） | [下载 Xmini 0.1.0（16 MB）](https://github.com/tangeai/xiaotai-esp32/releases/download/xmini-c3-v3-app-v0.1.0/xiaotai-xmini-c3-v3-app-v0.1.0-full-16MB.bin) | AI、微信、设备互呼、网页语音与多人对讲 |
 
 芯片要求：**S3 rev 0.0–0.99；ESP32-P4 rev3.2 及以上**。按板型选择固件，立创 S3 和 CoreS3-Lite 的固件不能互换；烧录工具提示不兼容时，请停止，不要跳过校验。
 
 MZ28 使用 **8 MB Flash、C3 rev 0.3–1.99**，不能刷入 S3/P4 的 16 MB 包。下载后按 [MZ28 使用说明](mz28-ai-xiaotai/docs/USER_GUIDE.md)完成配网、语音验证码绑定和微信通话授权。
+
+Xmini-C3-V3 使用 **16 MB Flash、C3 rev 0.3–1.99**，与 MZ28 固件不能互换；[Xmini 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/xmini-c3-v3-app-v0.1.0)提供体验候选、烧录说明、校验文件与可选分段固件 ZIP。
 
 立创 S3、CoreS3-Lite 和 P4 当前为体验版（Pre-release）。[立创 S3 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0)、[CoreS3-Lite 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1)、[P4 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1)的 **Assets** 中还提供烧录指南 `FLASHING_CN.md`、校验清单 `SHA256SUMS.txt` 和构建记录 `release-manifest.json`。`Source code` 是源码，不能直接烧录。
 
@@ -57,7 +62,7 @@ MZ28 使用 **8 MB Flash、C3 rev 0.3–1.99**，不能刷入 S3/P4 的 16 MB �
 <details>
 <summary>校验下载文件与查看构建记录</summary>
 
-S3/P4 完整 BIN 为 **16,777,216 字节**，MZ28 为 **8,388,608 字节**。在下载目录打开 PowerShell，核对大小和 SHA-256：
+S3/P4/Xmini 完整 BIN 为 **16,777,216 字节**，MZ28 为 **8,388,608 字节**。在下载目录打开 PowerShell，核对大小和 SHA-256：
 
 ```powershell
 Get-Item ./*-full-*.bin | Select-Object Name, Length
@@ -94,14 +99,14 @@ Get-FileHash ./*-full-*.bin -Algorithm SHA256
 4. 点击 **Program**，等待写入完成且无报错，再点击 **Disconnect**，按开发板的 **RESET/RST** 键重启。
 
 - **串口选哪个？** 拔插开发板，对比列表中消失或新增的一项；名称可能为 `USB JTAG/serial debug unit`、`USB Serial` 或 `COM…`，不要选蓝牙串口。
-- **连接失败？** 确认使用数据线。立创 S3/P4/MZ28 按住 **BOOT**，按下并松开 **RESET**，再松开 BOOT；**CoreS3-Lite 长按 RST 约 3 秒，看到绿色指示灯亮后松开**，再选择下载模式串口。详见 [M5Stack 下载模式说明](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode)。
+- **连接失败？** 确认使用数据线。立创 S3/P4/MZ28/Xmini 按住 **BOOT**，按下并松开 **RESET**，再松开 BOOT；**CoreS3-Lite 长按 RST 约 3 秒，看到绿色指示灯亮后松开**，再选择下载模式串口。详见 [M5Stack 下载模式说明](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode)。
 - **出现 `Serial data stream stopped`？** 先换短数据线、避开 Hub/延长线；仍失败时，断开连接，将 **Program → Baudrate** 降到 `115200` 后重连重试。
 
 ## 步骤 3：连接 Wi-Fi
 
-**MZ28 无屏：**按语音提示连接 `XiaoTai-XXXX`，打开 `http://192.168.6.1` 选择 2.4 GHz 网络并输入密码；联网后会循环播报六位绑定码。四连击 BOOT 可重新配网。以下屏幕操作用于另外三款板型。
+**MZ28 无屏：**按语音提示连接 `XiaoTai-XXXX`，打开 `http://192.168.6.1` 选择 2.4 GHz 网络并输入密码；联网后会循环播报六位绑定码。四连击 BOOT 可重新配网。以下屏幕操作用于带屏板型。
 
-1. 按设备屏幕提示使用热点配网，三个板型均可通过手机填写 Wi-Fi 信息。
+1. 按设备屏幕提示使用热点配网，在手机上填写 Wi-Fi 信息。
 2. 用手机连接屏幕显示的 `XiaoTai-XXXX` 开放热点，访问 `http://192.168.6.1`。
 3. 在列表中选择 **2.4 GHz Wi-Fi**，输入密码并提交；已保存的网络可直接复用密码，隐藏网络可手动添加。设备联网并完成校时后，屏幕会显示 **6 位绑定码**。
 
@@ -115,6 +120,8 @@ Get-FileHash ./*-full-*.bin -Algorithm SHA256
 4. 返回设备列表，确认设备显示“在线”。绑定码过期时，按设备提示重新获取。
 
 ## 步骤 5：开始体验
+
+**Xmini-C3-V3：**单击 BOOT 选择、双击确认、长按约 1.2 秒返回或结束会话。AI 从菜单进入，不使用下方的触屏或语音唤醒方式；微信、设备互呼、实时语音及群聊的入口见 [Xmini 使用说明](xmini-c3-v3-xiaotai/README.md)。
 
 实时查看、微信呼叫和 AI 对讲只需一台设备；设备互呼需要两台。切换功能前，请先退出实时查看或结束当前通话。
 
@@ -146,7 +153,7 @@ Get-FileHash ./*-full-*.bin -Algorithm SHA256
 2. 其他设备输入同一个六位房间号加入；设有密码时填写对应的四位密码。
 3. 等待房间连接后，按住讲话，松开收听。返回菜单会断开对讲并保留房间关系；“退出房间”才会解除关系。
 
-多人对讲需要平台提供房间服务，三个板型都使用语音。详细操作见 [立创 S3 指南](lckfb-szpi-esp32s3-tirtc/docs/GETTING_STARTED_CN.md#多人对讲)、[CoreS3-Lite 指南](m5stack-cores3-se-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)、[P4 指南](waveshare-esp32p4-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)。
+多人对讲需要平台提供房间服务，使用语音。详细操作见 [立创 S3 指南](lckfb-szpi-esp32s3-tirtc/docs/GETTING_STARTED_CN.md#多人对讲)、[CoreS3-Lite 指南](m5stack-cores3-se-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)、[P4 指南](waveshare-esp32p4-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)及 [Xmini 说明](xmini-c3-v3-xiaotai/README.md#一个按键怎么用)。
 
 ### AI 对讲
 
@@ -158,6 +165,7 @@ Get-FileHash ./*-full-*.bin -Algorithm SHA256
 
 - **版本改动**：[立创 S3 变更记录](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md)、[CoreS3-Lite 变更记录](m5stack-cores3-se-xiaotai/CHANGELOG.md)、[P4 变更记录](waveshare-esp32p4-xiaotai/CHANGELOG.md)，分别查看各版本的功能、修正与依赖变化。
 - **MZ28 无屏应用**：[使用说明](mz28-ai-xiaotai/docs/USER_GUIDE.md)、[开发指南](mz28-ai-xiaotai/docs/GETTING_STARTED_CN.md)、[变更记录](mz28-ai-xiaotai/CHANGELOG.md)。ESP32-C3 / ESP-IDF 5.5.5 / TiRTC 2.5.0，工程独立构建。
+- **Xmini 小屏语音**：[使用说明](xmini-c3-v3-xiaotai/README.md)、[构建与适配](xmini-c3-v3-xiaotai/docs/PORTING.md)、[变更记录](xmini-c3-v3-xiaotai/CHANGELOG.md)。保留 PCMA 8 kHz 语音和本板 SDK/驱动配置。
 - **构建与配置**：[立创 S3 开发指南](lckfb-szpi-esp32s3-tirtc/README.md)、[CoreS3-Lite 开发指南](m5stack-cores3-se-xiaotai/README.md)、[P4 开发指南](waveshare-esp32p4-xiaotai/README.md)。两个 S3 工程使用 ESP-IDF 5.5.4，P4 使用 5.5.5；各工程独立构建。编译 P4 前需按指南下载同版 C6 附件。
 - **架构与代码入口**：[S3 通信与音频链路](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)、[P4 通信与音视频链路](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md)。
 - **排障与使用限制**：[S3 已知问题](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md)、[P4 排障说明](waveshare-esp32p4-xiaotai/docs/TESTING.md)。

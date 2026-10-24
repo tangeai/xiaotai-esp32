@@ -1,6 +1,6 @@
 # 许可证与第三方来源
 
-项目采用 [MIT License](LICENSE)。随附 SDK、唤醒模型、字库和提示音由项目所有者授权提供；第三方版权和 LICENSE/NOTICE 继续有效。
+应用代码采用 [MIT License](LICENSE)。SDK、模型、字体、提示音及供应商组件分别遵循其来源说明，应用 MIT 不替代第三方许可或资源的单独授权。
 
 | 资产 | 当前来源入口 | 保留要求 |
 | --- | --- | --- |
@@ -8,6 +8,7 @@
 | CoreS3-Lite TiRTC SDK 与板级适配 | [本板第三方清单](m5stack-cores3-se-xiaotai/THIRD_PARTY.md) | 保留 TiRTC 原件与 M5Stack MIT 版权、许可声明；本板资源独立保存 |
 | P4 TiRTC SDK | [SDK VERSION](waveshare-esp32p4-xiaotai/components/tirtc_sdk/VERSION.md) | 2.5.0 供应商包；保留随包说明、构建契约和哈希，未本地重编译或 strip |
 | MZ28 TiRTC C3 SDK 与提示音 | [MZ28 来源记录](mz28-ai-xiaotai/docs/SOURCES.md) | 保留 SDK 锁定、TboxAI MIT、音频元数据和 ESP-IDF 许可；esp_audio_codec 的 Modified MIT 仅限 Espressif 产品 |
+| Xmini-C3-V3 SDK、字体与提示音 | [Xmini 来源记录](xmini-c3-v3-xiaotai/THIRD_PARTY.md) | 保留 SDK 项目专用构建身份、Noto OFL、Apache 及 Espressif 许可；23 条提示音获准随本项目分发，不推定为 MIT 重新授权 |
 | Voicute 处理代码 | [S3 来源记录](lckfb-szpi-esp32s3-tirtc/components/starter_voice/vendor/UPSTREAM.md)、[P4 来源记录](waveshare-esp32p4-xiaotai/components/starter_voice/vendor/UPSTREAM.md) | 保留来源和代码中的版权 |
 | 唤醒模型与 head 参数 | [S3 模型](lckfb-szpi-esp32s3-tirtc/components/starter_voice/model/)、[P4 模型](waveshare-esp32p4-xiaotai/components/starter_voice/model/) | 两工程各自保留模型、参数与现有一致性检查 |
 | 字库及补充字形 | 工程生成源码中的 SimHei 来源注释 | 所有者授权针对现有字形产物，不扩大为对原字体文件的授权 |
