@@ -1,5 +1,3 @@
-> 本页为历史资料。当前支持板型、固件和烧录说明以 **[小钛项目主页](https://github.com/tangeai/xiaotai)** 为准。
-
 # 版本与依赖
 
 本页用于核对编译环境、配置和随附资源。首次使用见[开发指南](GETTING_STARTED_CN.md)，本版功能见[版本记录](../CHANGELOG.md)。
@@ -33,7 +31,7 @@ SDK 的版本号相同不代表二进制相同。保留附带库和头文件，�
 | `partitions.csv` | Flash 分区 |
 | `dependencies.lock` | 固定依赖版本的可迁移模板 |
 
-工程不读取 S3 或父目录文件。构建前从[同版 Release](https://github.com/tangeai/xiaotai) 下载 `c6_app.bin`，核对 SHA-256 后放入 `main/assets/`。该镜像是必需的构建输入，仅通过 Release 附件提供。ESP-IDF 安装和构建步骤见[开发指南](GETTING_STARTED_CN.md)。
+工程不读取 S3 或父目录文件。构建前按 [C6 指南](C6_PREPARATION.md#恢复基线)准备 `c6_app.bin`，核对 SHA-256 后放入 `main/assets/`。该镜像是必需的构建输入，不在源码 Git 中。ESP-IDF 安装和构建步骤见[开发指南](GETTING_STARTED_CN.md)。
 
 `main/` 保留启动入口、配置和仍被使用的板级、摄像头、视频呈现及内存策略。启动源文件由 `main/CMakeLists.txt` 指定，板级源文件由 `components/p4_hardware/CMakeLists.txt` 指定。界面与业务统一维护在 `components/starter_*`，不再保留旧 Monitor 的平行实现。
 
