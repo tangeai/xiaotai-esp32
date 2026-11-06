@@ -2,7 +2,7 @@
 
 记录日期：2026-11-03。
 
-整机链接发现 `wifi_manager` 引用的 `eh_host_bus_spi_log_diagnostics` 来自原 WT 工程的本地 Hosted 派生源，并不在发布的 3.0.7 组件中。该缓存文件不属于最初的 4381 文件导入清单，因此本轮单独审查、补录来源，没有用空函数或删掉调用绕过。
+`wifi_manager` 使用的 `eh_host_bus_spi_log_diagnostics` 来自 WT 板型的 Hosted 派生源，原版 3.0.7 组件不提供该实现。构建时通过下述板级适配从固定输入生成。
 
 - 原路径：`wt99p461-s1-xiaotai/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_spi.c`。
 - 固定 3.0.7 输入 SHA-256：`772e8ec27103683c1f077583976c50a3a59d3bf12e7df8ce1b865804dbb54692`。

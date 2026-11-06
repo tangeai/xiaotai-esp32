@@ -2,7 +2,7 @@
 
 这套入口用于开发机通过串口查看设备、导出界面和提交测试动作。它不经过 EP、MQTT 或远程执行通道，不持有第二套业务状态机。
 
-本轮先接入立创实战派 S3。其他五板保留各自已经迁入的原生控制台，不能把这里新增的指令表当成六板都已验证的承诺。
+以下指令表适用于立创实战派 S3 的诊断构建。其他板型保留各自的控制台，命令和能力以实际固件为准。
 
 ## 代码放在哪里
 
@@ -63,12 +63,12 @@ python scripts/build.py lckfb/szpi-esp32s3 --build-options-json '{"development_c
 
 ## 自行抓取与看图
 
-先枚举串口并核对板卡身份。脚本不自动猜端口、不烧录、不清 NVS，也不自动呼叫联系人。下面的端口仅作示例：
+先枚举串口并核对板卡身份。脚本不自动猜端口、不烧录、不清 NVS，也不自动呼叫联系人。将下例的 `COMx` 换为实际串口，日志保存在源码目录外：
 
 ```sh
-python scripts/device_console.py --port COM25 --idf-open --seconds 20 --command AT+VERSION --command AT+UI --output C:/private/s3-state.log
-python scripts/device_console.py --port COM25 --idf-open --seconds 30 --command AT+SCREEN --output C:/private/s3-screen.log
-python scripts/decode_screen.py C:/private/s3-screen.log C:/private/s3-screen.png
+python scripts/device_console.py --port COMx --idf-open --seconds 20 --command AT+VERSION --command AT+UI --output ../s3-state.log
+python scripts/device_console.py --port COMx --idf-open --seconds 30 --command AT+SCREEN --output ../s3-screen.log
+python scripts/decode_screen.py ../s3-screen.log ../s3-screen.png
 ```
 
 脚本依赖 `pyserial`。只有明确传入 `--reset-usb` 或 `--reset-uart` 才调用复位；Windows 打开端口时的控制线行为仍需按板卡核对。`--idf-open` 使用 ESP-IDF monitor 的 DTR/RTS 打开顺序。
