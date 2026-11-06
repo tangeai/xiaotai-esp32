@@ -1,0 +1,2 @@
+# Keep validated sources, SDK headers and assets byte-identical in Git snapshots.
+* -text

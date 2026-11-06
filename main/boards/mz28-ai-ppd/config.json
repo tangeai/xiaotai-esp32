@@ -1,0 +1,24 @@
+{
+  "target": "esp32c3",
+  "builds": [
+    {
+      "name": "xiaotai-mz28-ai-ppd",
+      "sdkconfig_append": [
+        "CONFIG_BOARD_TYPE_MZ28_AI_PPD=y"
+      ],
+      "xiaotai": {
+        "schema": 1,
+        "status": "source-migrated",
+        "source_project": "mz28-ai-xiaotai",
+        "ui": "none",
+        "audio": "vb6824-opus16k",
+        "features": [
+          "wechat_voip"
+        ],
+        "hardware_tested": false,
+        "profile": "mz28"
+      }
+    }
+  ],
+  "type": "mz28-ai-ppd"
+}

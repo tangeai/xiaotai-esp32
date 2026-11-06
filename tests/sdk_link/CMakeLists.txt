@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../components/tirtc_sdk")
+set(COMPONENTS main)
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+idf_build_set_property(DEPENDENCIES_LOCK "${DEPENDENCIES_LOCK}")
+idf_build_set_property(XIAOTAI_BOARD_DIR "${XIAOTAI_BOARD_DIR}")
+project(xiaotai_sdk_link_check)

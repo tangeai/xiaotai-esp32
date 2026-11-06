@@ -1,0 +1,21 @@
+{
+  "phase": "preparation",
+  "preparation_checks_authorized": true,
+  "preparation_complete": false,
+  "current_source_compiled": true,
+  "current_source_host_tests_executed": true,
+  "hardware_tested": false,
+  "hardware_operations_authorized": false,
+  "pending": [
+    "generic-runtime-hardware-ports",
+    "interaction-intent-and-snapshot-adapters",
+    "per-session-media-format-contracts",
+    "new-board-no-business-change-proof"
+  ],
+  "deferred": [
+    "hardware-ui-media-and-memory-validation",
+    "sdk-peer-verification-and-existing-mini-lifecycle-risks",
+    "non-default-feature-trimming",
+    "weak-network-and-long-run-validation"
+  ]
+}

@@ -1,0 +1,3 @@
+# Matches both the SDK producer and the hardware-tested application.
+# IDF 6.0.3 enables this by default in a fresh configuration.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=n

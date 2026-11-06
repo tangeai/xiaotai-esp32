@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "media": {
+    "pcm-host-codecs": {
+      "requires": ["audio.pcm.capture", "audio.pcm.playback", "memory.psram"],
+      "one_of": [], "display": null
+    },
+    "pcm-pcma-mini": {
+      "requires": ["audio.pcm.capture", "audio.pcm.playback"],
+      "one_of": [], "display": null
+    },
+    "uart-opus-pcm": {
+      "requires": ["audio.opus16k20.capture", "audio.pcm.playback"],
+      "one_of": [], "display": null
+    }
+  },
+  "interaction": {
+    "touch-320": {
+      "requires": ["display.rgb565", "input.pointer", "feedback.audio"],
+      "one_of": [], "display": {"kind": "rgb565", "width": 320, "height": 240}
+    },
+    "touch-480": {
+      "requires": ["display.rgb565", "input.pointer", "feedback.audio"],
+      "one_of": [], "display": {"kind": "rgb565", "width": 480, "height": 320}
+    },
+    "door-1024": {
+      "requires": ["display.rgb565", "input.pointer", "feedback.audio"],
+      "one_of": [], "display": {"kind": "rgb565", "width": 1024, "height": 600}
+    },
+    "oled-keys": {
+      "requires": ["display.mono1", "input.key", "feedback.audio"],
+      "one_of": [], "display": {"kind": "mono1", "width": 128, "height": 64}
+    },
+    "headless-key-led-voice": {
+      "requires": ["input.key", "feedback.rgb", "feedback.audio"],
+      "one_of": [], "display": {"kind": "none", "width": 0, "height": 0}
+    }
+  }
+}

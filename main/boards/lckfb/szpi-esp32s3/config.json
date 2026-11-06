@@ -1,0 +1,30 @@
+{
+  "manufacturer": "lckfb",
+  "type": "lckfb-szpi-esp32s3",
+  "target": "esp32s3",
+  "builds": [
+    {
+      "name": "xiaotai-szpi-s3",
+      "sdkconfig_append": [
+        "CONFIG_BOARD_TYPE_LICHUANG_DEV_S3=y"
+      ],
+      "xiaotai": {
+        "schema": 1,
+        "status": "migrating",
+        "source_project": "lckfb-szpi-esp32s3-tirtc",
+        "ui": "lcd320",
+        "audio": "opus16k",
+        "features": [
+          "ai",
+          "device_call",
+          "wechat_voip",
+          "room",
+          "h5_stream",
+          "h5_video",
+          "ai_vision"
+        ],
+        "hardware_tested": false
+      }
+    }
+  ]
+}

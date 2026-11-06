@@ -1,0 +1,39 @@
+dependencies:
+  espressif/dl_fft:
+    version: ==0.7.0
+  espressif/eppp_link:
+    version: ==1.1.6
+  espressif/esp_hosted:
+    version: ==3.0.7
+  espressif/esp_jpeg:
+    version: ^1.3.1
+  espressif/esp_lcd_st7796:
+    version: ^1
+  espressif/esp_lcd_touch_ft5x06:
+    version: ^1
+  espressif/esp_lvgl_port:
+    version: ==2.9.0
+    public: true
+  espressif/esp-sr:
+    version: ==2.5.4
+  espressif/esp-nn:
+    version: ==1.4.1
+  espressif/esp-dl:
+    version: ==3.3.12
+  espressif/esp_h264:
+    version: ==1.4.1
+  espressif/esp_video:
+    version: ==2.5.0
+  espressif/esp_wifi_remote:
+    version: ==1.6.5
+  espressif/quirc:
+    version: ^1.2.0
+  esp_codec_dev:
+    version: ==1.6.2
+    public: true
+  lvgl/lvgl:
+    version: ==9.5.0
+    public: true
+  idf: ==6.0.2
+  espressif/cjson: ==1.7.19
+  espressif/mqtt: ==1.0.0

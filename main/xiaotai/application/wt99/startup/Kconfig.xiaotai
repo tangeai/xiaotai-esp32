@@ -1,0 +1,60 @@
+menu "XiaoTai application"
+config XIAOTAI_DISCOVERY_URL
+    string "ThingConnect service discovery URL"
+    default "https://ep-open.tangeopen.com/services"
+    help
+        The response must use HTTPS for HTTP services, MQTTS for MQTT and include
+        tirtc-srv. TiRTC consumes the discovered endpoint instead of a second
+        compile-time address. Override only with an equivalent TLS deployment.
+config XIAOTAI_TIRTC_HTTP
+    bool "Use HTTP for the TiRTC Mini SDK endpoint"
+    default y
+    help
+        The pinned Mini SDK is built without SSL. Use HTTP for its discovered
+        tirtc-srv endpoint, preserving the host and path. Service discovery,
+        device, AI, call and VoIP APIs remain HTTPS; MQTT remains MQTTS.
+        TiRTC authentication/signaling on this HTTP leg is not TLS protected.
+config XIAOTAI_DEVELOPMENT_CONSOLE
+    bool "Enable local development command console"
+    default n
+    help
+        Development only: enables serial commands that can alter credentials
+        and inject session actions. Product builds keep logs and BOOT wake,
+        but do not create this command task.
+config XIAOTAI_PORTAL_URL
+    string "Device binding portal URL (display only)"
+    default "https://xiaotai.chat/"
+config XIAOTAI_FALLBACK_DNS_IPV4
+    string "Fallback IPv4 DNS server (empty disables)"
+    default "223.5.5.5"
+    help
+        Fill only an empty fallback DNS slot after STA obtains an IP address.
+        Keep DHCP main/backup DNS unchanged. The resolver can use this server
+        when DHCP supplies no DNS, or after its preferred servers fail.
+        Private networks can specify their resolver or disable this policy.
+config XIAOTAI_CAPTURE_AGC
+    bool "Adaptive uplink gain after AEC"
+    default y
+    help
+        ESP-SR WebRTC digital AGC with limiter. Does not modify the AEC
+        reference or codec gain. Adds a fixed 10 ms streaming delay.
+config XIAOTAI_WAKE_CAPTURE_AGC
+    bool "Use post-AEC adaptive gain for wake input"
+    depends on XIAOTAI_CAPTURE_AGC
+    default y
+    help
+        Share the existing 16 kHz AGC output before uplink downsampling.
+        No second AGC, added task or audio buffer. Preserve the model and
+        threshold and account for the 10 ms AGC delay in wake timestamps.
+config XIAOTAI_CAPTURE_AGC_GAIN_DB
+    int "Uplink AGC compression gain (dB)"
+    range 0 18 if IDF_TARGET_ESP32S3
+    range 0 12
+    default 15 if IDF_TARGET_ESP32S3
+    default 9
+    help
+        WebRTC compression gain, not a fixed volume multiplier. The target is
+        -6 dBFS. The S3 default adds 6 dB of gain allowance compared with 9 dB;
+        the limiter still protects loud input. More gain also amplifies residual
+        echo and noise. The P4 default is unchanged.
+endmenu

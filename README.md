@@ -1,180 +1,67 @@
-<div align="center">
+# 小钛
 
-# 小钛 ESP32
+面向 ESP32 设备的 TiRTC 语音、通话和实时音视频工程。设备平台、会话、媒体和板级硬件分别维护，通过产品配置组合固件。
 
-**简体中文** | [English](README.en.md)
+## 选哪个分支
 
-**ESP32 实时音视频与 AI 对讲**
+| 路线 | 适合谁 | 从哪里开始 |
+| --- | --- | --- |
+| 现有板型工程（`main`） | 按既有板型体验、维护独立工程 | [ESP32 现有工程与使用引导](https://github.com/tangeai/xiaotai-esp32/tree/main) |
+| 多芯片适配（`codex/multi-chip-v2`） | 在统一源码中维护多款板卡，或接入新板 | [选板、构建与适配](docs/MULTI_CHIP.md) |
 
-[![MIT License](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](LICENSE)
-[![ESP32-S3](https://img.shields.io/badge/ESP32-S3-E7352C?style=flat-square&logo=espressif&logoColor=white)](lckfb-szpi-esp32s3-tirtc/README.md)
-[![ESP32-P4](https://img.shields.io/badge/ESP32-P4-E7352C?style=flat-square&logo=espressif&logoColor=white)](waveshare-esp32p4-xiaotai/README.md)
-[![ESP32-C3](https://img.shields.io/badge/ESP32-C3-E7352C?style=flat-square&logo=espressif&logoColor=white)](mz28-ai-xiaotai/README.md)
-[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.5.4%20%7C%205.5.5-0969DA?style=flat-square)](#开发资料)
-[![GitHub Stars](https://img.shields.io/github/stars/tangeai/xiaotai-esp32?style=flat-square&label=Stars&color=B8860B)](https://github.com/tangeai/xiaotai-esp32)
-[![GitHub Issues](https://img.shields.io/github/issues/tangeai/xiaotai-esp32?style=flat-square&label=Issues&color=0969DA)](https://github.com/tangeai/xiaotai-esp32/issues)
+本分支只做多芯片适配及必要的公共接口、配置和回归验证。每块板分别选配置、编译和验收；固件不跨板通刷。
 
-[![TiRTC SDK](https://img.shields.io/badge/TiRTC-SDK-0969DA?style=flat-square)](lckfb-szpi-esp32s3-tirtc/third_party/tirtc/README.md)
-[![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=flat-square&logo=webrtc&logoColor=white)](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)
-[![LVGL](https://img.shields.io/badge/UI-LVGL-008FBE?style=flat-square)](lckfb-szpi-esp32s3-tirtc/dependencies.lock)
-[![ESP-SR](https://img.shields.io/badge/Audio-ESP--SR-E7352C?style=flat-square&logo=espressif&logoColor=white)](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md#音频经过哪些节点)
-[![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)](lckfb-szpi-esp32s3-tirtc/components/platform_client/src/platform_client.c)
-[![WeChat VoIP](https://img.shields.io/badge/WeChat-VoIP-07C160?style=flat-square&logo=wechat&logoColor=white)](#微信呼叫)
+**多芯片源码预览，基于 V0.1.0 开发基线。** 六个默认产品已纳入统一源码和独立构建入口。立创 S3 接入 TiRTC 2.6.0 / IDF 6.0.3 的 PSRAM 兼容 SDK；其他五板保留原 SDK 和 IDF 6.0.2 环境。各板仍保留原有业务、媒体和交互，部分运行代码与原板绑定，尚未达到“新板只适配硬件”的通用化验收条件。
 
-[选板与准备固件](#下载固件) · [立创 S3 变更](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md) · [CoreS3-Lite 变更](m5stack-cores3-se-xiaotai/CHANGELOG.md) · [P4 变更](waveshare-esp32p4-xiaotai/CHANGELOG.md) · [在线烧录](https://espressif.github.io/esptool-js/) · [体验平台](https://xiaotai.chat/) · [服务端与小程序](https://github.com/tangeai/tirtc-server-example)
+此前立创 S3 的隔离试验包已有启动、联网和部分 AI 媒体证据，本版源码与固件的验证范围分别记录在 [V0.1.0 说明](docs/releases/v0.1.0.md)。尚未完成六板全功能真机验收，不作为生产稳定版承诺。
 
-</div>
+## 结构
 
-小钛通过 TiRTC/WebRTC 提供实时查看、微信呼叫、设备互呼、多人对讲和 AI 对讲功能。准备好对应板型的固件后，按以下步骤完成烧录、配网和绑定即可体验。
-
-各板型的功能见下表。无屏 MZ28 专注微信双向语音，通过语音播报码、BOOT 按键和 RGB 灯操作；不使用下文的屏幕菜单、H5 查看或 AI 功能。
-
-Xmini-C3-V3 使用 OLED 和 BOOT 单键，保留 AI、微信、设备互呼、网页语音与多人对讲，均为语音业务，不提供视频或语音唤醒。
-
-**准备固件 → USB 烧录 → Wi-Fi 配网 → 网站绑定 → 开始体验**
-
-<a id="下载固件"></a>
-
-## 步骤 1：选板与准备固件
-
-准备一块开发板、一根 USB 数据线、一台电脑和可上网的 **2.4 GHz Wi-Fi**。平台注册需要邮箱。
-
-> 本仓库的旧固件附件已下架。已有与板型匹配且校验通过的完整 BIN，可继续[网页烧录](#用浏览器烧录)；没有固件时，请先看对应工程的构建说明。源码 ZIP 和单独的 APP BIN 不能当完整烧录包使用。
-
-| 开发板 | 设备实拍 | 使用与构建 | 功能 |
-| --- | --- | --- | --- |
-| 立创·实战派 ESP32-S3 V1.0.1/N16R8 | <img src="docs/images/boards/lckfb-s3-device-front.webp" alt="立创 ESP32-S3 设备正面" width="160"> | [立创 S3 指南](lckfb-szpi-esp32s3-tirtc/README.md) | 语音通话、AI 对讲、H5 摄像头查看 |
-| M5Stack CoreS3-Lite | <img src="docs/images/boards/m5stack-s3-device-front.webp" alt="M5Stack S3 设备正面" width="120"> | [CoreS3-Lite 指南](m5stack-cores3-se-xiaotai/README.md) | 语音通话、AI 对讲、H5 摄像头查看与双向语音 |
-| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | <img src="docs/images/boards/waveshare-p4-device-front.webp" alt="微雪 ESP32-P4 设备正面" width="160"> | [P4 指南](waveshare-esp32p4-xiaotai/README.md) | 音视频通话、实时画面、AI 对讲 |
-| MZ28-AI-PPD V1.2（ESP32-C3，无屏） | — | [MZ28 指南](mz28-ai-xiaotai/README.md) | 微信双向语音、语音绑定码、BOOT 操作与七颗 RGB 灯 |
-| Xmini-C3-V3（ESP32-C3，OLED） | <img src="docs/images/boards/xmini-c3-device-front.webp" alt="Xmini-C3 设备正面" width="100"> | [Xmini 指南](xmini-c3-v3-xiaotai/README.md) | AI、微信、设备互呼、网页语音与多人对讲 |
-
-照片用于对照外观，烧录前请以实物型号和芯片修订为准。
-
-芯片要求：**S3 rev 0.0–0.99；ESP32-P4 rev3.2 及以上**。按板型选择固件，立创 S3 和 CoreS3-Lite 的固件不能互换；烧录工具提示不兼容时，请停止，不要跳过校验。
-
-MZ28 使用 **8 MB Flash、C3 rev 0.3–1.99**，不能刷入 S3/P4 的 16 MB 包。按 [MZ28 使用说明](mz28-ai-xiaotai/docs/USER_GUIDE.md)完成配网、语音验证码绑定和微信通话授权。
-
-Xmini-C3-V3 使用 **16 MB Flash、C3 rev 0.3–1.99**，与 MZ28 固件不能互换。详见 [Xmini 烧录说明](xmini-c3-v3-xiaotai/docs/FLASHING.md)。
-
-**P4 使用包含配套 C6 镜像的完整包时，只需连接 P4 的 USB 烧录口。** 首次启动会检查并按兼容范围更新 C6，请保持供电直到进入配网或主页。出现恢复提示时按 [C6 指南](waveshare-esp32p4-xiaotai/docs/C6_PREPARATION.md)处理，不反复擦除或强刷。
-
-<details>
-<summary>校验下载文件与查看构建记录</summary>
-
-S3/P4/Xmini 完整 BIN 为 **16,777,216 字节**，MZ28 为 **8,388,608 字节**。在下载目录打开 PowerShell，核对大小和 SHA-256：
-
-```powershell
-Get-Item ./*-full-*.bin | Select-Object Name, Length
-Get-FileHash ./*-full-*.bin -Algorithm SHA256
+```text
+main/main.cc                     固件入口
+main/boards/                     板型选择、物理资源与 C 兼容桥
+main/xiaotai/application/        C++ 启动编排、C 启动服务与会话状态机
+main/xiaotai/services/           设备平台、绑定、鉴权与业务请求
+main/xiaotai/transport/          TiRTC 生命周期、连接代次与回调边界
+main/xiaotai/platform/           NVS、配置、Wi-Fi 与配网
+main/xiaotai/input/              按键与控制台输入
+main/xiaotai/media/              采集、编码、播放、摄像头与唤醒
+main/xiaotai/ui/                 各屏幕的现有交互与资源
+components/tirtc_sdk/            分芯片 SDK、产品专用变体及 ABI 契约
+components/xiaotai_lvgl/         LVGL 9 图像绘制任务适配
+components/xiaotai_crypto/       IDF 6 PSA HMAC
+vendor/                         保留来源和许可的板型专用依赖
+config/                         公共配置与当前开发阶段
+tests/                          主机回归、静态约束及 SDK 全符号链接检查
 ```
 
-结果须与同一发布页的 `SHA256SUMS.txt` 一致。Linux 可运行 `sha256sum -c SHA256SUMS.txt`，macOS 可运行 `shasum -a 256 -c SHA256SUMS.txt`；先下载清单列出的全部文件。
+按职责混合 C/C++：C++ 管理应用编排和板级抽象，成熟的 C 状态机、驱动、算法和 SDK 接口保持行为。不会为了语言统一而重写媒体时序或协议。
 
-`release-manifest.json` 记录对应源码、SDK、构建配置、固件哈希及验证范围。构建和文件校验不等于目标板音视频或长稳验收；历史固件的板型与使用说明以其附件为准。
+## 当前入口
 
-</details>
+以下命令只查看配置，不编译、不访问设备：
 
-<a id="用浏览器烧录"></a>
+```sh
+python scripts/build.py --list-boards
+python scripts/build.py lckfb/szpi-esp32s3 --dry-run
+python scripts/build.py xmini/c3-v3 --stage sdk-check --dry-run
+python scripts/check_structure.py
+```
 
-## 步骤 2：用浏览器烧录
+先查看 `--dry-run` 输出中的 `idf_environment` 和 `sdk_directory`，激活匹配的固定环境后，使用 `python scripts/build.py <board>` 构建。每板配置和产物独立，新构建从 `profiles/dependency-locks/` 装入该产品的依赖锁，已有构建的锁不会被覆盖；共享依赖缓存仍串行使用。该入口不烧录或发布。
 
-> 烧录完整 BIN 会清除设备中的配网信息、绑定信息和用户设置，请先备份。
+功能选项目前只接受对应板型的保留默认集，尚不能任意裁剪。五个后续板的业务按 profile 隔离保留，尚未全部合并为一份通用状态机。
 
-1. 用短 USB 数据线直连电脑，关闭占用串口的软件。**P4 接主芯片烧录口；板载 C6 负责无线通信，不刷本包。**
-2. 在电脑的 **Chrome/Edge** 中打开[乐鑫在线烧录工具](https://espressif.github.io/esptool-js/)，在 **Program** 区域保留 Baudrate `921600`，点击 **Connect**，选择开发板串口。**Console** 用于查看串口日志，烧录时无需点击 **Start**。
+构建前检查 `capabilities.json`、媒体/交互需求和产品契约，缺失端口或不匹配时明确失败。无屏是完整的按键/灯/声音交互组合。契约匹配不代表运行时可移植；现有源图仍标记 `native-bound`，禁止改板名就套用旧硬件实现。
 
-   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-connect.png" alt="在 Program 区域点击 Connect，不使用 Console 的 Start" width="760">
+## 文档
 
-   图中 `No port selected` 表示取消了串口选择，重新点击 **Connect** 即可。
+- [架构开发指南](docs/架构开发指南.md)：加功能、做适配、选配置与编译，包含流程配图。
+- [V0.1.0 说明](docs/releases/v0.1.0.md)：版本范围、环境、验证记录与已知问题。
+- [本地诊断与 AT 指令](docs/本地诊断与AT指令.md)：维护入口及独立诊断构建。
+- [架构与重构审查](docs/架构与重构审查.md)：本轮发现、职责、六板功能对照和进入调试的条件。
+- [新板适配与兼容性契约](docs/新板适配与兼容性契约.md)：分层接口、无屏/多输入、媒体格式、兼容矩阵及尚待完成的运行时解耦。
+- [验证状态](docs/VALIDATION.md)：本轮构建、主机证据与当前未验证范围。
+- [来源与第三方许可](THIRD_PARTY.md)：必要的来源、版权和资源授权说明。
 
-   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-port.png" alt="选择开发板对应的串口，再点击连接" width="480">
-
-   图示为 S3，串口号以实际设备为准，不必与图中的 `COM42` 一致。
-
-3. 点击 **Add File**，只添加一个对应板型的完整 BIN（MZ28 为 `full-8MB.bin`，其余为 `full-16MB.bin`），**Flash Address 填 `0x0`**（图中的 `0` 与 `0x0` 相同）；Flash Mode、Flash Frequency、Flash Size 均选 **`keep`**，无需另点 **Erase Flash**。
-
-   <img src="lckfb-szpi-esp32s3-tirtc/docs/images/browser-flash-program.png" alt="选择完整 16 MB BIN，地址为 0，三项 Flash 参数选 keep，再点击 Program" width="760">
-
-4. 点击 **Program**，等待写入完成且无报错，再点击 **Disconnect**，按开发板的 **RESET/RST** 键重启。
-
-- **串口选哪个？** 拔插开发板，对比列表中消失或新增的一项；名称可能为 `USB JTAG/serial debug unit`、`USB Serial` 或 `COM…`，不要选蓝牙串口。
-- **连接失败？** 确认使用数据线。立创 S3/P4/MZ28/Xmini 按住 **BOOT**，按下并松开 **RESET**，再松开 BOOT；**CoreS3-Lite 长按 RST 约 3 秒，看到绿色指示灯亮后松开**，再选择下载模式串口。详见 [M5Stack 下载模式说明](https://docs.m5stack.com/en/core/CoreS3-Lite#download-mode)。
-- **出现 `Serial data stream stopped`？** 先换短数据线、避开 Hub/延长线；仍失败时，断开连接，将 **Program → Baudrate** 降到 `115200` 后重连重试。
-
-## 步骤 3：连接 Wi-Fi
-
-**MZ28 无屏：**按语音提示连接 `XiaoTai-XXXX`，打开 `http://192.168.6.1` 选择 2.4 GHz 网络并输入密码；联网后会循环播报六位绑定码。四连击 BOOT 可重新配网。以下屏幕操作用于带屏板型。
-
-1. 按设备屏幕提示使用热点配网，在手机上填写 Wi-Fi 信息。
-2. 用手机连接屏幕显示的 `XiaoTai-XXXX` 开放热点，访问 `http://192.168.6.1`。
-3. 在列表中选择 **2.4 GHz Wi-Fi**，输入密码并提交；已保存的网络可直接复用密码，隐藏网络可手动添加。设备联网并完成校时后，屏幕会显示 **6 位绑定码**。
-
-配网完成后，将手机或电脑切回可上网的网络，再访问体验平台。
-
-## 步骤 4：在网站绑定设备
-
-1. 打开[小钛体验平台](https://xiaotai.chat/)，注册并登录账号。
-2. 进入[我的设备](https://xiaotai.chat/devices)，点击 **添加设备 → 验证码绑定**。
-3. 输入设备屏幕显示或 MZ28 语音播报的 **6 位绑定码**，点击 **绑定设备**。
-4. 返回设备列表，确认设备显示“在线”。绑定码过期时，按设备提示重新获取。
-
-## 步骤 5：开始体验
-
-**Xmini-C3-V3：**单击 BOOT 选择、双击确认、长按约 1.2 秒返回或结束会话。AI 从菜单进入，不使用下方的触屏或语音唤醒方式；微信、设备互呼、实时语音及群聊的入口见 [Xmini 使用说明](xmini-c3-v3-xiaotai/README.md)。
-
-实时查看、微信呼叫和 AI 对讲只需一台设备；设备互呼需要两台。切换功能前，请先退出实时查看或结束当前通话。
-
-### 实时查看
-
-1. 在网站设备列表中，点击目标设备的 **实时**。
-2. 点击声音按钮，收听设备端声音。立创 S3/P4 接入对应摄像头后可查看实时画面；立创 S3 使用 GC2145，CoreS3-Lite 使用板载 GC0308，两者默认 240×176、目标 12 fps，同时支持双向语音。
-3. 允许浏览器使用麦克风，点击并按住 **按住说话**，向设备端发送语音。
-
-### 微信呼叫
-
-**MZ28：**在正式版“小钛”微信小程序中授权通话。在线待机时单击 BOOT 呼叫第一位联系人，来电时单击接听；双击拒接或挂断。完整操作见 [MZ28 使用说明](mz28-ai-xiaotai/docs/USER_GUIDE.md)。以下是带屏工程的操作。
-
-1. 点击设备上的 **微信电话**。没有微信联系人时，屏幕会显示小程序二维码。
-2. 用微信扫码，按小程序提示授权设备发起语音/视频通话。
-3. 在设备通讯录中同步联系人，选择已授权的微信联系人发起呼叫，在手机上接听。
-
-已有微信联系人时，点击 **微信电话**会直接呼叫列表中的第一个微信联系人。S3 支持语音通话，P4 支持音视频通话。
-
-### 设备互呼
-
-1. 按步骤 1–4 配置第二台设备。绑定到同一账号的设备会自动互为联系人。
-2. 在设备通讯录中同步联系人。若两台设备属于不同账号，需先在网站的 **联系人** 页面添加对方，并由对方确认。
-3. 选择对方设备发起呼叫，在另一台设备上接听。两端均支持视频时，可选择视频呼叫。
-
-### 多人对讲
-
-1. 准备两台或更多已绑定、在线的设备，在“三点菜单 → 多人对讲”中创建房间。
-2. 其他设备输入同一个六位房间号加入；设有密码时填写对应的四位密码。
-3. 等待房间连接后，按住讲话，松开收听。返回菜单会断开对讲并保留房间关系；“退出房间”才会解除关系。
-
-多人对讲需要平台提供房间服务，使用语音。详细操作见 [立创 S3 指南](lckfb-szpi-esp32s3-tirtc/docs/GETTING_STARTED_CN.md#多人对讲)、[CoreS3-Lite 指南](m5stack-cores3-se-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)、[P4 指南](waveshare-esp32p4-xiaotai/docs/GETTING_STARTED_CN.md#多人对讲)及 [Xmini 说明](xmini-c3-v3-xiaotai/README.md#一个按键怎么用)。
-
-### AI 对讲
-
-1. 结束当前通话，回到设备首页。
-2. **点击首页表情**，或对设备说 **“你好小钛”**。
-3. 设备响应后即可对话，例如“介绍一下你自己”。
-
-## 开发资料
-
-- **版本改动**：[立创 S3 变更记录](lckfb-szpi-esp32s3-tirtc/CHANGELOG.md)、[CoreS3-Lite 变更记录](m5stack-cores3-se-xiaotai/CHANGELOG.md)、[P4 变更记录](waveshare-esp32p4-xiaotai/CHANGELOG.md)，分别查看各版本的功能、修正与依赖变化。
-- **MZ28 无屏应用**：[使用说明](mz28-ai-xiaotai/docs/USER_GUIDE.md)、[开发指南](mz28-ai-xiaotai/docs/GETTING_STARTED_CN.md)、[变更记录](mz28-ai-xiaotai/CHANGELOG.md)。ESP32-C3 / ESP-IDF 5.5.5 / TiRTC 2.5.0，工程独立构建。
-- **Xmini 小屏语音**：[使用说明](xmini-c3-v3-xiaotai/README.md)、[构建与适配](xmini-c3-v3-xiaotai/docs/PORTING.md)、[变更记录](xmini-c3-v3-xiaotai/CHANGELOG.md)。保留 PCMA 8 kHz 语音和本板 SDK/驱动配置。
-- **构建与配置**：[立创 S3 开发指南](lckfb-szpi-esp32s3-tirtc/README.md)、[CoreS3-Lite 开发指南](m5stack-cores3-se-xiaotai/README.md)、[P4 开发指南](waveshare-esp32p4-xiaotai/README.md)。两个 S3 工程使用 ESP-IDF 5.5.4，P4 使用 5.5.5；各工程独立构建。编译 P4 前需按指南准备同版 C6 镜像。
-- **架构与代码入口**：[S3 通信与音频链路](lckfb-szpi-esp32s3-tirtc/ARCHITECTURE.md)、[P4 通信与音视频链路](waveshare-esp32p4-xiaotai/docs/P4_MEDIA_ARCHITECTURE.md)。
-- **排障与使用限制**：[S3 已知问题](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md)、[P4 排障说明](waveshare-esp32p4-xiaotai/docs/TESTING.md)。
-- **服务端、Web 与微信小程序**：[tirtc-server-example](https://github.com/tangeai/tirtc-server-example)。自建服务请参阅[部署指南](https://github.com/tangeai/tirtc-server-example/blob/main/thing-connect/deployment.md)。
-
-体验固件仅用于受控网络，不使用生产凭据。生产接入前请核对 [S3 网络与凭据限制](lckfb-szpi-esp32s3-tirtc/KNOWN_LIMITATIONS.md#网络与凭据)及 [P4 服务配置](waveshare-esp32p4-xiaotai/docs/GETTING_STARTED_CN.md#配置服务)，分别处理 SDK、API 与 MQTT 的传输认证。
-
-## 反馈与许可
-
-[提交 Issue](https://github.com/tangeai/xiaotai-esp32/issues)时，请提供板型、固件版本、复现步骤及相关日志，并删除日志中的密码和密钥。
-
-项目采用 [MIT License](LICENSE)，第三方 SDK 与资源遵循[各自许可](THIRD_PARTY.md)。
+彩屏依赖 LVGL 9.5.0。立创 S3 专用 SDK 的 HTTP-only 能力只作用于 TiRTC SDK 路径，不改变其他服务的 TLS 配置。SDK 和整机的生产验收仍未完成。本分支提供源码预览，不提供可直接烧录的固件包。

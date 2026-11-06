@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "cores3",
+  "target": "esp32s3",
+  "application": "main/xiaotai/application/cores3/startup",
+  "entry": "app_main.c",
+  "components": {
+    "nvs_worker": "main/xiaotai/platform/cores3/nvs_worker",
+    "platform_client": "main/xiaotai/services/cores3/platform_client",
+    "runtime_config": "main/xiaotai/platform/cores3/runtime_config",
+    "starter_board": "main/boards/m5stack/core-s3/drivers/starter_board",
+    "starter_button": "main/xiaotai/input/cores3/starter_button",
+    "starter_console": "main/xiaotai/input/cores3/starter_console",
+    "starter_log": "main/xiaotai/diagnostics/cores3/starter_log",
+    "starter_media": "main/xiaotai/media/cores3/starter_media",
+    "starter_product": "main/xiaotai/ui/cores3/starter_product",
+    "starter_runtime": "main/xiaotai/application/cores3/starter_runtime",
+    "starter_tirtc": "main/xiaotai/transport/cores3/starter_tirtc",
+    "starter_voice": "main/xiaotai/media/cores3/starter_voice",
+    "wifi_manager": "main/xiaotai/platform/cores3/wifi_manager"
+  },
+  "source_project": "m5stack-cores3-se-xiaotai",
+  "source_only": true
+}

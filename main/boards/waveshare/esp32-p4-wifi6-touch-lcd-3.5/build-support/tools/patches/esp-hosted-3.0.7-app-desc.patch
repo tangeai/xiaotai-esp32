@@ -1,0 +1,216 @@
+diff --git a/host/features/eh_host_feat_rpc_ext_v2/include/eh_host_feat_rpc_ext_v2_types.h b/host/features/eh_host_feat_rpc_ext_v2/include/eh_host_feat_rpc_ext_v2_types.h
+index 1223a93..767ac24 100644
+--- a/host/features/eh_host_feat_rpc_ext_v2/include/eh_host_feat_rpc_ext_v2_types.h
++++ b/host/features/eh_host_feat_rpc_ext_v2/include/eh_host_feat_rpc_ext_v2_types.h
+@@ -316,6 +316,19 @@ typedef struct {
+     uint8_t  idf_target[EH_RPC_IDF_TARGET_LEN];  /* CONFIG_IDF_TARGET */
+ } eh_rpc_fw_version_t;
+ 
++/* Actual CP application descriptor returned by Req_AppGetDesc.  Hosted
++ * protocol version is a different identity and must not substitute for it. */
++typedef struct {
++    uint32_t magic_word;
++    uint32_t secure_version;
++    char version[32];
++    char project_name[32];
++    char time[16];
++    char date[16];
++    char idf_ver[32];
++    uint8_t app_elf_sha256[32];
++} eh_rpc_app_desc_t;
++
+ /* GPIO payloads mirror RpcGpioConfig field-by-field. drive_cap is
+  * forward-compat (no wire support yet). */
+ typedef struct {
+@@ -553,6 +566,7 @@ typedef struct eh_rpc_ctrl_cmd_s {
+         eh_rpc_country_code_t      country_code;
+         eh_rpc_wifi_country_full_t wifi_country;
+         eh_rpc_fw_version_t        fw_version;
++        eh_rpc_app_desc_t          app_desc;
+         eh_rpc_wifi_protocols_t    wifi_protocols;
+         eh_rpc_wifi_bandwidths_t   wifi_bandwidths;
+         eh_rpc_wifi_twt_config_t   wifi_twt_config;
+diff --git a/host/features/eh_host_feat_system/include/eh_host_feat_system_v2_req_ids.inc b/host/features/eh_host_feat_system/include/eh_host_feat_system_v2_req_ids.inc
+index 5548788..08b1e80 100644
+--- a/host/features/eh_host_feat_system/include/eh_host_feat_system_v2_req_ids.inc
++++ b/host/features/eh_host_feat_system/include/eh_host_feat_system_v2_req_ids.inc
+@@ -3,5 +3,6 @@ case RPC_ID__Req_GetMACAddress:
+ case RPC_ID__Req_SetMacAddress:
+ case RPC_ID__Req_IfaceMacAddrSetGet:
+ case RPC_ID__Req_GetCoprocessorFwVersion:
++case RPC_ID__Req_AppGetDesc:
+     return rpc_ext_v2_pick_req_system(msg_id);
+ #endif
+diff --git a/host/features/eh_host_feat_system/include/eh_host_feat_system_v2_resp_ids.inc b/host/features/eh_host_feat_system/include/eh_host_feat_system_v2_resp_ids.inc
+index 412ce90..6c7bbf5 100644
+--- a/host/features/eh_host_feat_system/include/eh_host_feat_system_v2_resp_ids.inc
++++ b/host/features/eh_host_feat_system/include/eh_host_feat_system_v2_resp_ids.inc
+@@ -3,5 +3,6 @@ case RPC_ID__Resp_GetMACAddress:
+ case RPC_ID__Resp_SetMacAddress:
+ case RPC_ID__Resp_IfaceMacAddrSetGet:
+ case RPC_ID__Resp_GetCoprocessorFwVersion:
++case RPC_ID__Resp_AppGetDesc:
+     return rpc_ext_v2_parse_resp_system(rpc, c);
+ #endif
+diff --git a/host/features/eh_host_feat_system/src/eh_host_feat_system_v2_req.c b/host/features/eh_host_feat_system/src/eh_host_feat_system_v2_req.c
+index 1e09003..a42d6bc 100644
+--- a/host/features/eh_host_feat_system/src/eh_host_feat_system_v2_req.c
++++ b/host/features/eh_host_feat_system/src/eh_host_feat_system_v2_req.c
+@@ -49,6 +49,16 @@ static int compose_req_get_fw_version(Rpc *rpc, const eh_rpc_ctrl_cmd_t *c,
+     return 0;
+ }
+ 
++static int compose_req_get_app_desc(Rpc *rpc, const eh_rpc_ctrl_cmd_t *c,
++                                    alloc_track_t *trk)
++{
++    (void)c;
++    ALLOC_PAYLOAD(RpcReqAppGetDesc, req_app_get_desc,
++                  rpc__req__app_get_desc__init);
++    (void)p;
++    return 0;
++}
++
+ compose_fn rpc_ext_v2_pick_req_system(int32_t msg_id)
+ {
+     switch (msg_id) {
+@@ -56,6 +66,7 @@ compose_fn rpc_ext_v2_pick_req_system(int32_t msg_id)
+     case RPC_ID__Req_SetMacAddress:           return compose_req_set_mac;
+     case RPC_ID__Req_IfaceMacAddrSetGet:      return compose_req_iface_mac_addr;
+     case RPC_ID__Req_GetCoprocessorFwVersion: return compose_req_get_fw_version;
++    case RPC_ID__Req_AppGetDesc:              return compose_req_get_app_desc;
+     default:                                  return NULL;
+     }
+ }
+diff --git a/host/features/eh_host_feat_system/src/eh_host_feat_system_v2_resp_evt.c b/host/features/eh_host_feat_system/src/eh_host_feat_system_v2_resp_evt.c
+index 7f6c15c..51050be 100644
+--- a/host/features/eh_host_feat_system/src/eh_host_feat_system_v2_resp_evt.c
++++ b/host/features/eh_host_feat_system/src/eh_host_feat_system_v2_resp_evt.c
+@@ -7,6 +7,15 @@
+ 
+ #if EH_HOST_FEAT_SYSTEM_READY
+ 
++static void copy_desc_text(char *dst, size_t capacity,
++                           const ProtobufCBinaryData *src)
++{
++    if (capacity == 0 || !src || !src->data) return;
++    size_t n = src->len < capacity - 1 ? src->len : capacity - 1;
++    memcpy(dst, src->data, n);
++    dst[n] = '\0';
++}
++
+ int rpc_ext_v2_parse_resp_system(const Rpc *rpc, eh_rpc_ctrl_cmd_t *c)
+ {
+     switch (rpc->msg_id) {
+@@ -55,6 +64,27 @@ int rpc_ext_v2_parse_resp_system(const Rpc *rpc, eh_rpc_ctrl_cmd_t *c)
+         return 0;
+     }
+ 
++    case RPC_ID__Resp_AppGetDesc: {
++        RpcRespAppGetDesc *r = rpc->resp_app_get_desc;
++        if (!r) return -1;
++        c->resp_event_status = r->resp;
++        if (r->resp != 0 || !r->app_desc) return 0;
++        EspAppDesc *desc = r->app_desc;
++        eh_rpc_app_desc_t *out = &c->u.app_desc;
++        out->magic_word = desc->magic_word;
++        out->secure_version = desc->secure_version;
++        copy_desc_text(out->version, sizeof(out->version), &desc->version);
++        copy_desc_text(out->project_name, sizeof(out->project_name), &desc->project_name);
++        copy_desc_text(out->time, sizeof(out->time), &desc->time);
++        copy_desc_text(out->date, sizeof(out->date), &desc->date);
++        copy_desc_text(out->idf_ver, sizeof(out->idf_ver), &desc->idf_ver);
++        if (desc->app_elf_sha256.len == sizeof(out->app_elf_sha256) &&
++            desc->app_elf_sha256.data)
++            memcpy(out->app_elf_sha256, desc->app_elf_sha256.data,
++                   sizeof(out->app_elf_sha256));
++        return 0;
++    }
++
+     default:
+         return -1;
+     }
+diff --git a/host/features/eh_host_feat_system/src/eh_host_sys.c b/host/features/eh_host_feat_system/src/eh_host_sys.c
+index 435d319..4598261 100644
+--- a/host/features/eh_host_feat_system/src/eh_host_sys.c
++++ b/host/features/eh_host_feat_system/src/eh_host_sys.c
+@@ -209,25 +209,31 @@ esp_err_t eh_host_iface_mac_addr_get(uint8_t *mac, size_t mac_len, esp_mac_type_
+     return ESP_OK;
+ }
+ 
+-/* Reuses Req_GetCoprocessorFwVersion; uncarried fields zero-filled. */
+ esp_err_t eh_host_sys_get_cp_app_desc(esp_hosted_app_desc_t *app_desc)
+ {
+     if (!app_desc) return ESP_ERR_INVALID_ARG;
+     memset(app_desc, 0, sizeof(*app_desc));
+-
+-    eh_host_coprocessor_fwver_t fw = {0};
+-    esp_err_t rc = eh_host_sys_get_cp_fw_version(&fw);
+-    if (rc != ESP_OK) return rc;
+-
+-    app_desc->magic_word = ESP_HOSTED_APP_DESC_MAGIC_WORD;
+-    /* "<major>.<minor>.<patch>" — matches upstream form. */
+-    snprintf(app_desc->version, sizeof(app_desc->version),
+-                   "%u.%u.%u",
+-                   (unsigned)fw.major1,
+-                   (unsigned)fw.minor1,
+-                   (unsigned)fw.patch1);
+-
+-    /* TODO: surface idf_target via eh_host_sys_get_cp_info(). */
++    eh_rpc_ctrl_cmd_t *req = eh_rpc_ctrl_cmd_alloc();
++    if (!req) return ESP_ERR_NO_MEM;
++    eh_rpc_ctrl_cmd_t *r = NULL;
++    if (eh_host_feat_rpc_request_sync(RPC_ID__Req_AppGetDesc,
++                                      req, (void **)&r) != 0)
++        return ESP_FAIL;
++    if (r->resp_event_status != 0) {
++        eh_rpc_ctrl_cmd_free(r);
++        return ESP_ERR_INVALID_RESPONSE;
++    }
++    const eh_rpc_app_desc_t *src = &r->u.app_desc;
++    app_desc->magic_word = src->magic_word;
++    app_desc->secure_version = src->secure_version;
++    memcpy(app_desc->version, src->version, sizeof(src->version));
++    memcpy(app_desc->project_name, src->project_name, sizeof(src->project_name));
++    memcpy(app_desc->time, src->time, sizeof(src->time));
++    memcpy(app_desc->date, src->date, sizeof(src->date));
++    memcpy(app_desc->idf_ver, src->idf_ver, sizeof(src->idf_ver));
++    memcpy(app_desc->app_elf_sha256, src->app_elf_sha256,
++           sizeof(src->app_elf_sha256));
++    eh_rpc_ctrl_cmd_free(r);
+     return ESP_OK;
+ }
+ 
+diff --git a/host/features/eh_host_feat_system/include/eh_host_sys.h b/host/features/eh_host_feat_system/include/eh_host_sys.h
+index 5588787..f31f37b 100644
+--- a/host/features/eh_host_feat_system/include/eh_host_sys.h
++++ b/host/features/eh_host_feat_system/include/eh_host_sys.h
+@@ -31,7 +31,7 @@ esp_err_t eh_host_iface_mac_addr_get(uint8_t *mac, size_t mac_len, esp_mac_type_
+ /* Returns required mac buffer length, or 0 for unknown type. */
+ size_t eh_host_iface_mac_addr_len_get(esp_mac_type_t type);
+ 
+-/* App descriptor; wire carries version + idf_target only. */
++/* Actual CP application descriptor (Req_AppGetDesc). Older CPs may not support it. */
+ #define ESP_HOSTED_APP_DESC_MAGIC_WORD (0xABCD5432)
+ 
+ #ifndef EH_HOST_SYS_APP_DESC_T_DEFINED
+diff --git a/host/features/eh_host_feat_rpc/src/eh_host_feat_rpc_rx.c b/host/features/eh_host_feat_rpc/src/eh_host_feat_rpc_rx.c
+--- a/host/features/eh_host_feat_rpc/src/eh_host_feat_rpc_rx.c
++++ b/host/features/eh_host_feat_rpc/src/eh_host_feat_rpc_rx.c
+@@ -11,5 +11,8 @@ typedef struct {
+     uint8_t *buf;   /* owned: free(buf) after decode (or on drain) */
+     size_t   len;
+ } rx_item_t;
+ 
++/* Nested protobuf replies can exceed the generic Hosted worker stack. */
++#define EH_RPC_RX_TASK_STACK_BYTES 6144
++
+ static eh_host_port_queue_t  *g_rx_q;
+@@ -53,7 +56,7 @@ int eh_rpc_rx_start(void)
+     g_rx_stop_requested = false;
+     eh_host_port_task_create_cfg_t tcfg = {
+         .fn = rx_worker, .arg = NULL,
+-        .stack_bytes = 0, .priority = 0, .name = "eh_rpc_rx",
++        .stack_bytes = EH_RPC_RX_TASK_STACK_BYTES, .priority = 0, .name = "eh_rpc_rx",
+     };
+     if (eh_host_port_task_create(&tcfg, &g_rx_thread) != EH_HOST_PORT_OK) {
+         ESP_LOGD("eh_host_feat_rpc", "rx_start: task_create failed");

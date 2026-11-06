@@ -1,0 +1,4 @@
+version: "1.0.0"
+description: "WT99P461 WOLCD JD9165BA supplier driver, Xiaotai IDF 5.5.5 port"
+dependencies:
+  idf: "==6.0.2"

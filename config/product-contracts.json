@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "products": {
+    "xiaotai-szpi-s3": {
+      "board": "lckfb/szpi-esp32s3", "profile": null,
+      "ui": "lcd320", "audio": "opus16k",
+      "features": ["ai", "device_call", "wechat_voip", "room", "h5_stream", "h5_video", "ai_vision"],
+      "media": "pcm-host-codecs", "interaction": "touch-320",
+      "sdk_variant": "szpi-http", "portability": "native-bound"
+    },
+    "xiaotai-cores3-lite": {
+      "board": "m5stack/core-s3", "profile": "cores3",
+      "ui": "lcd320", "audio": "opus16k",
+      "features": ["ai", "device_call", "wechat_voip", "room", "h5_stream", "h5_video"],
+      "media": "pcm-host-codecs", "interaction": "touch-320",
+      "sdk_variant": "generic", "portability": "native-bound"
+    },
+    "xiaotai-waveshare-p4-rev3": {
+      "board": "waveshare/esp32-p4-wifi6-touch-lcd-3.5", "profile": "p4",
+      "ui": "lcd480", "audio": "opus16k",
+      "features": ["ai", "device_call", "wechat_voip", "room", "h5_stream", "h5_video"],
+      "media": "pcm-host-codecs", "interaction": "touch-480",
+      "sdk_variant": "generic", "portability": "native-bound"
+    },
+    "xiaotai-wt99p461-s1-1v1": {
+      "board": "wt99p461-s1", "profile": "wt99",
+      "ui": "door1024", "audio": "opus16k",
+      "features": ["ai", "device_call", "wechat_voip", "room", "h5_stream", "h5_video"],
+      "media": "pcm-host-codecs", "interaction": "door-1024",
+      "sdk_variant": "generic", "portability": "native-bound"
+    },
+    "xiaotai-xmini-c3-v3": {
+      "board": "xmini/c3-v3", "profile": "xmini",
+      "ui": "oled128", "audio": "pcma8k",
+      "features": ["ai", "device_call", "wechat_voip", "room", "h5_stream"],
+      "media": "pcm-pcma-mini", "interaction": "oled-keys",
+      "sdk_variant": "xmini-mini", "portability": "native-bound"
+    },
+    "xiaotai-mz28-ai-ppd": {
+      "board": "mz28-ai-ppd", "profile": "mz28",
+      "ui": "none", "audio": "vb6824-opus16k",
+      "features": ["wechat_voip"],
+      "media": "uart-opus-pcm", "interaction": "headless-key-led-voice",
+      "sdk_variant": "generic", "portability": "native-bound"
+    }
+  }
+}

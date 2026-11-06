@@ -1,0 +1,18 @@
+# Voicute wake-only source subset
+
+Source: https://github.com/voicute/onnx-wakeword
+Pinned commit: `61e76c5a12ac33da0def7bceba2e07228ad03e63`.
+
+Copied only `esp32/sdk/voicute/mel_extractor.c`, `mel_extractor.h`,
+`mel_filterbank.h`, `kws_postprocess.h`. The extractor now propagates FFT init
+failure instead of continuing with an invalid table. No example BSP, I2S, AFE,
+MultiNet, SPIFFS loader, L1-L5 gates, or recognizer lifecycle was imported.
+
+`../model/` is the restored `nihaoxiaotai_v9.3_20260915_nhwc_tflite.zip` model/head,
+not the example Hey Robot assets. Both were restored byte-for-byte.
+The time window is configured by `wake_model_config.h` for 98 Mel frames;
+the FFT, filterbank and normalization remain the existing implementation.
+
+The inspected upstream and model package did not include a license grant.
+This records provenance, not a new license. Confirm redistribution/commercial
+authorization with the provider before distributing a product.

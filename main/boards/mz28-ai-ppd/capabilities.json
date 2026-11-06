@@ -1,0 +1,5 @@
+{
+  "schema": 1, "target": "esp32c3",
+  "capabilities": ["audio.opus16k20.capture", "audio.pcm.playback", "input.key", "feedback.rgb", "feedback.audio", "network.ip", "storage.nvs"],
+  "display": {"kind": "none", "width": 0, "height": 0}
+}

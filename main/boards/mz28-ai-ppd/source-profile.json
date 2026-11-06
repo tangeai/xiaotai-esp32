@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "mz28",
+  "target": "esp32c3",
+  "application": "main/xiaotai/application/mz28/startup",
+  "entry": "app_main.c",
+  "components": {
+    "demo_platform": "main/xiaotai/services/mz28/demo_platform",
+    "memory_probe": "main/xiaotai/diagnostics/mz28/memory_probe",
+    "product_audio": "main/xiaotai/media/mz28/product_audio",
+    "rtc_adapter": "main/xiaotai/transport/mz28/rtc_adapter",
+    "status_led": "main/xiaotai/ui/mz28/status_led",
+    "vb6824": "main/boards/mz28-ai-ppd/drivers/vb6824",
+    "wechat_voip": "main/xiaotai/application/mz28/wechat_voip",
+    "wifi_provisioning": "main/xiaotai/platform/mz28/wifi_provisioning"
+  },
+  "source_project": "mz28-ai-xiaotai",
+  "source_only": true
+}

@@ -1,0 +1,52 @@
+dependencies:
+  espressif/cjson:
+    component_hash: 9372811fb197926f522c467627cf4a8e72b681e0366e17879631da801103aef3
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.7.19
+  espressif/esp_audio_codec:
+    component_hash: 61820034357c5d423a5cf5d2419153ade8a7037783d95fa3df0d2257908e7e1d
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.4.0
+  espressif/esp_codec_dev:
+    dependencies:
+    - name: idf
+      version: '>=4.0'
+    source:
+      path: ../../../vendor/xmini/esp_codec_dev
+      type: local
+    version: 1.6.2
+  espressif/mqtt:
+    component_hash: ffdad5659706b4dc14bc63f8eb73ef765efa015bf7e9adf71c813d52a2dc9342
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.0
+  idf:
+    source:
+      type: idf
+    version: 6.0.2
+direct_dependencies:
+- espressif/cjson
+- espressif/esp_audio_codec
+- espressif/esp_codec_dev
+- espressif/mqtt
+- idf
+manifest_hash: b1ef710405686ff118f8ee0be6eb7f19e50ec90db6159cbc1aca34b9454a38ba
+target: esp32c3
+version: 3.0.0

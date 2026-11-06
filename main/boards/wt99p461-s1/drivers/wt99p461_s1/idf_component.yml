@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: "Xiaotai WT99P461-S1 1V1 board support"
+dependencies:
+  idf: "==6.0.2"
+  espressif/esp_lcd_touch_gt911: "==1.2.1"

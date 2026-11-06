@@ -1,5 +1,0 @@
-dependencies:
-  espressif/esp_audio_codec: "==2.6.2"
-  espressif/esp-sr:
-    version: "==2.5.4"
-  idf: ">=5.5,<5.6"

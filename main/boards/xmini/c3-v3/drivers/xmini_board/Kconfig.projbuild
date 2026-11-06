@@ -1,0 +1,7 @@
+config XMINI_USB_TIMING_PROBE
+    bool "Enable one-shot USB tick catch-up diagnostic probe"
+    depends on IDF_TARGET_ESP32C3 && ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
+    default n
+    help
+        Diagnostic builds only. Retains the original once-per-boot 8 ms IRQ
+        timing probe; never enable in a product profile.

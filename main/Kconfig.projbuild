@@ -1,0 +1,50 @@
+menu "XiaoTai"
+config XIAOTAI_APP
+    bool
+    default y
+
+choice BOARD_TYPE
+    prompt "XiaoTai board"
+    config BOARD_TYPE_LICHUANG_DEV_S3
+        bool "LCKFB SZPI ESP32-S3 V1.0.1"
+        depends on IDF_TARGET_ESP32S3
+    config BOARD_TYPE_M5STACK_CORE_S3
+        bool "M5Stack CoreS3-Lite"
+        depends on IDF_TARGET_ESP32S3
+    config BOARD_TYPE_XMINI_C3_V3
+        bool "Xmini C3 V3"
+        depends on IDF_TARGET_ESP32C3
+    config BOARD_TYPE_WAVESHARE_ESP32_P4_WIFI6_TOUCH_LCD_3_5
+        bool "Waveshare P4 3.5 rev3.2"
+        depends on IDF_TARGET_ESP32P4
+    config BOARD_TYPE_WT99P461_S1
+        bool "WT99P461-S1 1V1"
+        depends on IDF_TARGET_ESP32P4
+    config BOARD_TYPE_MZ28_AI_PPD
+        bool "MZ28-AI-PPD V1.2"
+        depends on IDF_TARGET_ESP32C3
+endchoice
+
+config XIAOTAI_AI
+    bool "TiRTC AI"
+    depends on !BOARD_TYPE_MZ28_AI_PPD
+config XIAOTAI_DEVICE_CALL
+    bool "Device calls"
+    depends on !BOARD_TYPE_MZ28_AI_PPD
+config XIAOTAI_WECHAT_VOIP
+    bool "WeChat VoIP"
+config XIAOTAI_ROOM
+    bool "LIVE/GROUP rooms"
+    depends on !BOARD_TYPE_MZ28_AI_PPD
+config XIAOTAI_H5_STREAM
+    bool "Web real-time audio session"
+    depends on !BOARD_TYPE_MZ28_AI_PPD
+config XIAOTAI_H5_VIDEO
+    bool "Web camera video"
+    depends on XIAOTAI_H5_STREAM
+    depends on IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4
+config XIAOTAI_AI_VISION
+    bool "AI vision"
+    depends on XIAOTAI_AI
+    depends on IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4
+endmenu

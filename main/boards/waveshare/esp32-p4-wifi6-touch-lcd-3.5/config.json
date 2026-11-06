@@ -1,0 +1,30 @@
+{
+  "manufacturer": "waveshare",
+  "type": "esp32-p4-wifi6-touch-lcd-3.5",
+  "target": "esp32p4",
+  "builds": [
+    {
+      "name": "xiaotai-waveshare-p4-rev3",
+      "sdkconfig_append": [
+        "CONFIG_BOARD_TYPE_WAVESHARE_ESP32_P4_WIFI6_TOUCH_LCD_3_5=y"
+      ],
+      "xiaotai": {
+        "schema": 1,
+        "status": "source-migrated",
+        "source_project": "waveshare-esp32p4-xiaotai",
+        "ui": "lcd480",
+        "audio": "opus16k",
+        "features": [
+          "ai",
+          "device_call",
+          "wechat_voip",
+          "room",
+          "h5_stream",
+          "h5_video"
+        ],
+        "hardware_tested": false,
+        "profile": "p4"
+      }
+    }
+  ]
+}

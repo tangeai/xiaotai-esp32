@@ -1,0 +1,4 @@
+dependencies:
+  espressif/esp_audio_codec:
+    version: ==2.4.0
+  idf: ==6.0.2

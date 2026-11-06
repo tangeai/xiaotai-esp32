@@ -1,0 +1,328 @@
+/*
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: ESPRESSIF MIT
+ */
+
+#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "sdkconfig.h"
+#include "driver/isp.h"
+#include "esp_video_caps.h"
+#include <linux/v4l2-controls.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define ISP_AE_WINDOW_NUM                    1   /*!< Auto exposure window number */
+#define ISP_AWB_WINDOW_NUM                   1   /*!< Auto white balance window number */
+#define ISP_HIST_WINDOW_NUM                  1   /*!< Histogram window number */
+
+/**
+ * @brief The base for the ESP32XX SoCes driver controls.
+ */
+#define V4L2_CID_USER_ESP_ISP_BASE          (V4L2_CID_USER_BASE + 0x10e0)
+
+#define V4L2_CID_USER_ESP_ISP_CCM           (V4L2_CID_USER_ESP_ISP_BASE + 0x0000)   /*!< CCM V4L2 controller ID */
+
+/**
+ * @brief ISP GAMMA V4L2 controller ID.
+ *
+ * @note This V4L2_CID_USER_ESP_ISP_GAMMA is only used to set all channels with the same configuration or get
+ *       red channel configuration, if the blue and green channel configuration is the same as the red channel configuration,
+ *       this command also works well.
+ */
+#define V4L2_CID_USER_ESP_ISP_GAMMA         (V4L2_CID_USER_ESP_ISP_BASE + 0x0001)
+#define V4L2_CID_USER_ESP_ISP_BF            (V4L2_CID_USER_ESP_ISP_BASE + 0x0002)   /*!< BF V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_SHARPEN       (V4L2_CID_USER_ESP_ISP_BASE + 0x0003)   /*!< Sharpen V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_DEMOSAIC      (V4L2_CID_USER_ESP_ISP_BASE + 0x0004)   /*!< Demosaic V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_WB            (V4L2_CID_USER_ESP_ISP_BASE + 0x0005)   /*!< White balance V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_LSC           (V4L2_CID_USER_ESP_ISP_BASE + 0x0006)   /*!< LSC V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_AF            (V4L2_CID_USER_ESP_ISP_BASE + 0x0007)   /*!< Auto focus V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_AWB           (V4L2_CID_USER_ESP_ISP_BASE + 0x0008)   /*!< Auto white balance statistics V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_BLC           (V4L2_CID_USER_ESP_ISP_BASE + 0x0009)   /*!< Black level correction V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_GAMMA_EXT     (V4L2_CID_USER_ESP_ISP_BASE + 0x000a)   /*!< GAMMA extension V4L2 controller ID */
+
+/**
+ * @brief Set ISP bypass mode. When both the ISP input and output formats are RAW8, bypass mode is enabled by default.
+ *        In bypass mode, the ISP does not process the image; the image data is transferred directly to the output.
+ *        As a result, the original image data is not processed by any ISP modules in the raw regions.
+ *
+ * @note This command is for the ISP video device.
+ *
+ * @note This command only has an effect when both ISP input and output formats are set to RAW8.
+ *
+ * @param bypass: true to bypass the ISP, false to enable ISP processing.
+ */
+#define V4L2_CID_USER_ESP_ISP_RAW_BYPASS     (V4L2_CID_USER_ESP_ISP_BASE + 0x000b)
+
+#define V4L2_CID_USER_ESP_ISP_AE             (V4L2_CID_USER_ESP_ISP_BASE + 0x000c)   /*!< Auto exposure V4L2 controller ID */
+#define V4L2_CID_USER_ESP_ISP_HIST           (V4L2_CID_USER_ESP_ISP_BASE + 0x000d)   /*!< Histogram V4L2 controller ID */
+
+#define V4L2_CID_USER_ESP_ISP_DPC_DYNAMIC    (V4L2_CID_USER_ESP_ISP_BASE + 0x000e)   /*!< DPC dynamic configuration V4L2 controller ID */
+
+/**
+ * @brief ESP32XXX ISP image statistics output, data type is "esp_ipa_stats_t"
+ */
+#define V4L2_META_FMT_ESP_ISP_STATS         v4l2_fourcc('E', 'S', 'T', 'A')
+
+/**
+ * @brief ESP32XXX ISP data precision
+ */
+
+#define V4L2_CID_RED_BALANCE_DEN            1000    /*!< Red balance denominator */
+#define V4L2_CID_BLUE_BALANCE_DEN           1000    /*!< Blue balance denominator */
+
+
+/**
+ * @brief ISP statistics flags
+ */
+#define ESP_VIDEO_ISP_STATS_FLAG_AE         (1 << 0)    /*!< ISP statistics has AE */
+#define ESP_VIDEO_ISP_STATS_FLAG_AWB        (1 << 1)    /*!< ISP statistics has AWB */
+#define ESP_VIDEO_ISP_STATS_FLAG_HIST       (1 << 2)    /*!< ISP statistics has histogram */
+#define ESP_VIDEO_ISP_STATS_FLAG_SHARPEN    (1 << 3)    /*!< ISP statistics has sharpen */
+#define ESP_VIDEO_ISP_STATS_FLAG_AF         (1 << 4)    /*!< ISP statistics has AF */
+#define ESP_VIDEO_ISP_STATS_FLAG_AWB_SUBWIN (1 << 5)    /*!< AWB sub-window grid valid (ISP path, not sensor WB) */
+
+/**
+ * GAMMA extension flags.
+ *
+ * The flags are used to indicate the type of GAMMA extension.
+ */
+#define ESP_VIDEO_ISP_GAMMA_EXT_FLAG_RED      (1 << 0) /*!< Red channel needs to update */
+#define ESP_VIDEO_ISP_GAMMA_EXT_FLAG_GREEN    (1 << 1) /*!< Green channel needs to update */
+#define ESP_VIDEO_ISP_GAMMA_EXT_FLAG_BLUE     (1 << 2) /*!< Blue channel needs to update */
+
+/**
+ * @brief GAMMA point coordinate.
+ */
+typedef struct esp_video_isp_gamma_point {
+    uint8_t x;          /*!< GAMMA point X coordinate */
+    uint8_t y;          /*!< GAMMA point Y coordinate */
+} esp_video_isp_gamma_point_t;
+
+/**
+ * @brief ISP CCM configuration.
+ */
+typedef struct esp_video_isp_ccm {
+    bool enable;        /*!< true: enable CCM, false: disable CCM */
+
+    /**
+     * CCM data matrix.
+     *
+     * ESP32-P4 supports 3x3 matrix and data range is (-4, 4)
+     */
+
+    float matrix[ISP_CCM_DIMENSION][ISP_CCM_DIMENSION];
+} esp_video_isp_ccm_t;
+
+/**
+ * @brief ISP GAMMA configuration.
+ */
+typedef struct esp_video_isp_gamma {
+    bool enable;        /*!< true: enable GAMMA, false: disable GAMMA */
+
+    /**
+     * GAMMA points coordinates.
+     *
+     * ESP32-P4 supports 16 points coordinate, each Y coordinate is 8-bit data,
+     * the difference between every 2 X coordinates must be the Nth power of 2.
+     * For example:
+     *      points[1].x - points[2].x = 4 = 2^2
+     */
+    esp_video_isp_gamma_point_t points[ISP_GAMMA_CURVE_POINTS_NUM];
+} esp_video_isp_gamma_t;
+
+/**
+ * @brief ISP GAMMA extension configuration.
+ */
+typedef struct esp_video_isp_gamma_ext {
+    bool enable;        /*!< true: enable GAMMA extension, false: disable GAMMA extension */
+
+    uint32_t flags;     /*!< GAMMA extension flags */
+
+    esp_video_isp_gamma_point_t red_points[ISP_GAMMA_CURVE_POINTS_NUM]; /*!< GAMMA extension for red channel */
+    esp_video_isp_gamma_point_t green_points[ISP_GAMMA_CURVE_POINTS_NUM]; /*!< GAMMA extension for green channel */
+    esp_video_isp_gamma_point_t blue_points[ISP_GAMMA_CURVE_POINTS_NUM]; /*!< GAMMA extension for blue channel */
+} esp_video_isp_gamma_ext_t;
+
+/**
+ * @brief ISP BF(bayer filter) configuration.
+ */
+typedef struct esp_video_isp_bf {
+    bool enable;        /*!< true: enable BF, false: disable BF */
+    uint8_t level;      /*!< BF denoising level, ESP32-P4's range is [2, 20] */
+
+    /**
+     * BF filter matrix.
+     *
+     * ESP32-P4 supports 3x3 matrix and data range is [0, 15].
+     */
+    uint8_t matrix[ISP_BF_TEMPLATE_X_NUMS][ISP_BF_TEMPLATE_Y_NUMS];
+} esp_video_isp_bf_t;
+
+/**
+ * @brief Sharpen configuration.
+ */
+typedef struct esp_video_isp_sharpen {
+    bool enable;        /*!< true: enable sharpen, false: disable sharpen */
+
+    uint8_t h_thresh;   /*!< Sharpen high threshold of high frequency component */
+    uint8_t l_thresh;   /*!< Sharpen low threshold of high frequency component */
+
+    /**
+     * Sharpen threshold coefficient.
+     *
+     * ESP32-P4 supports integer type and data range is [0, 255/32], unit is 1/32.
+     */
+
+    float h_coeff;      /*!< Sharpen coefficient of high threshold */
+    float m_coeff;      /*!< Sharpen coefficient of middle threshold(value between "l_thresh" and "h_thresh" ) */
+
+    /**
+     * Sharpen low-pass filter matrix.
+     *
+     * ESP32-P4 supports 3x3 matrix and data range is [0, 31].
+     */
+    uint8_t matrix[ISP_SHARPEN_TEMPLATE_X_NUMS][ISP_SHARPEN_TEMPLATE_Y_NUMS];
+} esp_video_isp_sharpen_t;
+
+/**
+ * @brief Demosaic configuration.
+ */
+typedef struct esp_video_isp_demosaic {
+    bool enable;        /*!< true: enable demosaic, false: disable demosaic */
+
+    float gradient_ratio;   /*!< Demosaic gradient ratio */
+} esp_video_isp_demosaic_t;
+
+/**
+ * @brief White balance configuration.
+ */
+typedef struct esp_video_isp_wb {
+    bool enable;        /*!< true: enable white balance, false: disable white balance */
+
+    float red_gain;     /*!< Red channel gain */
+    float blue_gain;    /*!< Blue channel gain */
+} esp_video_isp_wb_t;
+
+/**
+ * @brief LSC(lens shading correction) configuration.
+ */
+typedef struct esp_video_isp_lsc {
+    bool enable;                    /*!< true: enable LSC, false: disable LSC */
+
+    /**
+     * Calling "ioctl" to set/get channel gain will only set gain table pointer
+     * instead of copying gain table value.
+     */
+
+    const isp_lsc_gain_t *gain_r;   /*!< Gain table pointer for R channel */
+    const isp_lsc_gain_t *gain_gr;  /*!< Gain table pointer for GR channel */
+    const isp_lsc_gain_t *gain_gb;  /*!< Gain table pointer for GB channel */
+    const isp_lsc_gain_t *gain_b;   /*!< Gain table pointer for B channel */
+
+    size_t lsc_gain_size;           /*!< Gain table size */
+} esp_video_isp_lsc_t;
+
+/**
+ * @brief AF(auto focus) configuration.
+ */
+typedef struct esp_video_isp_af {
+    bool enable;                    /*!< true: enable AF, false: disable AF */
+
+    /*!< The sampling windows coordinate configuration of AF */
+
+    isp_window_t windows[ISP_AF_WINDOW_NUM];
+
+    uint32_t edge_thresh;           /*!< AF edge threshold, definition higher than this value will be counted as a valid pixel for calculating AF result */
+} esp_video_isp_af_t;
+
+/**
+ * @brief Auto white balance statistics configuration.
+ */
+typedef struct esp_video_isp_awb {
+    bool enable;                    /*!< true: enable AWB statistics, false: disable AWB statistics */
+
+    uint8_t green_max;              /*!< Maximum green value */
+    uint8_t green_min;              /*!< Minimum green value */
+
+    float rg_max;                   /*!< Maximum red/green ratio */
+    float rg_min;                   /*!< Minimum red/green ratio */
+
+    float bg_max;                   /*!< Maximum blue/green ratio */
+    float bg_min;                   /*!< Minimum blue/green ratio */
+
+    /**
+     * AWB statistics windows
+     *
+     * If the right and bottom of the window is 0, it means the window is not set, use the default window.
+     */
+    isp_window_t windows[ISP_AWB_WINDOW_NUM];
+} esp_video_isp_awb_t;
+
+/**
+ * @brief Black level correction configuration.
+ */
+typedef struct esp_video_isp_blc {
+    bool enable;                    /*!< true: enable BLC, false: disable BLC */
+    bool stretch_enable;            /*!< true: stretch the pixel value to 0~255 after black level correction, false: disable stretch */
+
+    uint16_t top_left_offset;       /*!< Top left channel offset value */
+    uint16_t top_right_offset;      /*!< Top right channel offset value */
+    uint16_t bottom_left_offset;    /*!< Bottom left channel offset value */
+    uint16_t bottom_right_offset;   /*!< Bottom right channel offset value */
+} esp_video_isp_blc_t;
+
+/**
+ * @brief Auto exposure statistics configuration.
+ */
+typedef struct esp_video_isp_ae {
+    bool enable;                                /*!< true: enable AE statistics, false: disable AE statistics */
+
+    isp_window_t windows[ISP_AE_WINDOW_NUM];    /*!< AE statistics windows */
+} esp_video_isp_ae_t;
+
+/**
+ * @brief Histogram statistics configuration.
+ */
+typedef struct esp_video_isp_hist {
+    bool enable;                                /*!< true: enable HIST statistics, false: disable HIST statistics */
+
+    isp_window_t windows[ISP_HIST_WINDOW_NUM];  /*!< HIST statistics windows */
+} esp_video_isp_hist_t;
+
+#if ESP_VIDEO_ISP_DEVICE_DPC
+/**
+ * @brief DPC configuration.
+ *
+ * @note Maps to esp_isp_dpc_dynamic_configure() / esp_isp_dpc_configure() / esp_isp_dpc_enable().
+ *       Static DPC LUT is not covered by this command.
+ */
+typedef struct esp_video_isp_dpc_dynamic {
+    bool enable;                                /*!< true: enable DPC, false: disable DPC */
+
+    esp_isp_dpc_dynamic_config_t dynamic;       /*!< DPC dynamic configuration */
+} esp_video_isp_dpc_dynamic_t;
+#endif /* ESP_VIDEO_ISP_DEVICE_DPC */
+
+/**
+ * @brief ISP statistics.
+ */
+typedef struct esp_video_isp_stats {
+    uint32_t flags;     /*!< ISP statistics flags */
+    uint64_t seq;       /*!< ISP statistics sequence number */
+
+    esp_isp_ae_env_detector_evt_data_t ae;  /*!< ISP exposure statistics */
+    esp_isp_awb_evt_data_t awb;             /*!< ISP white balance statistics */
+    esp_isp_hist_evt_data_t hist;           /*!< ISP histogram statistics */
+    esp_isp_sharpen_evt_data_t sharpen;     /*!< ISP sharpen statistics */
+    esp_isp_af_env_detector_evt_data_t af;  /*!< ISP AF statistics */
+} esp_video_isp_stats_t;
+
+#ifdef __cplusplus
+}
+#endif

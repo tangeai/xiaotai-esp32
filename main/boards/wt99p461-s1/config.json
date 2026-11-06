@@ -1,0 +1,29 @@
+{
+  "target": "esp32p4",
+  "builds": [
+    {
+      "name": "xiaotai-wt99p461-s1-1v1",
+      "sdkconfig_append": [
+        "CONFIG_BOARD_TYPE_WT99P461_S1=y"
+      ],
+      "xiaotai": {
+        "schema": 1,
+        "status": "source-migrated",
+        "source_project": "wt99p461-s1-xiaotai",
+        "ui": "door1024",
+        "audio": "opus16k",
+        "features": [
+          "ai",
+          "device_call",
+          "wechat_voip",
+          "room",
+          "h5_stream",
+          "h5_video"
+        ],
+        "hardware_tested": false,
+        "profile": "wt99"
+      }
+    }
+  ],
+  "type": "wt99p461-s1"
+}

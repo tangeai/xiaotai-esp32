@@ -1,0 +1,14 @@
+flowchart TB
+    A["核对新板资料<br/>芯片、外设、供电、内存"]:::hardware --> B{"已有匹配的 SDK 吗？"}
+    B -->|没有| C["先做 SDK 编译 / 链接适配<br/>核对架构、ABI 与接口"]:::media
+    B -->|有| D["实现板级驱动与端口<br/>清理原 profile 的旧板硬件依赖"]:::hardware
+    C --> D
+    D --> E["登记 Board、能力与配置<br/>确认启动和组件选择"]
+    E --> F["选择已有媒体与交互<br/>新形态补对应适配器"]:::interaction
+    F --> G["契约检查、主机测试、完整编译<br/>证明业务不需要新板专用判断"]:::product
+    G --> H["前期收口后<br/>再安排真机调试"]:::pending
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33
+    classDef pending fill:#ffffff,stroke:#a0773d,stroke-dasharray:5 4,color:#202b33

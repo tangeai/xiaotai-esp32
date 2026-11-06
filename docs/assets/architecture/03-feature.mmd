@@ -1,0 +1,13 @@
+flowchart TB
+    A["说明需求<br/>适用产品、动作、失败与退出"]:::product --> B["找到负责的模块<br/>沿已有状态机和资源所有者接入"]:::product
+    B --> C["登记源码与依赖<br/>CMake / source-profile"]
+    C --> D{"需要编译开关吗？"}
+    D -->|不需要| E["验证行为与相邻业务"]:::media
+    D -->|需要| F["登记 Kconfig + 两处 FEATURES<br/>补齐源码、UI、资源和产品契约"]:::interaction
+    F --> G["分别验证开启与关闭<br/>再开放这个组合"]:::interaction
+    G --> E
+    E --> H["核对编译图与产物<br/>提交实现、测试和说明"]:::hardware
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33

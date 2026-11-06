@@ -1,0 +1,286 @@
+{
+  "figma_file": "qoC0JMCX9WY4g8KVNbuibm",
+  "home_node": "91:144",
+  "call_node": "91:211",
+  "generator": "tools/generate_door_assets.py",
+  "format": "LVGL 8, LV_COLOR_DEPTH=16, LV_COLOR_16_SWAP=0",
+  "pillow": "10.2.0",
+  "cairosvg": "2.8.2",
+  "wallpaper": {
+    "original": "wallpaper.png",
+    "source_size": [
+      1536,
+      864
+    ],
+    "sha256": "778d006e36c8fd11e45ae210108d499bd1bc25c72ca6f630c8b4123cf4d8a76f",
+    "generated": "door_v4_wallpaper.rgb565",
+    "width": 1024,
+    "height": 600,
+    "bytes": 1228800,
+    "output_sha256": "bc65dd319a1c7b4e83ea141dc18596c62225ee2b2335fb3226cd4a953c722fc1",
+    "crop": "centred object-cover, no readability overlay baked in"
+  },
+  "icons": [
+    {
+      "original": "back-28.svg",
+      "sha256": "255b5c20bb088036990dee340472661fbae26c3ad995993d7595ec275cfde1d7",
+      "symbol": "door_asset_back_28",
+      "width": 28,
+      "height": 28,
+      "bytes": 2352,
+      "data_symbol": "door_asset_back_28_pixels",
+      "rgb565a_sha256": "b8aa1dbf8344e5601dc758ee29a967907b9d3d34763cbadea4785beb0a382879"
+    },
+    {
+      "original": "back-36.svg",
+      "sha256": "3267e632817b62e5f1daecb095e5f70ddf9188e7d7d55b85ba4502278d9aad49",
+      "symbol": "door_asset_back_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_back_36_pixels",
+      "rgb565a_sha256": "59cfb29a2b16ecdd6571411680dd9227d190da6c57de353905dc9eac5a6e5903"
+    },
+    {
+      "original": "call-online-8.svg",
+      "sha256": "0043114d68e89c576cfb931bc46539e4126e40220c1959c973c1eafd15058ed6",
+      "symbol": "door_asset_call_online_8",
+      "width": 8,
+      "height": 8,
+      "bytes": 192,
+      "data_symbol": "door_asset_call_online_8_pixels",
+      "rgb565a_sha256": "f85c62bd84a455d2cdc266cd9f724063d13c4b1e62a4a69818a3b1caf16547bf"
+    },
+    {
+      "original": "circle-action-72.svg",
+      "sha256": "c8805fba1ac47a1287d24dbd3337ef51ef8a8dc6f656e12357b38495803aa5e5",
+      "symbol": "door_asset_circle_action_72",
+      "width": 72,
+      "height": 72,
+      "bytes": 15552,
+      "data_symbol": "door_asset_circle_action_72_pixels",
+      "rgb565a_sha256": "1087481b3cde07027f098f2c7fd550f28eaeed2cc1383f40441c3851df313168"
+    },
+    {
+      "original": "circle-incoming-action-72.svg",
+      "sha256": "c8805fba1ac47a1287d24dbd3337ef51ef8a8dc6f656e12357b38495803aa5e5",
+      "symbol": "door_asset_circle_incoming_action_72",
+      "width": 72,
+      "height": 72,
+      "bytes": 15552,
+      "data_symbol": "door_asset_circle_action_72_pixels",
+      "rgb565a_sha256": "1087481b3cde07027f098f2c7fd550f28eaeed2cc1383f40441c3851df313168"
+    },
+    {
+      "original": "circle-incoming-red-72.svg",
+      "sha256": "ea5b3ae820063dfaf64a22c28c825028a11b9b8d6d45cdbdfa5820cfe0f11f45",
+      "symbol": "door_asset_circle_incoming_red_72",
+      "width": 72,
+      "height": 72,
+      "bytes": 15552,
+      "data_symbol": "door_asset_circle_incoming_red_72_pixels",
+      "rgb565a_sha256": "af04a35c03c37919fcf2379e737aa89b94ad8f908a013cbbe719cd3b45b5d0e8"
+    },
+    {
+      "original": "circle-monitor-action-72.svg",
+      "sha256": "c8805fba1ac47a1287d24dbd3337ef51ef8a8dc6f656e12357b38495803aa5e5",
+      "symbol": "door_asset_circle_monitor_action_72",
+      "width": 72,
+      "height": 72,
+      "bytes": 15552,
+      "data_symbol": "door_asset_circle_action_72_pixels",
+      "rgb565a_sha256": "1087481b3cde07027f098f2c7fd550f28eaeed2cc1383f40441c3851df313168"
+    },
+    {
+      "original": "circle-monitor-neutral-72.svg",
+      "sha256": "fef2c7225a3ecd01d67333731d47fef275c011d67fdf9569dc2b6162e182565a",
+      "symbol": "door_asset_circle_monitor_neutral_72",
+      "width": 72,
+      "height": 72,
+      "bytes": 15552,
+      "data_symbol": "door_asset_circle_monitor_neutral_72_pixels",
+      "rgb565a_sha256": "b6f4468e7ad8008e6c4d5836a3a9e4a10e3eaf0949a1a7cccbc83476f59ae9fe"
+    },
+    {
+      "original": "circle-neutral-72.svg",
+      "sha256": "c3fcf39dedc96d16aebf3921330c48910873637c4eee2c34e368434a5b7abd0c",
+      "symbol": "door_asset_circle_neutral_72",
+      "width": 72,
+      "height": 72,
+      "bytes": 15552,
+      "data_symbol": "door_asset_circle_monitor_neutral_72_pixels",
+      "rgb565a_sha256": "b6f4468e7ad8008e6c4d5836a3a9e4a10e3eaf0949a1a7cccbc83476f59ae9fe"
+    },
+    {
+      "original": "circle-red-72.svg",
+      "sha256": "ea5b3ae820063dfaf64a22c28c825028a11b9b8d6d45cdbdfa5820cfe0f11f45",
+      "symbol": "door_asset_circle_red_72",
+      "width": 72,
+      "height": 72,
+      "bytes": 15552,
+      "data_symbol": "door_asset_circle_incoming_red_72_pixels",
+      "rgb565a_sha256": "af04a35c03c37919fcf2379e737aa89b94ad8f908a013cbbe719cd3b45b5d0e8"
+    },
+    {
+      "original": "close-28.svg",
+      "sha256": "ce99dad31b7256c5f0313ffdcb58b0d07239e8fd158b8ecb49cd123a5be37b5b",
+      "symbol": "door_asset_close_28",
+      "width": 28,
+      "height": 28,
+      "bytes": 2352,
+      "data_symbol": "door_asset_close_28_pixels",
+      "rgb565a_sha256": "6e259118346cda69eea0e88a7e50bb74f6a7f873ff692491ad6c058f5e04fde9"
+    },
+    {
+      "original": "failure-52.svg",
+      "sha256": "b8a529853e5803244099318f6b0e4d8193abfe5427b1dd409a25d06ba9a6b41f",
+      "symbol": "door_asset_failure_52",
+      "width": 52,
+      "height": 52,
+      "bytes": 8112,
+      "data_symbol": "door_asset_failure_52_pixels",
+      "rgb565a_sha256": "7bb923e502d0c6d4668832ecd83a482e91da8bdd1192864564a7f5d147e6bbe1"
+    },
+    {
+      "original": "hangup-36.svg",
+      "sha256": "5c09b788732b09059a6ae65d1047948d114fdd892db73588ba400760e060ab41",
+      "symbol": "door_asset_hangup_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_hangup_36_pixels",
+      "rgb565a_sha256": "91e58ff4932d37b67e6704e66646b1dc39f1ddac4e408237fd1ec6a666c228c7"
+    },
+    {
+      "original": "incoming-8.svg",
+      "sha256": "0043114d68e89c576cfb931bc46539e4126e40220c1959c973c1eafd15058ed6",
+      "symbol": "door_asset_incoming_8",
+      "width": 8,
+      "height": 8,
+      "bytes": 192,
+      "data_symbol": "door_asset_call_online_8_pixels",
+      "rgb565a_sha256": "f85c62bd84a455d2cdc266cd9f724063d13c4b1e62a4a69818a3b1caf16547bf"
+    },
+    {
+      "original": "key-28.svg",
+      "sha256": "67030b23982003fff8ff16addf280c9687489383350e3032abdc5533f9c8ee04",
+      "symbol": "door_asset_key_28",
+      "width": 28,
+      "height": 28,
+      "bytes": 2352,
+      "data_symbol": "door_asset_key_28_pixels",
+      "rgb565a_sha256": "7d57f0eaa47b820d204606d8c5aa1677c311e6db3d59d77bcdbb4422f2af4f9e"
+    },
+    {
+      "original": "key-36.svg",
+      "sha256": "5dd13d5e68b4a9a0f6e0908f601e1694bddc679a3d62b71a52d3dc6716679ec8",
+      "symbol": "door_asset_key_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_key_36_pixels",
+      "rgb565a_sha256": "fff91fe9402d9ffbfcb07f6b5e81b0af014c2d751e179c405299d52a0102bf5c"
+    },
+    {
+      "original": "key-call-36.svg",
+      "sha256": "5dd13d5e68b4a9a0f6e0908f601e1694bddc679a3d62b71a52d3dc6716679ec8",
+      "symbol": "door_asset_key_call_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_key_36_pixels",
+      "rgb565a_sha256": "fff91fe9402d9ffbfcb07f6b5e81b0af014c2d751e179c405299d52a0102bf5c"
+    },
+    {
+      "original": "key-monitor-36.svg",
+      "sha256": "5dd13d5e68b4a9a0f6e0908f601e1694bddc679a3d62b71a52d3dc6716679ec8",
+      "symbol": "door_asset_key_monitor_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_key_36_pixels",
+      "rgb565a_sha256": "fff91fe9402d9ffbfcb07f6b5e81b0af014c2d751e179c405299d52a0102bf5c"
+    },
+    {
+      "original": "knob-20.svg",
+      "sha256": "c29b2fd51ee520d6816ccadd2c3773254085c1385977da71bf7b955f1732b936",
+      "symbol": "door_asset_knob_20",
+      "width": 20,
+      "height": 20,
+      "bytes": 1200,
+      "data_symbol": "door_asset_knob_20_pixels",
+      "rgb565a_sha256": "d8cd68de9ad92f1eb5920a912b62f3ecd282be2da623154b4e3c22dd59aada63"
+    },
+    {
+      "original": "lock-32.svg",
+      "sha256": "db75c907f018f44f1e3c4db0875f78598ea9ac5459bb229b19dce945bda8e53c",
+      "symbol": "door_asset_lock_32",
+      "width": 32,
+      "height": 32,
+      "bytes": 3072,
+      "data_symbol": "door_asset_lock_32_pixels",
+      "rgb565a_sha256": "6b5e3ebb34e328e984d54f441bdb0f98a8f051b51ea1985ee46f596b40eb30fd"
+    },
+    {
+      "original": "mic-36.svg",
+      "sha256": "aeaf2ca824c5b3c67adaf5580be671e2df2485a871a3a53b7079c17647b23a1e",
+      "symbol": "door_asset_mic_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_mic_36_pixels",
+      "rgb565a_sha256": "6315921ea492ee1cc653d6d426cbd26147423716b4f7262c7c958c09534f0b33"
+    },
+    {
+      "original": "online-8.svg",
+      "sha256": "978822f8482f10f1227ca0af91f042a77f421846d08d55b4569652d77af1bdf2",
+      "symbol": "door_asset_online_8",
+      "width": 8,
+      "height": 8,
+      "bytes": 192,
+      "data_symbol": "door_asset_call_online_8_pixels",
+      "rgb565a_sha256": "f85c62bd84a455d2cdc266cd9f724063d13c4b1e62a4a69818a3b1caf16547bf"
+    },
+    {
+      "original": "phone-36.svg",
+      "sha256": "a4d3edeceb7f55ed819b23e950da912ff5bc2c79996d79f0dd3716f15e20d07b",
+      "symbol": "door_asset_phone_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_phone_36_pixels",
+      "rgb565a_sha256": "9249900c3c1963b63275ef105d27fca3771ea09629540dc3da8701003cf2611d"
+    },
+    {
+      "original": "video-36.svg",
+      "sha256": "cc997afd0377fd37c670cac0a08f1c2d13f54741c5bfc7f10ef889f25bfebe9a",
+      "symbol": "door_asset_video_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_video_36_pixels",
+      "rgb565a_sha256": "58bcbf2d96824efee8dd70cb9c7f6993b6cc9bf93f2ce5fe324485479dfa1927"
+    },
+    {
+      "original": "volume-36.svg",
+      "sha256": "7d7643ba105ec154fd05ec44aa3bad740e23ace64bf943e573f29597d556fc86",
+      "symbol": "door_asset_volume_36",
+      "width": 36,
+      "height": 36,
+      "bytes": 3888,
+      "data_symbol": "door_asset_volume_36_pixels",
+      "rgb565a_sha256": "e7a244b9f3749d6184ddc38d9956924ec53d3de126e1baf7a85bc5eca484390c"
+    },
+    {
+      "original": "wifi-24.svg",
+      "sha256": "129a40936d880b0489afee890d2183c293d5c2116ac3c063878609206dcf6680",
+      "symbol": "door_asset_wifi_24",
+      "width": 24,
+      "height": 24,
+      "bytes": 1728,
+      "data_symbol": "door_asset_wifi_24_pixels",
+      "rgb565a_sha256": "844f700e11c7fa881efaf53aef3e1c59477462c7a8d4744a9bcae93cb25dcf83"
+    }
+  ],
+  "unique_icon_pixel_bytes": 95232
+}

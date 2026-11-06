@@ -1,0 +1,142 @@
+/*
+ * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: ESPRESSIF MIT
+ */
+
+#pragma once
+
+#include "sdkconfig.h"
+#include "esp_idf_version.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if CONFIG_IDF_TARGET_ESP32P4
+/**
+ * @brief ISP video device configuration
+ */
+#if CONFIG_ESP32P4_REV_MIN_FULL >= 100
+#if CONFIG_SOC_ISP_LSC_SUPPORTED
+#define ESP_VIDEO_ISP_DEVICE_LSC    1       /*!< ISP video device enable LSC */
+#endif /* CONFIG_SOC_ISP_LSC_SUPPORTED */
+#endif /* CONFIG_ESP32P4_REV_MIN_FULL >= 100 */
+
+/**
+ * @brief ISP video device configuration
+ */
+#if CONFIG_ESP32P4_REV_MIN_FULL >= 300
+#if CONFIG_SOC_ISP_WBG_SUPPORTED
+#define ESP_VIDEO_ISP_DEVICE_WBG    1       /*!< ISP video device enable WBG */
+#define ESP_VIDEO_ISP_WBG_DEC_BITS  8       /*!< WBG Decimal part */
+#endif /* CONFIG_SOC_ISP_WBG_SUPPORTED */
+
+#if CONFIG_SOC_ISP_BLC_SUPPORTED
+#define ESP_VIDEO_ISP_DEVICE_BLC    1       /*!< ISP video device enable BLC */
+#endif /* CONFIG_SOC_ISP_BLC_SUPPORTED */
+
+/**
+ * @brief Enable DPC for ISP video device if ESP-IDF version is greater than or equal to v5.5.6 and less than v6.0.0,
+ *        or greater than or equal to v6.0.4 and less than v6.1.0, or greater than or equal to v6.1.1
+ *
+ * @note Hardware support starts from ESP32-P4 v3.0.
+ */
+#if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 6) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)) || \
+    (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 4) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 1, 0)) || \
+    (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 1, 1))
+#define ESP_VIDEO_ISP_DEVICE_DPC 1 /*!< ISP video device supports DPC */
+#endif /* (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 6) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)) || (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 4) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 1, 0)) || (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 1, 1)) */
+
+#if CONFIG_SOC_ISP_CROP_SUPPORTED
+#define ESP_VIDEO_ISP_DEVICE_CROP   1       /*!< ISP video device enable crop */
+#endif /* CONFIG_SOC_ISP_CROP_SUPPORTED */
+
+/**
+ * @brief ISP video device configuration
+ *
+ * @note Currently, only the ESP-IDF >= v5.4.4 && < v5.5.0 versions and ESP-IDF >= v5.5.3 versions support AWB subwindow and support once-configured mode.
+ */
+#if ((ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 4)) && (ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0))) || \
+     (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 3))
+#define ESP_VIDEO_ISP_DEVICE_AWB_SUBWIN 1   /*!< ISP video device enable AWB subwindow */
+#define ESP_VIDEO_ISP_DEVICE_ONCE_CONFIG 1  /*!< ISP video device supports once-configured mode */
+#endif /* ((ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 4)) && (ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0))) || (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 3)) */
+
+/**
+ * @brief Enable convert frame format if ESP-IDF version is greater than or equal to v6.0.0
+ *
+ * @note This is a breaking change for ESP-IDF MIPI-CSI driver API.
+ */
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0) || \
+    (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 6) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0))
+#define ESP_VIDEO_CSI_DEVICE_CONV_FORMAT 1  /*!< CSI video device supports convert frame format */
+#endif /* ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0) */
+
+#if CONFIG_SOC_JPEG_CODEC_SUPPORTED
+#define ESP_VIDEO_JPEG_DEVICE_YUV420    1   /*!< JPEG video device supports YUV420 format */
+#define ESP_VIDEO_JPEG_DEVICE_YUV444    1   /*!< JPEG video device supports YUV444 format */
+#endif /* CONFIG_SOC_JPEG_CODEC_SUPPORTED */
+
+/**
+ * @brief Enable short type data swapping for YUV422 format if ESP-IDF version is greater than or equal to v6.1.0
+ */
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 1, 0)
+#define ESP_VIDEO_CSI_DEVICE_SWAP_SHORT 1  /*!< CSI video device supports short type data swapping for YUV422 format */
+#endif /* ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 1, 0) */
+
+#endif /* CONFIG_ESP32P4_REV_MIN_FULL >= 300 */
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+#define ESP_VIDEO_ISP_DRIVER_HAS_BYPASS 1  /*!< ISP driver supports bypass mode */
+#endif /* ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0) */
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+#define ESP_VIDEO_ISP_DRIVER_HAS_BYTE_SWAP 1  /*!< ISP driver supports byte swap mode */
+#endif /* ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0) */
+
+#if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 6) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)) || \
+    ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 1)
+#define ESP_VIDEO_CSI_DRIVER_HAS_8BIT_SWAP 1     /*!< CSI driver supports 8-bit swap mode */
+#endif /* (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 6) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)) || (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 3)) */
+
+#if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 6) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)) || \
+    ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 3)
+#define ESP_VIDEO_CSI_DRIVER_HAS_EVENT 1     /*!< CSI driver supports event */
+#endif /* (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 6) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)) || (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 3)) */
+
+#if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 5) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)) || \
+    ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 1)
+#define ESP_VIDEO_ISP_DRIVER_NEW_AWB_SAMPLE_POINT 1
+#define ESP_VIDEO_ISP_DRIVER_NEW_AE_SAMPLE_POINT 1
+#endif /* (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 5) && ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)) || (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 1)) */
+#endif /* CONFIG_IDF_TARGET_ESP32P4 */
+
+/**
+ * @brief Enable output color type for DVP video device if ESP-IDF version is greater than or equal to v6.0.0
+ *
+ * @note This is a breaking change for DVP video device API.
+ */
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+#define ESP_VIDEO_DVP_DEVICE_OUTPUT_COLOR 1 /*!< DVP video device supports output color type */
+#endif /* ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0) */
+
+/**
+ * @brief DVP pixel format conversion (YUV422 YUYV to RGB565)
+ *
+ * @note Same IDF versions as DVP external XTAL: >= v5.5.1, or v5.4.x with x >= 3.
+ * @note Converted RGB565 is big-endian (``V4L2_PIX_FMT_RGB565X``), not little-endian (``V4L2_PIX_FMT_RGB565``).
+ * @note Conversion is supported only when the sensor output is YUV422 YUYV.
+ *
+ * @note This feature is disabled when the external DVP driver is enabled instead of the ESP-IDF DVP driver.
+ */
+#if !defined(CONFIG_CAM_CTRL_DVP_ENABLE) || (ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 2))
+#if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 1)) || \
+    ((ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 3)) && (ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0)))
+#define ESP_VIDEO_DVP_DEVICE_CONV_FORMAT 1 /*!< DVP video device supports convert frame format */
+#endif
+#endif /* !defined(CONFIG_CAM_CTRL_DVP_ENABLE) || (ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 2)) */
+
+#ifdef __cplusplus
+}
+#endif

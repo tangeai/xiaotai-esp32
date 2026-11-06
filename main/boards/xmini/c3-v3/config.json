@@ -1,0 +1,29 @@
+{
+  "manufacturer": "xmini",
+  "type": "xmini-c3-v3",
+  "target": "esp32c3",
+  "builds": [
+    {
+      "name": "xiaotai-xmini-c3-v3",
+      "sdkconfig_append": [
+        "CONFIG_BOARD_TYPE_XMINI_C3_V3=y"
+      ],
+      "xiaotai": {
+        "schema": 1,
+        "status": "source-migrated",
+        "source_project": "xmini-c3-v3-xiaotai",
+        "ui": "oled128",
+        "audio": "pcma8k",
+        "features": [
+          "ai",
+          "device_call",
+          "wechat_voip",
+          "room",
+          "h5_stream"
+        ],
+        "hardware_tested": false,
+        "profile": "xmini"
+      }
+    }
+  ]
+}

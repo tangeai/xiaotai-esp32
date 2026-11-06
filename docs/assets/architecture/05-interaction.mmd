@@ -1,0 +1,15 @@
+flowchart TB
+    T["彩屏触摸"]:::interaction --> TA["页面动作映射"]:::interaction
+    K["OLED + 按键"]:::interaction --> KA["导航与按键映射"]:::interaction
+    N["无屏 + 按键"]:::interaction --> NA["手势与反馈映射"]:::interaction
+    TA --> A["同一业务动作<br/>接听、拒绝、挂断等"]:::product
+    KA --> A
+    NA --> A
+    A --> S["原应用状态机<br/>只保留一个业务所有者"]:::product
+    S --> V["状态快照 + 操作结果"]
+    V --> TV["彩屏页面"]:::hardware
+    V --> KV["OLED 文本"]:::hardware
+    V --> NV["灯效 + 提示音<br/>真实绑定码播报"]:::hardware
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33

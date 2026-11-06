@@ -1,0 +1,12 @@
+diff --git a/coprocessor/eh_cp_core/include/eh_cp_idf_compat.h b/coprocessor/eh_cp_core/include/eh_cp_idf_compat.h
+--- a/coprocessor/eh_cp_core/include/eh_cp_idf_compat.h
++++ b/coprocessor/eh_cp_core/include/eh_cp_idf_compat.h
+@@ -125,7 +125,7 @@
+ #  define EH_CP_WIFI_DPP_ANY                     0
+ #endif
+ 
+-#ifdef CONFIG_ESP_HOSTED_ALLOW_FULL_APP_DESC
++#if defined(CONFIG_ESP_HOSTED_ALLOW_FULL_APP_DESC) || (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0))
+ #  define EH_CP_ALLOW_FULL_APP_DESC              1
+ #else
+ #  define EH_CP_ALLOW_FULL_APP_DESC              0

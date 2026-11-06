@@ -1,0 +1,30 @@
+{
+  "manufacturer": "m5stack",
+  "type": "m5stack-cores3-lite",
+  "target": "esp32s3",
+  "builds": [
+    {
+      "name": "xiaotai-cores3-lite",
+      "sdkconfig_append": [
+        "CONFIG_BOARD_TYPE_M5STACK_CORE_S3=y"
+      ],
+      "xiaotai": {
+        "schema": 1,
+        "status": "source-migrated",
+        "source_project": "m5stack-cores3-se-xiaotai",
+        "ui": "lcd320",
+        "audio": "opus16k",
+        "features": [
+          "ai",
+          "device_call",
+          "wechat_voip",
+          "room",
+          "h5_stream",
+          "h5_video"
+        ],
+        "hardware_tested": false,
+        "profile": "cores3"
+      }
+    }
+  ]
+}

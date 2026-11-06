@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "xmini",
+  "target": "esp32c3",
+  "application": "main/xiaotai/application/xmini/startup",
+  "entry": "app_main.c",
+  "components": {
+    "demo_platform": "main/xiaotai/services/xmini/demo_platform",
+    "esp_codec_dev": "vendor/xmini/esp_codec_dev",
+    "wifi_provisioning": "main/xiaotai/platform/xmini/wifi_provisioning",
+    "xmini_audio": "main/xiaotai/media/xmini/xmini_audio",
+    "xmini_board": "main/boards/xmini/c3-v3/drivers/xmini_board",
+    "xmini_business": "main/xiaotai/application/xmini/xmini_business",
+    "xmini_group": "main/xiaotai/application/xmini/xmini_group",
+    "xmini_memtrace": "main/xiaotai/diagnostics/xmini/xmini_memtrace",
+    "xmini_rtc": "main/xiaotai/transport/xmini/xmini_rtc",
+    "xmini_settings": "main/xiaotai/platform/xmini/xmini_settings",
+    "xmini_ui": "main/xiaotai/ui/xmini/xmini_ui"
+  },
+  "source_project": "xmini-c3-v3-xiaotai",
+  "source_only": true
+}

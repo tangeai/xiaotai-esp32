@@ -1,0 +1,16 @@
+dependencies:
+  espressif/esp32-camera:
+    version: ==2.1.7
+  espressif/esp_new_jpeg:
+    version: ==1.0.2
+  espressif/esp_codec_dev:
+    version: '>=1.1.0'
+  espressif/esp_audio_codec:
+    version: ==2.4.0
+  espressif/esp-sr:
+    version: ==2.5.0
+  espressif/esp-dl:
+    version: ==3.3.9
+  espressif/dl_fft:
+    version: ==0.6.0
+  idf: ==6.0.2

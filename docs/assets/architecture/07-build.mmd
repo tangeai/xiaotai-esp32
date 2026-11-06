@@ -1,0 +1,14 @@
+flowchart TB
+    A["选板 / 选产品<br/>build.py + board + 可选 --name"]:::product --> B["先看 --dry-run<br/>核对目标、功能、目录与契约"]:::interaction
+    B --> C{"组合受支持？"}
+    C -->|不支持| X["明确报错<br/>缺少能力、组合未验证或配置不一致<br/>回到实现和产品配置处理"]:::error
+    C -->|支持| D["固定 IDF 环境<br/>生成配置并 reconfigure"]
+    D --> E{"请求值生效？"}
+    E -->|不一致| X
+    E -->|一致| F["完整编译与链接<br/>核对源码、依赖、SDK 和空间"]:::media
+    F --> G["成功后记录输入与产物哈希<br/>build-record + build-inputs"]:::hardware
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33
+    classDef error fill:#fbecee,stroke:#b8616b,color:#202b33

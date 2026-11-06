@@ -1,0 +1,6 @@
+idf_component_register(SRCS xiaotai_lvgl.c INCLUDE_DIRS include REQUIRES lvgl esp_common)
+if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+    if(NOT CONFIG_LV_USE_DRAW_SW)
+        message(FATAL_ERROR "XiaoTai image hooks require the LVGL software renderer")
+    endif()
+endif()

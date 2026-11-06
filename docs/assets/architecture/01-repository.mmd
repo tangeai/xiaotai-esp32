@@ -1,0 +1,16 @@
+flowchart TB
+    B["板卡目录<br/>驱动、接线、板级配置"]:::hardware
+    P["产品定义<br/>功能集、原生 profile"]:::product
+    B --> H["硬件能力声明<br/>capabilities.json"]:::hardware
+    P --> R["媒体与交互要求<br/>adapter-contracts.json"]:::interaction
+    H --> C{"构建前契约检查"}
+    R --> C
+    C -->|不匹配| E["报错并停止<br/>不删功能、不换协议"]:::error
+    C -->|匹配| S["选择本产品的源码<br/>Board / profile / CMake"]:::product
+    K["对应芯片的 SDK<br/>通用库或 Xmini Mini"]:::media --> F
+    S --> F["独立构建目录<br/>sdkconfig、依赖锁、APP"]:::media
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33
+    classDef error fill:#fbecee,stroke:#b8616b,color:#202b33

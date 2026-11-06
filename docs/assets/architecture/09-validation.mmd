@@ -1,0 +1,10 @@
+flowchart TB
+    A["结构与契约检查<br/>声明、路径、功能依赖是否一致"]:::interaction --> B["主机回归<br/>状态、时序、错误与资源回收"]:::interaction
+    A --> C["目标固件编译 / 链接<br/>源码、配置、SDK 与产物身份"]:::media
+    B --> D["前期整体复审<br/>还须完成通用端口、交互与新板证明"]:::pending
+    C --> D
+    D -->|收口后另行安排| E["真机分层验证<br/>启动 / 联网 / 交互 / 音视频"]:::pending
+    E --> F["重复操作、弱网与长稳<br/>记录实际条件和结果"]:::pending
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33
+    classDef pending fill:#ffffff,stroke:#a0773d,stroke-dasharray:5 4,color:#202b33

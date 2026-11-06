@@ -1,0 +1,164 @@
+menu "RTC video uplink"
+
+config APP_AUDIO_TX_TIMING_DIAGNOSTICS
+    bool "Capture bounded audio uplink stage timing metadata"
+    default n
+    help
+        Explicitly arm from idle. Keep a 1024-record PSRAM timing ring and
+        freeze three seconds after the first TX pool exhaustion. No payload,
+        hot-path UART or FreeRTOS trace ABI changes. Idle-only export.
+
+# Product media values are owned by media/media_tuning.h. Keep this menu for
+# build-time feature composition only.
+
+config APP_RTC_H264_DIRECT_HW_ENCODER
+    bool "Use direct ESP_H264 hardware encoder for RTC video"
+    default y
+    help
+        Bypass the V4L2 memory-to-memory H264 wrapper on the RTC camera
+        uplink hot path and call the ESP32-P4 hardware encoder directly.
+        The direct path keeps the native 1280x960 encoder output in PSRAM and leaves
+        enough internal DMA memory for ESP-Hosted SDIO during full-duplex
+        audio/video calls.
+
+config APP_H264_PERSISTENT_REF_POOL
+    bool "Retain the largest P4 H264 reference DMA buffer"
+    depends on APP_RTC_H264_DIRECT_HW_ENCODER
+    default y
+    help
+        Keep one aligned internal-DMA reference buffer across encoder profile
+        switches. Device calls use a compact encoder, while IPC and AI use the
+        full profile; retaining the largest buffer prevents repeated free/open
+        cycles from fragmenting the only block large enough for 1280-wide H264.
+        Concurrent extra encoders still receive independent allocations.
+
+config APP_H264_PERSISTENT_DB_POOL
+    bool "Retain the largest P4 H264 deblocking buffer"
+    depends on APP_RTC_H264_DIRECT_HW_ENCODER
+    default y
+    help
+        Keep one cache-aligned PSRAM deblocking buffer across encoder profile
+        switches. The 1280x960 encoder needs about 1.76 MiB contiguously; owning
+        it during early media prewarm prevents later IPC or AI starts from
+        depending on the fragmented runtime heap. Concurrent extra encoders
+        still receive independent allocations.
+
+config APP_RTC_H264_RESOURCE_FALLBACK_ENABLE
+    bool "Allow H264 resource-admission resolution fallback"
+    default y
+    help
+        If the requested hardware encoder cannot reserve one contiguous
+        internal reference-frame block, first use the compact camera/encoder
+        pair that keeps the P4 YUV420 path direct. Only fall back to another
+        aligned size when that compact profile cannot fit. This is a local
+        resource safety net only: it does not enable weak-network adaptation
+        or change the saved RTC video policy. A normally prewarmed encoder
+        still uses the requested size.
+
+config APP_CALL_VIDEO_DIRECT_LCD
+    bool "Use latest-frame direct LCD DMA after call controls auto-hide"
+    depends on SOC_PSRAM_DMA_CAPABLE && SPIRAM
+    default y
+    help
+        Keep the interactive controls in LVGL while they are visible, then
+        auto-hide them and present each latest RGB565 frame as one full-screen
+        PSRAM DMA transaction. Tapping the video restores the controls over the
+        retained current frame. This avoids multi-strip temporal tearing during
+        motion without sacrificing hangup and volume controls.
+
+config APP_RTC_VIDEO_AUTO_ADAPT_ENABLE
+    bool "Enable legacy local RTC video weak-network adaptation"
+    default n
+    help
+        Local fallback driven by queue pressure and send-buffer samples. Keep
+        this disabled when TiRTC SDK transport-driven adaptation is available,
+        so the application does not change frame rate or resolution before the
+        SDK controller publishes its first target.
+
+config APP_RTC_SDK_VIDEO_ADAPT_ENABLE
+    bool "Enable TiRTC SDK transport-driven video bitrate adaptation"
+    default y
+    help
+        Optional TiRTC 2.3 or later transport-driven controller. Register the
+        active encoder bitrate range and
+        apply its absolute target-bitrate callback through the application
+        control task. The SDK controller owns bitrate after its first feedback.
+        The legacy queue-pressure controller is configured independently and is
+        disabled by default so it cannot compete with TGMP. Congestion
+        reductions apply immediately, quality recovery is stepped after a short
+        stable period, resolution and frame rate stay fixed, and the hardware
+        encoder is updated in place. Every connection starts from the normal
+        configured profile; peers that do not produce TGMP feedback remain on
+        that profile, and optional registration failure must not block
+        audio/video setup. This path has passed bidirectional P4 weak-network
+        soak tests. Keep the legacy local controller disabled so that only one
+        layer owns encoder bitrate changes. The encoder starts each connection
+        at the normal profile and changes only after transport feedback.
+
+endmenu
+
+menu "Debug utilities"
+
+config APP_VERBOSE_RUNTIME_LOGS
+    bool "Enable verbose runtime flow logs"
+    default n
+    help
+        Restore detailed HTTP, MQTT, ESP-Hosted, media handoff, and call-state
+        tracing for a focused diagnosis. Normal builds keep lifecycle, first
+        frame, warning, and error logs while suppressing repetitive internals.
+
+config APP_MEDIA_PERIODIC_DIAGNOSTICS
+    bool "Enable periodic media performance diagnostics"
+    default n
+    help
+        Print long camera, RTC transmit, decoder, audio-level, and whole-system
+        snapshots while media is running. These lines are useful for a focused
+        profiling session, but synchronous console output can pause realtime
+        media tasks and create visible periodic video stalls. Keep this off for
+        normal calls and enable it only while collecting performance evidence.
+
+config APP_DISPLAY_PPA_BLIT_DIAGNOSTICS
+    bool "Experimental opaque RGB565 LCD PPA blit"
+    default n
+    help
+        Private profiling candidate. Preserve LVGL controls and framebuffer ownership;
+        validate all RGB565 values and clipped border pixels on hardware before use.
+
+config APP_DISPLAY_TIMING_DIAGNOSTICS
+    bool "Enable LCD render and flush timing diagnostics"
+    default n
+    help
+        Measure LVGL rendering and the original LCD flush callback separately.
+        Emit one aggregate every fifteen seconds, without changing framebuffer
+        ownership, presentation, or flush completion semantics.
+
+config APP_PACKET_PATH_TRACE
+    bool "Enable explicitly armed packet-path metadata capture"
+    depends on SPIRAM
+    default n
+    help
+        Retain bounded one-second counters in PSRAM at netif ingress, UDP
+        socket return, transport delivery and media callbacks. No payload,
+        credentials or per-packet UART output is retained. Only a private
+        diagnostic build should enable this while locating an ingress gap.
+
+config APP_PACKET_PATH_TRANSPORT_STATS
+    bool "Include SDK per-frame transport statistics in the packet trace"
+    depends on APP_PACKET_PATH_TRACE
+    default n
+    help
+        Enable the SDK STAT hook as an additional measurement. Keep this off
+        for the lower-overhead netif/socket/media control run; collecting SDK
+        statistics itself can change scheduling and delivery timing.
+
+config APP_MEDIA_COMPACT_HEALTH_LOG
+    bool "Enable one compact media health line"
+    default n
+    help
+        Print one short MEDIA line every five seconds while an RTC media
+        session is active. It reports camera and transmitted frame rates,
+        queue pressure, failures, and whether AEC is active and receiving a
+        playback reference. Keep this off for normal operation and enable it
+        only while collecting media performance evidence.
+
+endmenu

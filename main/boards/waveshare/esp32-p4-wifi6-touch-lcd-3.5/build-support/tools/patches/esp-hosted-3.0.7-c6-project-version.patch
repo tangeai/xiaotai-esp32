@@ -1,0 +1,9 @@
+diff --git a/examples/wifi/sta/cp/CMakeLists.txt b/examples/wifi/sta/cp/CMakeLists.txt
+--- a/examples/wifi/sta/cp/CMakeLists.txt
++++ b/examples/wifi/sta/cp/CMakeLists.txt
+@@ -2,4 +2,5 @@
+ cmake_minimum_required(VERSION 3.5)
+ 
+ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
++set(PROJECT_VER "3.0.7-xiaotai.5")
+ project(eh_cp_wifi_sta)

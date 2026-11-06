@@ -1,0 +1,5 @@
+{
+  "schema": 1, "target": "esp32c3",
+  "capabilities": ["audio.pcm.capture", "audio.pcm.playback", "display.mono1", "input.key", "feedback.audio", "network.ip", "storage.nvs"],
+  "display": {"kind": "mono1", "width": 128, "height": 64}
+}

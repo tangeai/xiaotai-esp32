@@ -1,0 +1,5 @@
+dependencies:
+  espressif/esp-tflite-micro: 1.3.5
+  espressif/esp-nn: ==1.3.2
+  espressif/esp-dsp: ^1.4.0
+  idf: ==6.0.2

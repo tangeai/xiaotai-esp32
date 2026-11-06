@@ -1,0 +1,300 @@
+{
+  "schema": 1,
+  "version": "0.1.0",
+  "date": "2026-11-05",
+  "scope": "local-source-baseline",
+  "static_checks_passed": true,
+  "host_programs_passed": 45,
+  "host_programs_total": 45,
+  "host_tests": [
+    "tests/test_at_diagnostics.py",
+    "tests/test_board_rollback.py",
+    "tests/test_boot_contract.py",
+    "tests/test_build_history.py",
+    "tests/test_build_profiles.py",
+    "tests/test_dsi_contract.py",
+    "tests/test_hardware_boundaries.py",
+    "tests/test_hosted_spi_diagnostics.py",
+    "tests/test_native_helpers.py",
+    "tests/test_native_profiles.py",
+    "tests/test_product_contracts.py",
+    "tests/test_sdk_contract.py",
+    "tests/test_sdk_variants.py",
+    "tests/test_structure_encoding.py",
+    "tests/test_wt_display_cleanup.py",
+    "tests/regression/test_ai_audio_drain.py",
+    "tests/regression/test_ai_start_contract.py",
+    "tests/regression/test_binding_lifecycle.py",
+    "tests/regression/test_binding_prompt_cancel.py",
+    "tests/regression/test_call_room_recovery.py",
+    "tests/regression/test_camera_pacing.py",
+    "tests/regression/test_captive_portal_contract.py",
+    "tests/regression/test_clock_fallback.py",
+    "tests/regression/test_contact_entry.py",
+    "tests/regression/test_contact_query.py",
+    "tests/regression/test_h5_video_send.py",
+    "tests/regression/test_nvs_worker.py",
+    "tests/regression/test_platform_http_trace.py",
+    "tests/regression/test_playout.py",
+    "tests/regression/test_room.py",
+    "tests/regression/test_runtime_config.py",
+    "tests/regression/test_runtime_init.py",
+    "tests/regression/test_station_identity.py",
+    "tests/regression/test_voice_reliability.py",
+    "tests/regression/test_voip_task_cleanup.py",
+    "tests/regression/test_wifi_credentials.py",
+    "tests/regression/test_wifi_manual_disconnect.py",
+    "tests/regression/test_wifi_portal.py",
+    "tests/native/cores3/test_camera_pacing.py",
+    "tests/native/cores3/test_cores3_aec_timing.py",
+    "tests/native/cores3/test_cores3_afe_continuity.py",
+    "tests/native/cores3/test_cores3_amplifier_clock.py",
+    "tests/native/cores3/test_cores3_capture_repack.py",
+    "tests/native/cores3/test_h5_video_send.py",
+    "tests/native/cores3/test_mqtt_memory_policy.py"
+  ],
+  "sdk_link_checks_passed": 6,
+  "szpi_firmware_builds_passed": 2,
+  "other_five_full_firmware_rebuilt_this_round": false,
+  "flashed_this_version": false,
+  "runtime_accepted_this_version": false,
+  "runtime_portable": false,
+  "remote_published": false,
+  "dependency_lock_sha256": {
+    "xiaotai-cores3-lite.lock": "da3fb401d2405f2050f529ab5b397f06457ce556c5438452e891ffb4b1832004",
+    "xiaotai-mz28-ai-ppd.lock": "fcc7b5b287d038f6364a0daac6c99576fd1bfbcd66d8b36e6b14f61b5d7bc590",
+    "xiaotai-szpi-s3.lock": "77eec61383a9809be8ec3a052e9245e228b365f2996a32ff5d133b2bea680d9a",
+    "xiaotai-waveshare-p4-rev3.lock": "26ecade8344b0d2ef748efcd7b302eb826348a7d53e5c2fe585c69cbad9f3b02",
+    "xiaotai-wt99p461-s1-1v1.lock": "eb798899e508a467944f635e8c6ef6f9fc3868efd0951553b36cc8ba84923339",
+    "xiaotai-xmini-c3-v3.lock": "b5dcfea85e4edf6b3bc2cdbf791343877f0f85d1bd1e9ec0747784fb445c3463"
+  },
+  "builds": [
+    {
+      "name": "xiaotai-cores3-lite",
+      "board": "m5stack/core-s3",
+      "target": "esp32s3",
+      "stage": "sdk-check",
+      "idf_identity": {
+        "version": "6.0.2",
+        "git_commit": "7101770dc6db2667b3c477cc31365dd1acd6db4e"
+      },
+      "sdk_directory": "components/tirtc_sdk/lib/esp32s3",
+      "sdk_sha256": "8e822c9346e1362a8086b42315687b2ce6ea3ae8ffe096a610038795ceabefea",
+      "sdkconfig_sha256": "f8dc608e0d6ce73d429042d0a47a9fc63c323babab44fcdf4c37e6abf79b86e9",
+      "input_manifest_sha256": "bfb6c9bc491a414e21b2e8c51712086be2d3145c45d606333ee30c17d23e5402",
+      "input_file_count": 2568,
+      "artifacts": {
+        "xiaotai_sdk_link_check.bin": "126320ba394d09a3dc3312aff1cc60a3dc3a09d5a72b123f0f9e4ff4251754dc",
+        "xiaotai_sdk_link_check.elf": "529f419cd9f7844c5b4c7d9091cbcf505a22b4d007566bcc7eff1be9a5113965",
+        "xiaotai_sdk_link_check.map": "199a35e553bcdcbf8bde8a13363b1678a547f4328074d04798b0c216461c4e36"
+      },
+      "build_kind": "sdk-check",
+      "checked_candidate_input_count": 35,
+      "current_inputs_verified": true,
+      "hardware_tested_this_version": false
+    },
+    {
+      "name": "xiaotai-mz28-ai-ppd",
+      "board": "mz28-ai-ppd",
+      "target": "esp32c3",
+      "stage": "sdk-check",
+      "idf_identity": {
+        "version": "6.0.2",
+        "git_commit": "7101770dc6db2667b3c477cc31365dd1acd6db4e"
+      },
+      "sdk_directory": "components/tirtc_sdk/lib/esp32c3",
+      "sdk_sha256": "50396233ef91b7736e392999c07a50b3ac2bd76d97567e88b759d229973b784b",
+      "sdkconfig_sha256": "87b37b827e964f8023b0fab7aac5dd356d7586825548d73a5648c57ccc8ba1c9",
+      "input_manifest_sha256": "82350534ea2442c87333a7818e4a9b5a487fd1226f98360fe265d8d5abe2bc97",
+      "input_file_count": 2449,
+      "artifacts": {
+        "xiaotai_sdk_link_check.bin": "a58050dedc9f7ce9025fabf65a13f7f615c7d741416eb199c1be45761d52e4d2",
+        "xiaotai_sdk_link_check.elf": "683f460eedc591ab6ab0617a4bec37d22aae99c6fcada5547e969beaf4fab3fa",
+        "xiaotai_sdk_link_check.map": "b13dea4a60c8388f932ff803adc62f038ba8c1ad61c2bffb2d0784403d14bb9a"
+      },
+      "build_kind": "sdk-check",
+      "checked_candidate_input_count": 34,
+      "current_inputs_verified": true,
+      "hardware_tested_this_version": false
+    },
+    {
+      "name": "xiaotai-szpi-s3",
+      "board": "lckfb/szpi-esp32s3",
+      "target": "esp32s3",
+      "stage": "firmware",
+      "idf_identity": {
+        "version": "6.0.3",
+        "source_tree_sha256": "e417314424b4ca5b7ebcd666a799e881d569ac29b85d19ae64aaa3c47e459d5c",
+        "source_file_count": 20927
+      },
+      "sdk_directory": "components/tirtc_sdk/variants/szpi-http/lib",
+      "sdk_sha256": "a3acbc149d88af766d2cf41b31b20000d52f53941ce9d70618c3eaa5ea36ee5c",
+      "sdkconfig_sha256": "916e55be1d2fb81934d9310edf989ab661256528b29a4a4871eff0a1bd123b99",
+      "input_manifest_sha256": "ee34bb8211c1032b8cafaa6d889ab9c6fb45e1be5a142c76ae0a37527b65aa36",
+      "input_file_count": 6733,
+      "artifacts": {
+        "xiaotai.bin": "606c200668c41095747d0eb93a242d5fd7a4f1313786c2941bfc5f42a6b19765",
+        "xiaotai.elf": "351627b57c7ec007973f9a47d109257389b28861f3dcbedc0525597c8b1782ae",
+        "xiaotai.map": "02a00499a150bb7b55f63ef2c10f1c2ed94667d3d060341dfeafa70f1db9932c"
+      },
+      "build_kind": "firmware",
+      "checked_candidate_input_count": 122,
+      "current_inputs_verified": true,
+      "hardware_tested_this_version": false,
+      "effective_config_difference_from_hardware_test": {
+        "LV_USE_SNAPSHOT": [
+          true,
+          false
+        ],
+        "IDF_INIT_VERSION": [
+          "6.0.2",
+          "6.0.3"
+        ],
+        "XIAOTAI_DEVELOPMENT_CONSOLE": [
+          true,
+          false
+        ]
+      },
+      "dependencies_match_hardware_test": true,
+      "dependencies_lock_sha256": "77eec61383a9809be8ec3a052e9245e228b365f2996a32ff5d133b2bea680d9a",
+      "app_bytes": 5133680,
+      "app_partition_bytes": 5242880,
+      "app_free_bytes": 109200,
+      "project_version": "0.1.0"
+    },
+    {
+      "name": "xiaotai-szpi-s3",
+      "board": "lckfb/szpi-esp32s3",
+      "target": "esp32s3",
+      "stage": "firmware",
+      "idf_identity": {
+        "version": "6.0.3",
+        "source_tree_sha256": "e417314424b4ca5b7ebcd666a799e881d569ac29b85d19ae64aaa3c47e459d5c",
+        "source_file_count": 20927
+      },
+      "sdk_directory": "components/tirtc_sdk/variants/szpi-http/lib",
+      "sdk_sha256": "a3acbc149d88af766d2cf41b31b20000d52f53941ce9d70618c3eaa5ea36ee5c",
+      "sdkconfig_sha256": "1fb5c5c86afd836702138d2cdef788a4b7866cdd5212e28e2adfdabc038dfd05",
+      "input_manifest_sha256": "a2d8003a828d8d9b256b19ae173427f4f4fa41bc6da597f9a4fd179b7163d0d4",
+      "input_file_count": 6733,
+      "artifacts": {
+        "xiaotai.bin": "8d63ab25a449fc615dfe04aa64ad822bcb63750366524756a11a85b344430a36",
+        "xiaotai.elf": "b7e49d6b5d668d216126d8b20383854f3f739a8fedefaf62568d797e4b1a4617",
+        "xiaotai.map": "0b516fa99a179e47eefe768ecb0ad4f5fd7c5b920de87a7d73943282a139c632"
+      },
+      "build_kind": "firmware-diagnostics",
+      "checked_candidate_input_count": 122,
+      "current_inputs_verified": true,
+      "hardware_tested_this_version": false,
+      "effective_config_difference_from_hardware_test": {
+        "IDF_INIT_VERSION": [
+          "6.0.2",
+          "6.0.3"
+        ]
+      },
+      "dependencies_match_hardware_test": true,
+      "dependencies_lock_sha256": "77eec61383a9809be8ec3a052e9245e228b365f2996a32ff5d133b2bea680d9a",
+      "app_bytes": 5170816,
+      "app_partition_bytes": 5242880,
+      "app_free_bytes": 72064,
+      "project_version": "0.1.0"
+    },
+    {
+      "name": "xiaotai-szpi-s3",
+      "board": "lckfb/szpi-esp32s3",
+      "target": "esp32s3",
+      "stage": "sdk-check",
+      "idf_identity": {
+        "version": "6.0.3",
+        "source_tree_sha256": "e417314424b4ca5b7ebcd666a799e881d569ac29b85d19ae64aaa3c47e459d5c",
+        "source_file_count": 20927
+      },
+      "sdk_directory": "components/tirtc_sdk/variants/szpi-http/lib",
+      "sdk_sha256": "a3acbc149d88af766d2cf41b31b20000d52f53941ce9d70618c3eaa5ea36ee5c",
+      "sdkconfig_sha256": "882bb68f6399023a74d0eb8c8dedcca3c4b3b0498a54ce58b031e1880cfee0c7",
+      "input_manifest_sha256": "e48c45895b51ad784c72fff45369130f827b15ed23e5734e9e8b34dbd8f05848",
+      "input_file_count": 2574,
+      "artifacts": {
+        "xiaotai_sdk_link_check.bin": "a2540b9b63e20a382f634dd500391c55963c0d4ead72eba37012c5363e1fdac3",
+        "xiaotai_sdk_link_check.elf": "78efc052a6e249c8fe7b821b2377403e64c2ff47fb148b0774bf6cab7e1b1ff1",
+        "xiaotai_sdk_link_check.map": "9ec18d1492ec387a5755db01bb8bf5ad793b20042ae68a8ee2bd03bf7872f301"
+      },
+      "build_kind": "sdk-check",
+      "checked_candidate_input_count": 36,
+      "current_inputs_verified": true,
+      "hardware_tested_this_version": false
+    },
+    {
+      "name": "xiaotai-waveshare-p4-rev3",
+      "board": "waveshare/esp32-p4-wifi6-touch-lcd-3.5",
+      "target": "esp32p4",
+      "stage": "sdk-check",
+      "idf_identity": {
+        "version": "6.0.2",
+        "git_commit": "7101770dc6db2667b3c477cc31365dd1acd6db4e"
+      },
+      "sdk_directory": "components/tirtc_sdk/lib/esp32p4",
+      "sdk_sha256": "730be6667399a541d29a26d30484795785be8218f53449038617910effe56f67",
+      "sdkconfig_sha256": "0e32448c1d1055e5eac899e8130fbbf4f3af63fadcca097364b2a6299ef3024f",
+      "input_manifest_sha256": "116749f1608fae32e023678b823b4cc550d9bcb072b951602c1e50b6eca5818b",
+      "input_file_count": 2786,
+      "artifacts": {
+        "xiaotai_sdk_link_check.bin": "e65c546ae6070072e2e13b7eb73a26bf4e979c67ae6fb3019037deff99cf76da",
+        "xiaotai_sdk_link_check.elf": "57e8947ceaa6117005f9b0e863bc5bcfa69ff7247f6d93896da7eba0b28c749e",
+        "xiaotai_sdk_link_check.map": "39f6589108bd3c659e22f849e7e09d07c6f35705afcc2cd71a7929212180147a"
+      },
+      "build_kind": "sdk-check",
+      "checked_candidate_input_count": 34,
+      "current_inputs_verified": true,
+      "hardware_tested_this_version": false
+    },
+    {
+      "name": "xiaotai-wt99p461-s1-1v1",
+      "board": "wt99p461-s1",
+      "target": "esp32p4",
+      "stage": "sdk-check",
+      "idf_identity": {
+        "version": "6.0.2",
+        "git_commit": "7101770dc6db2667b3c477cc31365dd1acd6db4e"
+      },
+      "sdk_directory": "components/tirtc_sdk/lib/esp32p4",
+      "sdk_sha256": "730be6667399a541d29a26d30484795785be8218f53449038617910effe56f67",
+      "sdkconfig_sha256": "d99824ba6c3d287074f218c7b0ddb06e6fc6170e21a6f7334697fba5ba65017b",
+      "input_manifest_sha256": "a259b1c5bc577ae5dc73cb169539edb4cd7dcf9466dc299d5ef33311dafb42bb",
+      "input_file_count": 2786,
+      "artifacts": {
+        "xiaotai_sdk_link_check.bin": "c9e2f72896965f3968686f32c46aee893a6ab359fe6b4ac755402d1134116864",
+        "xiaotai_sdk_link_check.elf": "b775447edba160522be164a9b01b2b2b49ddc99c9e659e2e1eb96538d408ef59",
+        "xiaotai_sdk_link_check.map": "ec8603330004c167ab4be11b378ee49a670d7480d2ea39842051aab638db5a48"
+      },
+      "build_kind": "sdk-check",
+      "checked_candidate_input_count": 34,
+      "current_inputs_verified": true,
+      "hardware_tested_this_version": false
+    },
+    {
+      "name": "xiaotai-xmini-c3-v3",
+      "board": "xmini/c3-v3",
+      "target": "esp32c3",
+      "stage": "sdk-check",
+      "idf_identity": {
+        "version": "6.0.2",
+        "git_commit": "7101770dc6db2667b3c477cc31365dd1acd6db4e"
+      },
+      "sdk_directory": "components/tirtc_sdk/variants/xmini/lib",
+      "sdk_sha256": "328dfaaa3fb313216f30734cbfd1cdec676fd44cabfd8adcfa3b8a3462ef45f3",
+      "sdkconfig_sha256": "30146afe08706acf639255434c33194f1a25e80c86ee56fd03d00118750b9e7c",
+      "input_manifest_sha256": "0f094506463863f01bddf654a6e59725b6c59093e38b026cb2bcbcb285e9c3f4",
+      "input_file_count": 2466,
+      "artifacts": {
+        "xiaotai_sdk_link_check.bin": "8e970055d3beefa6845a63001aae96ec0eaf6b1d7940bc244fd34bff3a035f43",
+        "xiaotai_sdk_link_check.elf": "9765b83598771e515e7c2955d21cd275af308ee784d30769f4f82d485df62eb5",
+        "xiaotai_sdk_link_check.map": "3d9007616dc1749fcc49dfbf39ddddc0d934b3eac47309b140c5bde6eb5ace94"
+      },
+      "build_kind": "sdk-check",
+      "checked_candidate_input_count": 34,
+      "current_inputs_verified": true,
+      "hardware_tested_this_version": false
+    }
+  ]
+}

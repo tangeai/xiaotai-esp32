@@ -1,0 +1,224 @@
+[
+  {
+    "board": "lckfb/szpi-esp32s3",
+    "name": "xiaotai-szpi-s3",
+    "target": "esp32s3",
+    "app_bytes": 5140768,
+    "app_partition": 5242880,
+    "app_free_bytes": 102112,
+    "app_sha256": "c332b9294f8d79567eceddb023986f11b21f05f12d55d82e0ac880cf47e60ea7",
+    "sdk_sha256": "8e822c9346e1362a8086b42315687b2ce6ea3ae8ffe096a610038795ceabefea",
+    "build_record_sha256": "c7d988afcd450fe553dee9bc6a0b196b3136c6e9e6b32cfe68479dab46ccee4b",
+    "input_manifest_sha256": "d4f8ef4e9486669609f3db8de2c185b84d0b56a7d8b64e1aae62adc7b1f02722",
+    "dependencies_lock_sha256": "c58cc03fb010ef95b038bbd54ecea7876ee9a4e240bb0ffefd6ebc0199b85fc6",
+    "captured_input_files": 6726,
+    "compile_units": 1880,
+    "current_authored_inputs_checked": 111,
+    "policy_metadata_changes": [
+      "config/development-status.json"
+    ],
+    "app_main_count": 1,
+    "native_entry_count": 0,
+    "hardware_tested": false,
+    "compatibility": {
+      "schema": 1,
+      "hardware_contract_checked": true,
+      "runtime_portable": false,
+      "hardware_tested": false,
+      "media": "pcm-host-codecs",
+      "interaction": "touch-320",
+      "sdk_variant": "generic",
+      "inputs": {
+        "main/boards/lckfb/szpi-esp32s3/capabilities.json": "1275ee296012a10be6ff8a30a5de80e2fb45019acacc390c6165f396cebb6937",
+        "config/adapter-contracts.json": "4db2ecbd2f3e70a7e8c3ef26beed4d5b5f4722b8de6c9e8ff140d80e62557095",
+        "config/product-contracts.json": "ca12f54dc4b4877915ae32b0c9ecf0d0ef268937a9d13786d0c719279779a32e",
+        "scripts/product_contract.py": "aafc895cff3ccec6586bee6eca24c7fc0afd917c8da491bdf6ab1bae34f0f132"
+      }
+    }
+  },
+  {
+    "board": "m5stack/core-s3",
+    "name": "xiaotai-cores3-lite",
+    "target": "esp32s3",
+    "app_bytes": 6049344,
+    "app_partition": 7340032,
+    "app_free_bytes": 1290688,
+    "app_sha256": "fe94aabc5b2ad2466f366d5e618fdfaef5535111c4edea1c2ec4ca29de415463",
+    "sdk_sha256": "8e822c9346e1362a8086b42315687b2ce6ea3ae8ffe096a610038795ceabefea",
+    "build_record_sha256": "fecd6fb95819d26e153cdd5be9604db506cb06652b1afcba51b0079cd67c00dd",
+    "input_manifest_sha256": "a92bb6be5e80b373e284401187e4106490a1e9353e9ab21604261675e0799bcf",
+    "dependencies_lock_sha256": "da3fb401d2405f2050f529ab5b397f06457ce556c5438452e891ffb4b1832004",
+    "captured_input_files": 7276,
+    "compile_units": 2028,
+    "current_authored_inputs_checked": 144,
+    "policy_metadata_changes": [
+      "config/development-status.json"
+    ],
+    "app_main_count": 1,
+    "native_entry_count": 1,
+    "hardware_tested": false,
+    "compatibility": {
+      "schema": 1,
+      "hardware_contract_checked": true,
+      "runtime_portable": false,
+      "hardware_tested": false,
+      "media": "pcm-host-codecs",
+      "interaction": "touch-320",
+      "sdk_variant": "generic",
+      "inputs": {
+        "main/boards/m5stack/core-s3/capabilities.json": "1275ee296012a10be6ff8a30a5de80e2fb45019acacc390c6165f396cebb6937",
+        "config/adapter-contracts.json": "4db2ecbd2f3e70a7e8c3ef26beed4d5b5f4722b8de6c9e8ff140d80e62557095",
+        "config/product-contracts.json": "ca12f54dc4b4877915ae32b0c9ecf0d0ef268937a9d13786d0c719279779a32e",
+        "scripts/product_contract.py": "aafc895cff3ccec6586bee6eca24c7fc0afd917c8da491bdf6ab1bae34f0f132"
+      }
+    }
+  },
+  {
+    "board": "mz28-ai-ppd",
+    "name": "xiaotai-mz28-ai-ppd",
+    "target": "esp32c3",
+    "app_bytes": 1678160,
+    "app_partition": 6225920,
+    "app_free_bytes": 4547760,
+    "app_sha256": "627f3a70be562eca16387d5127e043213f579a4042086d3d2e5c1fbe16d5a6f7",
+    "sdk_sha256": "50396233ef91b7736e392999c07a50b3ac2bd76d97567e88b759d229973b784b",
+    "build_record_sha256": "d08450c8ff8f04d8a0fad7ad4c47d419f638e8df3ec528b0dcdd7c22222de8e9",
+    "input_manifest_sha256": "ed06679ca03e18ac4f1fb25f97a68488f818fd46e9cde3a333405e257d16166a",
+    "dependencies_lock_sha256": "fcc7b5b287d038f6364a0daac6c99576fd1bfbcd66d8b36e6b14f61b5d7bc590",
+    "captured_input_files": 3395,
+    "compile_units": 775,
+    "current_authored_inputs_checked": 109,
+    "policy_metadata_changes": [
+      "config/development-status.json"
+    ],
+    "app_main_count": 1,
+    "native_entry_count": 1,
+    "hardware_tested": false,
+    "compatibility": {
+      "schema": 1,
+      "hardware_contract_checked": true,
+      "runtime_portable": false,
+      "hardware_tested": false,
+      "media": "uart-opus-pcm",
+      "interaction": "headless-key-led-voice",
+      "sdk_variant": "generic",
+      "inputs": {
+        "main/boards/mz28-ai-ppd/capabilities.json": "f9f9023707a6e6d840792defc2fb30dfa08986a0db0268f707017bdfd846d599",
+        "config/adapter-contracts.json": "4db2ecbd2f3e70a7e8c3ef26beed4d5b5f4722b8de6c9e8ff140d80e62557095",
+        "config/product-contracts.json": "ca12f54dc4b4877915ae32b0c9ecf0d0ef268937a9d13786d0c719279779a32e",
+        "scripts/product_contract.py": "aafc895cff3ccec6586bee6eca24c7fc0afd917c8da491bdf6ab1bae34f0f132"
+      }
+    }
+  },
+  {
+    "board": "waveshare/esp32-p4-wifi6-touch-lcd-3.5",
+    "name": "xiaotai-waveshare-p4-rev3",
+    "target": "esp32p4",
+    "app_bytes": 6591728,
+    "app_partition": 7536640,
+    "app_free_bytes": 944912,
+    "app_sha256": "6f714b06f89fdb3c962f72a23ec9b4523c4e264f3705a0cdee651a9f3a26f3ad",
+    "sdk_sha256": "730be6667399a541d29a26d30484795785be8218f53449038617910effe56f67",
+    "build_record_sha256": "875881a4089850f98498842596f028daab4cabcbabf2398fad63fc9b1ea286d5",
+    "input_manifest_sha256": "2892ea9fd44910219eba377c62fff744f2fed9e8c0f479a91884c684b9335698",
+    "dependencies_lock_sha256": "26ecade8344b0d2ef748efcd7b302eb826348a7d53e5c2fe585c69cbad9f3b02",
+    "captured_input_files": 8774,
+    "compile_units": 2497,
+    "current_authored_inputs_checked": 870,
+    "policy_metadata_changes": [
+      "config/development-status.json"
+    ],
+    "app_main_count": 1,
+    "native_entry_count": 1,
+    "hardware_tested": false,
+    "compatibility": {
+      "schema": 1,
+      "hardware_contract_checked": true,
+      "runtime_portable": false,
+      "hardware_tested": false,
+      "media": "pcm-host-codecs",
+      "interaction": "touch-480",
+      "sdk_variant": "generic",
+      "inputs": {
+        "main/boards/waveshare/esp32-p4-wifi6-touch-lcd-3.5/capabilities.json": "d8fa4d0b879356e6cae1009b2adff120067cb7ccb514892edbad922ccfed2b1b",
+        "config/adapter-contracts.json": "4db2ecbd2f3e70a7e8c3ef26beed4d5b5f4722b8de6c9e8ff140d80e62557095",
+        "config/product-contracts.json": "ca12f54dc4b4877915ae32b0c9ecf0d0ef268937a9d13786d0c719279779a32e",
+        "scripts/product_contract.py": "aafc895cff3ccec6586bee6eca24c7fc0afd917c8da491bdf6ab1bae34f0f132"
+      }
+    }
+  },
+  {
+    "board": "wt99p461-s1",
+    "name": "xiaotai-wt99p461-s1-1v1",
+    "target": "esp32p4",
+    "app_bytes": 7205936,
+    "app_partition": 7536640,
+    "app_free_bytes": 330704,
+    "app_sha256": "7357ab65b5dbd68fe82e339d9a8b47f77e4cb8bf1626049ea5564853f4fcb17b",
+    "sdk_sha256": "730be6667399a541d29a26d30484795785be8218f53449038617910effe56f67",
+    "build_record_sha256": "2bcf1fc4b8ed774f6ed216062d478392fbeabe7e01573311bbe74f846e458179",
+    "input_manifest_sha256": "8f57c5a85550a4c2e830d761bb9092a394bb1a7c9379e3309e305ef1f2092c83",
+    "dependencies_lock_sha256": "eb798899e508a467944f635e8c6ef6f9fc3868efd0951553b36cc8ba84923339",
+    "captured_input_files": 8749,
+    "compile_units": 2490,
+    "current_authored_inputs_checked": 900,
+    "policy_metadata_changes": [
+      "config/development-status.json"
+    ],
+    "app_main_count": 1,
+    "native_entry_count": 1,
+    "hardware_tested": false,
+    "compatibility": {
+      "schema": 1,
+      "hardware_contract_checked": true,
+      "runtime_portable": false,
+      "hardware_tested": false,
+      "media": "pcm-host-codecs",
+      "interaction": "door-1024",
+      "sdk_variant": "generic",
+      "inputs": {
+        "main/boards/wt99p461-s1/capabilities.json": "4877fb7b5250dc972bc74805af93407c977ef629863d8183b308afc672fe9dd9",
+        "config/adapter-contracts.json": "4db2ecbd2f3e70a7e8c3ef26beed4d5b5f4722b8de6c9e8ff140d80e62557095",
+        "config/product-contracts.json": "ca12f54dc4b4877915ae32b0c9ecf0d0ef268937a9d13786d0c719279779a32e",
+        "scripts/product_contract.py": "aafc895cff3ccec6586bee6eca24c7fc0afd917c8da491bdf6ab1bae34f0f132"
+      }
+    }
+  },
+  {
+    "board": "xmini/c3-v3",
+    "name": "xiaotai-xmini-c3-v3",
+    "target": "esp32c3",
+    "app_bytes": 2463728,
+    "app_partition": 4194304,
+    "app_free_bytes": 1730576,
+    "app_sha256": "8a0619e579b5452eb5f24e3f058afbd5cd147409080b595b2bc5a433fca5f328",
+    "sdk_sha256": "328dfaaa3fb313216f30734cbfd1cdec676fd44cabfd8adcfa3b8a3462ef45f3",
+    "build_record_sha256": "aa0294e4dd82f444088392f2f300a7ae02fdc936067c14a2e374f5e927854d3e",
+    "input_manifest_sha256": "56c33d0ead733fc901af40936afa3e7540e1b83621b4cf077195428701b7ac0b",
+    "dependencies_lock_sha256": "b5dcfea85e4edf6b3bc2cdbf791343877f0f85d1bd1e9ec0747784fb445c3463",
+    "captured_input_files": 3543,
+    "compile_units": 803,
+    "current_authored_inputs_checked": 148,
+    "policy_metadata_changes": [
+      "config/development-status.json"
+    ],
+    "app_main_count": 1,
+    "native_entry_count": 1,
+    "hardware_tested": false,
+    "compatibility": {
+      "schema": 1,
+      "hardware_contract_checked": true,
+      "runtime_portable": false,
+      "hardware_tested": false,
+      "media": "pcm-pcma-mini",
+      "interaction": "oled-keys",
+      "sdk_variant": "xmini-mini",
+      "inputs": {
+        "main/boards/xmini/c3-v3/capabilities.json": "8489396476ea41ce46810f7384c83631fa04a068307ae7e4e9baf356161144fb",
+        "config/adapter-contracts.json": "4db2ecbd2f3e70a7e8c3ef26beed4d5b5f4722b8de6c9e8ff140d80e62557095",
+        "config/product-contracts.json": "ca12f54dc4b4877915ae32b0c9ecf0d0ef268937a9d13786d0c719279779a32e",
+        "scripts/product_contract.py": "aafc895cff3ccec6586bee6eca24c7fc0afd917c8da491bdf6ab1bae34f0f132"
+      }
+    }
+  }
+]
