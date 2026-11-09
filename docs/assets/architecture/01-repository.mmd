@@ -7,7 +7,7 @@ flowchart TB
     R --> C
     C -->|不匹配| E["报错并停止<br/>不删功能、不换协议"]:::error
     C -->|匹配| S["选择本产品的源码<br/>Board / profile / CMake"]:::product
-    K["对应芯片的 SDK<br/>通用库或 Xmini Mini"]:::media --> F
+    K["对应产品的 SDK<br/>通用库、S3 专用或 Xmini Mini"]:::media --> F
     S --> F["独立构建目录<br/>sdkconfig、依赖锁、APP"]:::media
     classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
     classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
