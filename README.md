@@ -39,15 +39,15 @@ Xmini-C3-V3 使用 OLED 和 BOOT 单键，保留 AI、微信、设备互呼、�
 
 准备一块开发板、一根 USB 数据线、一台电脑和可上网的 **2.4 GHz Wi-Fi**。平台注册需要邮箱。
 
-> 本仓库的旧固件附件已下架。已有与板型匹配且校验通过的完整 BIN，可继续[网页烧录](#用浏览器烧录)；没有固件时，请先看对应工程的构建说明。源码 ZIP 和单独的 APP BIN 不能当完整烧录包使用。
+点击对应板型的版本链接，在 **Assets** 下载 `full-16MB.bin` 或 `full-8MB.bin`，校验后按[网页烧录说明](#用浏览器烧录)安装。源码 ZIP 和单独的 APP BIN 不能当完整烧录包使用。
 
-| 开发板 | 设备实拍 | 使用与构建 | 功能 |
+| 开发板 | 设备实拍 | 固件与指南 | 功能 |
 | --- | --- | --- | --- |
-| 立创·实战派 ESP32-S3 V1.0.1/N16R8 | <img src="docs/images/boards/lckfb-s3-device-front.webp" alt="立创 ESP32-S3 设备正面" width="160"> | [立创 S3 指南](lckfb-szpi-esp32s3-tirtc/README.md) | 语音通话、AI 对讲、H5 摄像头查看 |
-| M5Stack CoreS3-Lite | <img src="docs/images/boards/m5stack-s3-device-front.webp" alt="M5Stack S3 设备正面" width="120"> | [CoreS3-Lite 指南](m5stack-cores3-se-xiaotai/README.md) | 语音通话、AI 对讲、H5 摄像头查看与双向语音 |
-| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | <img src="docs/images/boards/waveshare-p4-device-front.webp" alt="微雪 ESP32-P4 设备正面" width="160"> | [P4 指南](waveshare-esp32p4-xiaotai/README.md) | 音视频通话、实时画面、AI 对讲 |
-| MZ28-AI-PPD V1.2（ESP32-C3，无屏） | — | [MZ28 指南](mz28-ai-xiaotai/README.md) | 微信双向语音、语音绑定码、BOOT 操作与七颗 RGB 灯 |
-| Xmini-C3-V3（ESP32-C3，OLED） | <img src="docs/images/boards/xmini-c3-device-front.webp" alt="Xmini-C3 设备正面" width="100"> | [Xmini 指南](xmini-c3-v3-xiaotai/README.md) | AI、微信、设备互呼、网页语音与多人对讲 |
+| 立创·实战派 ESP32-S3 V1.0.1/N16R8 | <img src="docs/images/boards/lckfb-s3-device-front.webp" alt="立创 ESP32-S3 设备正面" width="160"> | [1.5.0 固件](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0) · [指南](lckfb-szpi-esp32s3-tirtc/README.md) | 语音通话、AI 对讲、H5 摄像头查看 |
+| M5Stack CoreS3-Lite | <img src="docs/images/boards/m5stack-s3-device-front.webp" alt="M5Stack S3 设备正面" width="120"> | [1.5.1 固件](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1) · [指南](m5stack-cores3-se-xiaotai/README.md) | 语音通话、AI 对讲、H5 摄像头查看与双向语音 |
+| 微雪 ESP32-P4-WIFI6-Touch-LCD-3.5 | <img src="docs/images/boards/waveshare-p4-device-front.webp" alt="微雪 ESP32-P4 设备正面" width="160"> | [1.6.1 固件](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1) · [指南](waveshare-esp32p4-xiaotai/README.md) | 音视频通话、实时画面、AI 对讲 |
+| MZ28-AI-PPD V1.2（ESP32-C3，无屏） | — | [1.0.0 固件](https://github.com/tangeai/xiaotai-esp32/releases/tag/mz28-ai-app-v1.0.0) · [指南](mz28-ai-xiaotai/README.md) | 微信双向语音、语音绑定码、BOOT 操作与七颗 RGB 灯 |
+| Xmini-C3-V3（ESP32-C3，OLED） | <img src="docs/images/boards/xmini-c3-device-front.webp" alt="Xmini-C3 设备正面" width="100"> | [0.1.0 固件](https://github.com/tangeai/xiaotai-esp32/releases/tag/xmini-c3-v3-app-v0.1.0) · [指南](xmini-c3-v3-xiaotai/README.md) | AI、微信、设备互呼、网页语音与多人对讲 |
 
 照片用于对照外观，烧录前请以实物型号和芯片修订为准。
 

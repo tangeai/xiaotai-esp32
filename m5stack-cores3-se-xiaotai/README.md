@@ -6,7 +6,7 @@
 
 ## 先体验
 
-旧固件附件已下架。若已有经校验的完整 16 MB 包，确认它适用于 **M5Stack CoreS3-Lite，16 MB Flash / 8 MB Quad PSRAM、GC0308 摄像头** 后再烧录。不能混用立创 S3、P4 或其他 M5Stack 型号的固件；没有完整包时可参考下方开发文档自行编译。
+下载[CoreS3-Lite 1.5.1 固件](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1)，核对并校验完整 16 MB BIN 后再烧录。仅适用于 **M5Stack CoreS3-Lite，16 MB Flash / 8 MB Quad PSRAM、GC0308 摄像头**，不能混用立创 S3、P4 或其他 M5Stack 型号的固件。
 
 完整 BIN 应为 **16,777,216 字节**；SHA-256 与该固件随附的 `SHA256SUMS.txt` 核对。`Source code` 是源码，不是烧录包。`release-manifest.json` 记录源码、配置、SDK 与固件身份；部署边界见[已知限制](KNOWN_LIMITATIONS.md)。
 

@@ -18,7 +18,7 @@
 
 ## 文件校验
 
-旧固件附件已下架。若已保存本板的完整 BIN 或分段 ZIP，请使用同一次构建随附的 `SHA256SUMS.txt` 核验，不混用其他版本的分段。没有固件时，先按[开发指南](GETTING_STARTED_CN.md)构建。
+在[MZ28 1.0.0 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/mz28-ai-app-v1.0.0)下载完整 BIN 或分段 ZIP，按同一页的 `SHA256SUMS.txt` 核验。不要混用其他版本的分段；自行构建见[开发指南](GETTING_STARTED_CN.md)。
 
 在下载目录或解压后的固件目录计算哈希，与各自的 `SHA256SUMS.txt` 对照：
 

@@ -45,7 +45,7 @@
 | 链路 | ESP32-C6，4-bit SDIO、40 MHz SDR、Streaming Mode |
 | P4 构建环境 | ESP-IDF 5.5.5 |
 
-源码编译需要同版 C6 APP，大小为 **1,111,904 字节**，SHA-256 为 `8700a7215c77ffc9810ab27dbf7687d6222c620c13d7814dc502ace6a784b4f5`。旧附件已下架；如果没有符合该摘要的原件，请先向维护者获取，不使用其他版本替代。将核验过的文件放入 `main/assets/c6_app.bin`；P4 构建及设备启动都会核对摘要。该文件不进入源码 Git，**不是 C6 完整恢复镜像，也不能写到 `0x0`**。
+源码编译需要同版 C6 APP。到[微雪 P4 1.6.1 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1)下载 `c6_app.bin`，核对大小 **1,111,904 字节**和 SHA-256 `8700a7215c77ffc9810ab27dbf7687d6222c620c13d7814dc502ace6a784b4f5`，再放入 `main/assets/c6_app.bin`。P4 构建及设备启动都会核对摘要，不使用其他版本替代。该文件不进入源码 Git，**不是 C6 完整恢复镜像，也不能写到 `0x0`**。
 
 ## 编译 C6
 

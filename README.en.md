@@ -39,15 +39,15 @@ Xmini-C3-V3 uses an OLED and one BOOT button for AI, WeChat, device calls, brows
 
 Prepare a supported board, a USB data cable, a computer, and a **2.4 GHz Wi-Fi** network with internet access. You will also need an email address to register on the platform.
 
-> This repository no longer hosts the old firmware attachments. If you already have a verified full BIN for your board, continue to [browser flashing](#step-2-flash-from-your-browser). Otherwise, see the matching project's build instructions. A source ZIP or APP-only BIN is not a full flash image.
+Open the release for your board, download the file ending in `full-16MB.bin` or `full-8MB.bin` under **Assets**, and verify it before [flashing from your browser](#step-2-flash-from-your-browser). A source ZIP or APP-only BIN is not a full flash image.
 
-| Board | Device photo | User and build guide | Features |
+| Board | Device photo | Firmware and guide | Features |
 | --- | --- | --- | --- |
-| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | <img src="docs/images/boards/lckfb-s3-device-front.webp" alt="Front of the LCKFB ESP32-S3 device" width="160"> | [LCKFB S3 guide](lckfb-szpi-esp32s3-tirtc/README.md) | Voice calls, AI voice chat, and browser camera viewing |
-| M5Stack CoreS3-Lite | <img src="docs/images/boards/m5stack-s3-device-front.webp" alt="Front of the M5Stack S3 device" width="120"> | [CoreS3-Lite guide](m5stack-cores3-se-xiaotai/README.md) | Voice calls, AI voice chat, and browser camera viewing with two-way audio |
-| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | <img src="docs/images/boards/waveshare-p4-device-front.webp" alt="Front of the Waveshare ESP32-P4 device" width="160"> | [P4 guide](waveshare-esp32p4-xiaotai/README.md) | Audio/video calls, live video, and AI voice chat |
-| MZ28-AI-PPD V1.2 (ESP32-C3, screenless) | — | [MZ28 guide](mz28-ai-xiaotai/README.md) | Two-way WeChat voice, spoken binding codes, BOOT control, and seven RGB LEDs |
-| Xmini-C3-V3 (ESP32-C3, OLED) | <img src="docs/images/boards/xmini-c3-device-front.webp" alt="Front of the Xmini-C3 device" width="100"> | [Xmini guide](xmini-c3-v3-xiaotai/README.md) | AI, WeChat, device calls, browser voice, and group voice chat |
+| LCKFB Shizhanpai (立创·实战派) ESP32-S3 V1.0.1/N16R8 | <img src="docs/images/boards/lckfb-s3-device-front.webp" alt="Front of the LCKFB ESP32-S3 device" width="160"> | [1.5.0 firmware](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0) · [Guide](lckfb-szpi-esp32s3-tirtc/README.md) | Voice calls, AI voice chat, and browser camera viewing |
+| M5Stack CoreS3-Lite | <img src="docs/images/boards/m5stack-s3-device-front.webp" alt="Front of the M5Stack S3 device" width="120"> | [1.5.1 firmware](https://github.com/tangeai/xiaotai-esp32/releases/tag/m5stack-cores3-lite-app-v1.5.1) · [Guide](m5stack-cores3-se-xiaotai/README.md) | Voice calls, AI voice chat, and browser camera viewing with two-way audio |
+| Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 | <img src="docs/images/boards/waveshare-p4-device-front.webp" alt="Front of the Waveshare ESP32-P4 device" width="160"> | [1.6.1 firmware](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-p4-app-v1.6.1) · [Guide](waveshare-esp32p4-xiaotai/README.md) | Audio/video calls, live video, and AI voice chat |
+| MZ28-AI-PPD V1.2 (ESP32-C3, screenless) | — | [1.0.0 firmware](https://github.com/tangeai/xiaotai-esp32/releases/tag/mz28-ai-app-v1.0.0) · [Guide](mz28-ai-xiaotai/README.md) | Two-way WeChat voice, spoken binding codes, BOOT control, and seven RGB LEDs |
+| Xmini-C3-V3 (ESP32-C3, OLED) | <img src="docs/images/boards/xmini-c3-device-front.webp" alt="Front of the Xmini-C3 device" width="100"> | [0.1.0 firmware](https://github.com/tangeai/xiaotai-esp32/releases/tag/xmini-c3-v3-app-v0.1.0) · [Guide](xmini-c3-v3-xiaotai/README.md) | AI, WeChat, device calls, browser voice, and group voice chat |
 
 Use the photos as a visual reference. Check the model and chip revision on your device before flashing.
 

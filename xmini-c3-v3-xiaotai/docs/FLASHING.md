@@ -15,7 +15,7 @@
 
 ## 下载与校验
 
-旧固件附件已下架。已有本板完整 BIN 或分段 ZIP 时，请核对原包的 `SHA256SUMS.txt` 和 `release-manifest.json`。没有固件时，先看[编译与移植指南](PORTING.md)。`Source code` 是源码，不是固件。
+在[Xmini-C3-V3 0.1.0 发布页](https://github.com/tangeai/xiaotai-esp32/releases/tag/xmini-c3-v3-app-v0.1.0)下载完整 BIN 或分段 ZIP，并核对 `SHA256SUMS.txt` 和 `release-manifest.json`。自行构建见[编译与移植指南](PORTING.md)。`Source code` 是源码，不是固件。
 
 完整 BIN 应为 **16,777,216 字节**。在下载目录核对大小和 SHA-256：
 

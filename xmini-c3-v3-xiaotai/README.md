@@ -6,7 +6,7 @@
 
 ## 先体验
 
-旧固件附件已下架。已有本板完整 16 MB BIN 的开发者，可按[烧录指南](docs/FLASHING.md)校验后烧录、配网和绑定；自行构建见[编译与移植](docs/PORTING.md)。
+下载[Xmini-C3-V3 0.1.0 固件](https://github.com/tangeai/xiaotai-esp32/releases/tag/xmini-c3-v3-app-v0.1.0)，按[烧录指南](docs/FLASHING.md)校验完整 16 MB BIN 后烧录，再配网和绑定；自行构建见[编译与移植](docs/PORTING.md)。
 
 **完整包会清除设备的 Wi-Fi、绑定身份和设置。** 只用于 Xmini-C3-V3，不能与旧 Xmini-C3、C3-4G、MZ28 或 S3/P4 固件混用。需要保留现有配置时，先核对分区，再使用固件 ZIP 中的 APP 分段；不要整片擦除。
 

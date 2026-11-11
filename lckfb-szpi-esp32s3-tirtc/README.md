@@ -15,7 +15,7 @@
 
 ## 开始使用
 
-1. 旧固件附件已下架。已有经校验、与本板匹配的完整 16 MB 固件时，按[网页烧录说明](../README.md#用浏览器烧录)从 `0x0` 写入。完整包会清除配网、绑定和用户设置，请先备份；自行编译见[开发指南](docs/GETTING_STARTED_CN.md#编译与烧录)。
+1. 下载[立创 S3 1.5.0 固件](https://github.com/tangeai/xiaotai-esp32/releases/tag/esp32-s3-app-v1.5.0)，校验完整 16 MB BIN 后，按[网页烧录说明](../README.md#用浏览器烧录)从 `0x0` 写入。完整包会清除配网、绑定和用户设置，请先备份；自行编译见[开发指南](docs/GETTING_STARTED_CN.md#编译与烧录)。
 2. 手机连接屏幕显示的 `XiaoTai-XXXX` 开放热点，访问 `http://192.168.6.1`，点选附近网络并输入密码；已保存的网络可直接复用密码。
 3. 设备联网后显示六位验证码，在[体验平台](https://xiaotai.chat/)的设备页面填写验证码完成绑定。
 4. 按[功能体验](docs/GETTING_STARTED_CN.md#功能体验)配置 AI、联系人、多人房间或微信授权，开始通话。
