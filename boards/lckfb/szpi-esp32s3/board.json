@@ -1,0 +1,23 @@
+{
+  "schema": 3,
+  "target": "esp32s3",
+  "identity": {
+    "model": "lckfb-szpi-esp32s3",
+    "revision": "1.0.1",
+    "profile_model": "LCKFB-SZPI-ESP32S3-V1.0.1",
+    "profile_chip": "ESP32-S3"
+  },
+  "memory": {"external_ram": true},
+  "parts": {
+    "audio_input": [{"encoding": "pcm16", "rate_hz": 16000, "roles": ["mic", "reference", "mic", "unused"]}],
+    "audio_output": [{"encoding": "pcm16", "rate_hz": 16000, "channels": 2}],
+    "display": [{"pixel": "rgb565", "width": 320, "height": 240, "touch": true}],
+    "input": [{"kind": "button", "role": "main"}],
+    "camera": [{"formats": ["yuv422"], "max_width": 320, "max_height": 240}],
+    "network": [{"kind": "wifi", "provisioning": ["portal", "serial"]}]
+  },
+  "components": ["xiaotai_part_bus", "xiaotai_part_power", "xiaotai_part_audio", "xiaotai_part_display",
+                 "xiaotai_part_panel_spi", "xiaotai_part_touch_ft5x06", "xiaotai_part_button", "xiaotai_part_camera_dvp"],
+  "partitions": "partitions.csv",
+  "idf": ["6.0", "5.5"]
+}

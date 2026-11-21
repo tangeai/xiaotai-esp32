@@ -1,0 +1,17 @@
+flowchart TB
+    I["输入与交互<br/>按键、触摸、页面"]:::interaction
+    A["application<br/>业务状态、生命周期、资源仲裁"]:::product
+    S["services / transport<br/>绑定、鉴权、TiRTC 连接"]:::media
+    M["media<br/>采集、处理、编解码、播放"]:::media
+    H["boards / drivers<br/>外设、总线、供电、DMA"]:::hardware
+    I -->|用户意图| A
+    A -->|状态快照与操作结果| I
+    A -->|业务请求| S
+    A -->|开始 / 停止媒体| M
+    S <-->|按会话格式收发| M
+    M -->|调用硬件端口| H
+    H -->|帧数据 / 完成 / 错误| M
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33

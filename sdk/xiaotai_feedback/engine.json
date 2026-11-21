@@ -1,0 +1,16 @@
+{
+  "name": "feedback",
+  "registrations": {"commands": 1, "when_selected": [{"any_of": ["media"], "subscribers": 1}]},
+  "depends": ["eventlog", "at"],
+  "optional_depends": ["media"],
+  "needs": [],
+  "start": true,
+  "commands": [
+    {"command": "AT+FEEDBACK", "access": "read"},
+    {"command": "AT+FEEDBACK", "verb": "STATES", "access": "read"},
+    {"command": "AT+FEEDBACK", "verb": "SET", "usage": "<state> 0|1", "access": "action"},
+    {"command": "AT+FEEDBACK", "verb": "FIRE", "usage": "<effect> [FORCE]", "access": "action"},
+    {"command": "AT+FEEDBACK", "verb": "CANCEL", "access": "action"},
+    {"command": "AT+FEEDBACK", "verb": "GROUP", "usage": "<n> 0|1", "access": "action"}
+  ]
+}

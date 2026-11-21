@@ -1,0 +1,19 @@
+{
+  "name": "ai_talk",
+  "registrations": {"commands": 1, "intents": 5, "subscribers": 3},
+  "depends": ["binding", "platform", "transport", "media", "identity", "eventlog", "at"],
+  "needs": ["audio_in", "audio_out", "network"],
+  "activities": {"ai": 2},
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_ai_talk_configure", "header": "xiaotai/modules/ai_talk.h",
+     "type": "xiaotai_ai_talk_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+AI", "access": "read"},
+    {"command": "AT+AI", "verb": "START", "access": "action"},
+    {"command": "AT+AI", "verb": "STOP", "access": "action"},
+    {"command": "AT+AI", "verb": "INTERRUPT", "access": "action"},
+    {"command": "AT+AI", "verb": "SUBMIT", "access": "action"}
+  ]
+}

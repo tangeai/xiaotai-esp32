@@ -1,0 +1,20 @@
+{
+  "name": "clock",
+  "registrations": {"commands": 1, "intents": 3, "settings": 1},
+  "depends": ["eventlog", "at"],
+  "needs": [],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_clock_module_configure", "header": "xiaotai/modules/clock.h",
+     "type": "xiaotai_clock_module_config_t",
+     "arrays": {"time_servers": {"type": "const char *", "count": "time_server_count"}},
+     "absent_with": {"platform": ["timezone", "time_servers"]}}
+  ],
+  "commands": [
+    {"command": "AT+CLOCK", "access": "read"},
+    {"command": "AT+CLOCK", "verb": "ALARM", "usage": "<hh:mm> <0..127> [<label-hex>]", "access": "guarded"},
+    {"command": "AT+CLOCK", "verb": "COUNTDOWN", "usage": "<seconds> [<label-hex>]", "access": "action"},
+    {"command": "AT+CLOCK", "verb": "REMOVE", "usage": "<id>", "access": "guarded"},
+    {"command": "AT+CLOCK", "verb": "ENABLE", "usage": "<id> <0|1>", "access": "guarded"}
+  ]
+}

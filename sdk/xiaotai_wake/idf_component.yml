@@ -1,0 +1,10 @@
+dependencies:
+  espressif/esp-tflite-micro:
+    version: "==1.4.1"
+    require: private
+  espressif/esp-nn:
+    version: "==1.4.2"
+    require: private
+  espressif/esp-dsp:
+    version: "==1.8.0"
+    require: private

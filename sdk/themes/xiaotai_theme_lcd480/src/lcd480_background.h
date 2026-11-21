@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include "lvgl.h"
+
+#define LCD480_BACKGROUND_CENTER 0x1c1f22U
+
+/* The caller keeps the zero-initialized descriptor and owns its data. */
+bool lcd480_background(lv_image_dsc_t *image, uint16_t width, uint16_t height);

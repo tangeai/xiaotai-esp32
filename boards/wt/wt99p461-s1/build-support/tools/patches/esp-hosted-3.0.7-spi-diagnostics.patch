@@ -1,0 +1,107 @@
+diff --git a/eh_host_bus_spi.c b/eh_host_bus_spi.c
+index 2edf4fa..8eb6d6d 100644
+--- a/eh_host_bus_spi.c
++++ b/eh_host_bus_spi.c
+@@ -25,6 +25,7 @@
+ #include "esp_err.h"
+ #include "esp_log.h"
+ #include "esp_timer.h"
++#include <stdatomic.h>
+ 
+ static inline void *eh_spi_dma_alloc_zero(size_t n)
+ {
+@@ -92,6 +93,19 @@ static uint8_t             *s_tx_dummy;    /* preallocated zero TX for RX-only x
+ static volatile uint8_t     s_running;
+ static volatile uint8_t     s_isr_installed;
+ static volatile uint8_t     s_dr_pending;  /* DR edge latched in ISR, consumed by worker */
++/* Temporary counters: no log output on the bus worker. */
++static atomic_uint s_diag_xfer, s_diag_sta, s_diag_bad, s_diag_dummy;
++static atomic_uint s_diag_timeout_dr, s_diag_seq_gap, s_diag_seq_repeat;
++static atomic_uint s_diag_dispatch_us, s_diag_xfer_us;
++
++void eh_host_bus_spi_log_diagnostics(void)
++{
++    ESP_LOGI(TAG, "NET SPI xfer=%u sta=%u bad=%u dummy=%u timeout_dr=%u seq_gap=%u seq_repeat=%u dispatch_max_us=%u xfer_max_us=%u",
++             atomic_load(&s_diag_xfer), atomic_load(&s_diag_sta), atomic_load(&s_diag_bad),
++             atomic_load(&s_diag_dummy), atomic_load(&s_diag_timeout_dr),
++             atomic_load(&s_diag_seq_gap), atomic_load(&s_diag_seq_repeat),
++             atomic_load(&s_diag_dispatch_us), atomic_load(&s_diag_xfer_us));
++}
+ #endif
+ 
+ #ifdef ESP_PLATFORM
+@@ -172,13 +186,15 @@ static void eh_spi_rx_task(void *arg)
+ {
+     (void)arg;
+     ESP_LOGI(TAG, "SPI RX task started");
++    uint16_t last_sta_seq = 0;
++    bool have_sta_seq = false;
+ 
+     while (s_running) {
+         /* Wake on an HS/DR edge, else fall through every 100ms and re-sample the
+          * level: HS may already be asserted (static) before our ISR was armed —
+          * e.g. the CP came up first — so an edge never arrives. Sampling the
+          * level on the timeout is the safety net (edge-triggered + level-checked). */
+-        eh_host_port_sem_wait_ms(s_trans_ready_sem, 100);
++        eh_host_port_err_t wake = eh_host_port_sem_wait_ms(s_trans_ready_sem, 100);
+         if (!s_running) {
+             break;
+         }
+@@ -188,6 +204,10 @@ static void eh_spi_rx_task(void *arg)
+          * drives the bus while the slave is unprepared and loses the frame.
+          * (upstream spi_drv.c:472 gates the whole transaction on HS active). */
+         const eh_host_port_gpio_desc_t hs_pin = { .port = 0, .pin = EH_HOST_PORT_SPI_GPIO_HANDSHAKE_Pin };
++        const eh_host_port_gpio_desc_t dr_pin = { .port = 0, .pin = EH_HOST_PORT_SPI_GPIO_DATA_READY_Pin };
++        if (wake == EH_HOST_PORT_ERR_TIMEOUT &&
++            eh_host_port_gpio_get(&dr_pin) == EH_HOST_PORT_DR_VAL_ACTIVE)
++            atomic_fetch_add(&s_diag_timeout_dr, 1);
+         if (eh_host_port_gpio_get(&hs_pin) != EH_HOST_PORT_HS_VAL_ACTIVE) {
+             /* HS not asserted: nothing to clock. A latched DR (s_dr_pending)
+              * is deliberately left set — it is serviced by an HS-gated
+@@ -203,9 +223,12 @@ static void eh_spi_rx_task(void *arg)
+         if (eh_host_port_queue_receive(s_tx_q, &tx_buf, 0) != EH_HOST_PORT_OK) {
+             tx_buf = NULL;
+         }
+-
+         eh_host_port_mutex_lock(s_bus_lock);
++        int64_t xfer_start = esp_timer_get_time();
+         int rc = eh_spi_xfer_once(tx_buf, s_rx_buf);
++        unsigned xfer_us = (unsigned)(esp_timer_get_time() - xfer_start);
++        if (xfer_us > atomic_load(&s_diag_xfer_us)) atomic_store(&s_diag_xfer_us, xfer_us);
++        atomic_fetch_add(&s_diag_xfer, 1);
+         eh_host_port_mutex_unlock(s_bus_lock);
+         if (tx_buf) {
+             eh_host_port_dma_free(tx_buf);
+@@ -226,18 +249,32 @@ static void eh_spi_rx_task(void *arg)
+         eh_frame_result_t r = eh_frame_decode(s_rx_buf,
+                                               (uint16_t)EH_SPI_MAX_BUF, &h);
+         if (r != EH_FRAME_OK) {
++            atomic_fetch_add(r == EH_FRAME_DUMMY ? &s_diag_dummy : &s_diag_bad, 1);
+             if (r != EH_FRAME_DUMMY) {
+                 ESP_LOGD(TAG, "frame decode rc=%d, drop", (int)r);
+             }
+             continue;
+         }
+         if (h.payload && h.payload_len) {
++            if (h.if_type == ESP_STA_IF) {
++                atomic_fetch_add(&s_diag_sta, 1);
++                if (have_sta_seq) {
++                    uint16_t delta = h.seq_num - last_sta_seq;
++                    if (delta == 0) atomic_fetch_add(&s_diag_seq_repeat, 1);
++                    else if (delta < 32768) atomic_fetch_add(&s_diag_seq_gap, delta - 1U);
++                }
++                last_sta_seq = h.seq_num;
++                have_sta_seq = true;
++            }
++            int64_t dispatch_start = esp_timer_get_time();
+             if (h.if_type == ESP_HCI_IF) {
+                 eh_host_mcu_hci_rx_deliver(h.payload, h.payload_len);
+             } else {
+                 eh_host_mcu_transport_dispatch_frame(&h);
+             }
++            unsigned dispatch_us = (unsigned)(esp_timer_get_time() - dispatch_start);
++            if (dispatch_us > atomic_load(&s_diag_dispatch_us)) atomic_store(&s_diag_dispatch_us, dispatch_us);
+         }
+     }
+ 
+     ESP_LOGI(TAG, "SPI RX task exiting");

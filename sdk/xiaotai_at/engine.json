@@ -1,0 +1,46 @@
+{
+  "name": "at",
+  "registrations": {"commands": 4},
+  "depends": ["eventlog"],
+  "needs": [],
+  "start": true,
+  "configure": [
+    {
+      "function": "xiaotai_at_configure",
+      "header": "xiaotai/at.h",
+      "type": "xiaotai_at_config_t",
+      "arrays": {
+        "allow": {"type": "const char *", "terminated": true},
+        "setting_write_allow": {"type": "const char *", "terminated": true},
+        "intent_allow": {"type": "const char *", "terminated": true}
+      }
+    },
+    {"function": "xiaotai_at_open", "header": "xiaotai/at.h", "form": "call"}
+  ],
+  "commands": [
+    {"command": "AT+HELP", "access": "read"},
+    {"command": "AT+VERSION", "access": "read"},
+    {"command": "AT+CLI", "access": "read"},
+    {"command": "AT+CLI", "verb": "ON", "access": "action"},
+    {"command": "AT+CLI", "verb": "OFF", "access": "action"},
+    {"command": "AT+LOG", "usage": "[<after>]", "access": "read"},
+    {"command": "AT+LOG", "verb": "FOLLOW", "usage": "0|1", "access": "action"},
+    {"command": "AT+LOG", "verb": "TOPICS", "access": "read"},
+    {"command": "AT+LOG", "verb": "STATS", "access": "read"},
+    {"command": "AT+MEM", "access": "read"},
+    {"command": "AT+MEM", "verb": "RTC", "access": "read"},
+    {"command": "AT+CONSOLE", "access": "read"},
+    {"command": "AT+PORT", "verb": "PROBE", "usage": "[<name>]", "access": "guarded"},
+    {"command": "AT+RESTART", "access": "guarded",
+     "option": "XIAOTAI_AT_RESTART_COMMAND", "symbol": "xiaotai_at_guarded_restart_"},
+    {"command": "AT+RESTART", "verb": "FORCE", "access": "guarded",
+     "option": "XIAOTAI_AT_RESTART_FORCE", "symbol": "xiaotai_at_guarded_force_"},
+    {"command": "AT+STATUS", "usage": "[<section>]", "access": "read"},
+    {"command": "AT+STATE", "access": "read"},
+    {"command": "AT+SET", "usage": "[<name>]", "access": "read"},
+    {"command": "AT+SET", "usage": "<name> <value>", "access": "guarded",
+     "option": "XIAOTAI_AT_SETTING_WRITE", "symbol": "xiaotai_at_guarded_set_"},
+    {"command": "AT+INTENT", "usage": "<intent> [<value> [<text-hex>]]", "access": "guarded",
+     "option": "XIAOTAI_AT_INTENT_COMMAND", "symbol": "xiaotai_at_guarded_intent_"}
+  ]
+}

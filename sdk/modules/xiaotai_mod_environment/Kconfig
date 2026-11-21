@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai environment module. Each maps to the macro of the
+# same name without the CONFIG_ prefix in
+# include/xiaotai/modules/environment_config.h; the defaults here and there
+# are the same.
+menu "XiaoTai environment module"
+
+    config XIAOTAI_ENVIRONMENT_HOLD_ON_SETTINGS_ERROR
+        bool "Hold an environment switch when a setting could not be saved"
+        default n
+        help
+            Off: when the storage barrier before the write fails (a setting
+            write failed), the switch ends as failed and every gate is
+            released at once. On: the switch stops in ERROR_HELD with every
+            gate still held until it is cancelled (AT+EP CANCEL), so the
+            device keeps refusing new sessions and setting changes until
+            someone has looked. A timeout is never held.
+
+endmenu

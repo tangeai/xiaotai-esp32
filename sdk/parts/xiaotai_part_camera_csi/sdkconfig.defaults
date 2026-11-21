@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# ESP-IDF options the CSI camera part relies on; merged into a product's
+# configuration only when a board lists this part. The sensor driver, its mode
+# and its tuning file are board facts and stay in the board's sdkconfig.board.
+# The hardware H.264 encoder device belongs to the video engine.
+
+# Frames go straight into the part's resident pool; the CSI driver's backup
+# buffer would be one more frame-sized block the pool makes unnecessary.
+# Both P4 boards set it today.
+CONFIG_ESP_VIDEO_DISABLE_MIPI_CSI_DRIVER_BACKUP_BUFFER=y
+# Exposure, white balance and the anti-flicker setup run through the ISP
+# pipeline controller.
+CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER=y

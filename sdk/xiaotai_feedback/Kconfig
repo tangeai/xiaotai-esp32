@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai feedback engine. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/feedback_config.h; the
+# defaults here and there are the same (the header holds the value without
+# external RAM where the default depends on it).
+menu "XiaoTai feedback engine"
+
+    config XIAOTAI_FEEDBACK_TASK
+        bool "Own task for light and vibration frames"
+        default y if SPIRAM
+        default n
+        help
+            With it, a task renders one frame every 40 ms and writes it to
+            the output parts. Without it, an owner-task timer does the same:
+            no task stack, but the writes delay the owner task, so it suits
+            fast parts (a GPIO or PWM lamp, a short LED strip). Neither
+            exists when no table row resolves to a light or vibrator. Sound
+            timers always run on the framework owner task.
+
+    config XIAOTAI_FEEDBACK_TASK_PRIORITY
+        int "Priority of the feedback task"
+        depends on XIAOTAI_FEEDBACK_TASK
+        range 1 24
+        default 2
+
+    config XIAOTAI_FEEDBACK_TASK_STACK_BYTES
+        int "Stack of the feedback task in bytes"
+        depends on XIAOTAI_FEEDBACK_TASK
+        range 1536 16384
+        default 2560
+        help
+            Allocated as XIAOTAI_MEM_BULK (external RAM where the board has
+            it); the task never touches flash or NVS.
+
+    config XIAOTAI_FEEDBACK_TABLES_MAX
+        int "Feedback tables the registry holds"
+        range 1 32
+        default 4
+
+    config XIAOTAI_FEEDBACK_STATES_MAX
+        int "States over all tables"
+        range 8 512
+        default 64
+
+endmenu

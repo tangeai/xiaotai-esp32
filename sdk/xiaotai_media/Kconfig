@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai media engine. Each maps to the macro of the same name
+# without the CONFIG_ prefix in include/xiaotai/media_config.h; the defaults
+# here and there are the same.
+menu "XiaoTai media engine"
+
+    config XIAOTAI_MEDIA_ALAW_FIXED_FRAMES
+        bool "Assemble selected A-law receive fragments into 20 ms frames"
+        default n
+        help
+            Requires an explicit positive downlink.capacity_packets product
+            parameter to bound complete frames and one partial frame together.
+
+    config XIAOTAI_MEDIA_PROCESSOR_AEC_DUAL
+        bool "Echo canceller for two microphones and a reference"
+        default n
+        help
+            Builds the processor "aec.dual". It is used on boards whose audio
+            input descriptor offers two microphone channels and a reference
+            channel.
+
+    config XIAOTAI_MEDIA_PROCESSOR_AEC_SINGLE_FRONTEND
+        bool "Echo canceller for one microphone and a reference (speech front end)"
+        default n
+        help
+            Builds the processor "aec.single.frontend": the canceller runs
+            inside the speech front end, on the front end's own task.
+
+    config XIAOTAI_MEDIA_PROCESSOR_AEC_SINGLE
+        bool "Echo canceller for one microphone and a reference (direct)"
+        default n
+        help
+            Builds the processor "aec.single": the canceller is called on the
+            capture task, one frame per read.
+
+    config XIAOTAI_MEDIA_AFE_MEMORY_EXTERNAL
+        bool "Keep the speech front end's working set in external RAM"
+        depends on SPIRAM
+        default y
+        help
+            The processors "aec.dual" and "aec.single.frontend" ask the speech
+            front end to place its working set (about 176 KB for two
+            microphones) in external RAM. Without it the front end keeps that
+            set in internal RAM. Turn it off only for a board whose measured
+            front-end feed time does not fit its budget with external RAM.
+
+    config XIAOTAI_MEDIA_EFFECT_AGC
+        bool "Automatic gain control and uplink limiter"
+        default n
+        help
+            Builds the effects "agc" (after echo control) and "boost" (on
+            packets about to be encoded). Their amounts come from the media
+            tuning table of the product configuration.
+
+    config XIAOTAI_MEDIA_CODEC_OPUS_DECODER
+        bool "Opus decoder"
+        default n
+
+    config XIAOTAI_MEDIA_CODEC_OPUS_ENCODER
+        bool "Opus encoder"
+        default n
+        help
+            Needs about 40 KiB of stack on the uplink task. Not needed for an
+            audio input that already delivers Opus packets.
+
+    config XIAOTAI_MEDIA_TRACE
+        bool "Frame trace diagnostics"
+        default n
+        help
+            Records a checksum per sent and received packet on request, for
+            comparing what two devices exchanged. Up to 30000 frames per
+            direction with external RAM (3000 when the command gives no
+            count), up to 3000 without (750 by default). The buffer is
+            allocated only when a trace is armed, so the option costs flash,
+            not RAM.
+
+    config XIAOTAI_MEDIA_TRACE_ARRIVALS
+        bool "Record arrival metadata for opted-in sessions"
+        depends on XIAOTAI_MEDIA_TRACE && SPIRAM
+        default n
+        help
+            Retains the first 1024 arrival headers, not audio payloads, of
+            an opted-in session. Uses one 16 KiB buffer in external RAM.
+            Exposes the local read-only AT+AUDIOTRACE? query.
+
+    config XIAOTAI_MEDIA_TEST_COMMANDS
+        bool "Local audio test commands"
+        default n
+        help
+            Registers AT+AUDIO TONE, RECORD, PLAY, STOP, DUMP and SENDTONE:
+            a local test tone, one second of microphone recording, its
+            playback and export over the console, and a test tone injected
+            into the running session's uplink. RECORD and DUMP read the
+            microphone through the console, so a product turns this on only
+            where its current firmware already offers these commands. The
+            recording buffer is allocated per command, so the option costs
+            flash, not RAM. The bare AT+AUDIO query does not depend on it.
+
+    config XIAOTAI_MEDIA_SOUND_COMMANDS
+        bool "Sound preview commands"
+        default n
+        help
+            Registers AT+SOUND (list), AT+SOUND PLAY and AT+SOUND STOP, which
+            play any registered prompt, ring or guidance sound on request.
+            A product turns this on only where its current firmware already
+            offers sound previews on the console.
+
+endmenu

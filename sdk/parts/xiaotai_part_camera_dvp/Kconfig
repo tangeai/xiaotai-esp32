@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+config XIAOTAI_PART_CAMERA_DVP_NATIVE
+    bool "Apply the reviewed DVP camera driver overlay"
+    default n
+    help
+        The default uses the original esp32-camera public API. Select this only
+        with the reviewed driver to use native nonblocking dequeue, producer
+        drop counters and checked SCCB cleanup. Legacy products are unaffected.

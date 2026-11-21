@@ -1,0 +1,15 @@
+{
+  "name": "wake",
+  "registrations": {"commands": 1, "intents": 1, "subscribers": 2, "settings": 1},
+  "depends": ["ai_talk", "wake_engine", "media", "eventlog", "at"],
+  "needs": ["pcm_in"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_local_wake_configure", "header": "xiaotai/modules/wake.h",
+     "type": "xiaotai_local_wake_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+WAKE", "verb": "TEST", "usage": "<phrase-hex>", "access": "action"},
+    {"command": "AT+WAKE", "verb": "SELFTEST", "access": "read"}
+  ]
+}

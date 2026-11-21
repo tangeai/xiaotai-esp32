@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: MIT
+# Build options of the port layer. Each symbol maps to the macro of the same
+# name without CONFIG_ in include/xiaotai/port_config.h, which also holds the
+# value used where Kconfig does not exist (the host). Keep both in step.
+# The defaults equal what the port used before the options existed, so a
+# product that sets nothing builds as before.
+menu "XiaoTai port layer"
+
+    config XIAOTAI_PORT_MQTT_NATIVE_OVERLAY
+        bool "Use the optional XiaoTai esp-mqtt source overlay"
+        default n
+        help
+            The new product graph normally uses the locked stock esp-mqtt
+            component. Enable only for validated products that need the native
+            owner bridge, strict outbox admission, or native cleanup changes.
+
+    config XIAOTAI_PORT_MQTT_PAYLOAD_ON_DEMAND
+        bool "Allocate stock MQTT event payloads on arrival"
+        depends on !XIAOTAI_PORT_MQTT_NATIVE_OVERLAY
+        default n
+        help
+            Keep the same stock MQTT mailbox and worker, but allocate each
+            accepted DATA fragment instead of keeping a full callback-copy
+            arena. Allocation failure is reported as an ordered event gap.
+
+    config XIAOTAI_PORT_HTTP_DEADLINE_TRANSPORT
+        bool "Enable the V3 HTTP deadline transport"
+        default n
+        select ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT
+        help
+            Selected by the V3 port component's defaults. The HTTP parser
+            must use the port's deadline-aware transport, rather than a stock
+            blocking transport that can evade a whole-request limit.
+
+    config XIAOTAI_PORT_HTTP_DNS_ON_DEMAND
+        bool "Allocate HTTP DNS jobs on demand"
+        default n
+        help
+            The product selector enables this for boards without external RAM.
+            Keep the same four-job bound. A timed-out job still occupies a
+            slot until the lwIP worker or completion callback retires it.
+
+    config XIAOTAI_PORT_USB_MONITOR_FIX
+        bool "USB Serial/JTAG monitor elapsed-time correction"
+        depends on ESP_CONSOLE_USB_SERIAL_JTAG
+        default y
+        help
+            Applies to reviewed ESP-IDF source identities in a V3 product build.
+            Products that did not use the correction keep it disabled.
+
+    config XIAOTAI_PORT_USB_TIMING_PROBE
+        bool "Allow the one-shot USB tick timing probe"
+        depends on XIAOTAI_PORT_USB_MONITOR_FIX
+        default n
+        help
+            Development only. Production builds must leave this disabled.
+
+    config XIAOTAI_PORT_HEAP_TRACE_RECORDS
+        int "Standalone heap trace records"
+        depends on HEAP_TRACING_STANDALONE && !HEAP_TRACE_HASH_MAP
+        range 1 4096
+        default 640
+        help
+            Diagnostic-only entries allocated in internal memory on trace start.
+
+    config XIAOTAI_KV_SLOTS
+        int "Storage worker job slots"
+        range 2 8
+        default 4
+        help
+            Each slot keeps about 570 bytes of bulk memory (internal RAM on
+            boards without external RAM). Lower it only after the storage
+            statistics showed full=0 under the product's heaviest use.
+
+    config XIAOTAI_KV_WORKER_STACK_BYTES
+        int "Storage worker stack (bytes, internal RAM)"
+        range 2560 8192
+        default 4096
+        help
+            The worker runs every flash read and write. Lower it only from the
+            worker's measured lowest free stack (the task list diagnostics),
+            keeping a margin of at least 512 bytes.
+
+endmenu

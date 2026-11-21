@@ -1,0 +1,4 @@
+dependencies:
+  espressif/esp_codec_dev:
+    version: "==1.6.2"
+    require: private

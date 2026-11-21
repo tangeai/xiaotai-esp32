@@ -1,0 +1,35 @@
+{
+  "name": "net",
+  "registrations": {"commands": 2, "subscribers": 4},
+  "depends": ["eventlog", "at"],
+  "needs": ["network"],
+  "network_kinds": ["wifi", "wifi_coprocessor"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_net_configure", "header": "xiaotai/net.h", "type": "xiaotai_net_config_t",
+     "arrays": {"steps_ms": {"type": "uint32_t", "count": "step_count"}}}
+  ],
+  "commands": [
+    {"command": "AT+NET", "access": "read"},
+    {"command": "AT+NET", "verb": "WIFI", "usage": "<ssid-hex> <password-hex|->", "access": "guarded"},
+    {"command": "AT+NET", "verb": "STORE", "usage": "<ssid-hex> <password-hex|->", "access": "guarded"},
+    {"command": "AT+NET", "verb": "FORGET", "access": "guarded",
+     "option": "XIAOTAI_NET_CONSOLE_FORGET", "symbol": "xiaotai_net_console_forget"},
+    {"command": "AT+NET", "verb": "RETRY", "access": "action"},
+    {"command": "AT+NET", "verb": "DISCONNECT", "access": "action"},
+    {"command": "AT+NET", "verb": "SCAN", "access": "action"},
+    {"command": "AT+NET", "verb": "LIST", "access": "read"},
+    {"command": "AT+NET", "verb": "DIAG", "access": "read"},
+    {"command": "AT+NET", "verb": "PROBE", "access": "action"},
+    {"command": "AT+NET", "verb": "PROBE2", "usage": "<peer-ipv4> <peer-port> <flow> <seed> <count> <bytes>",
+     "access": "action", "option": "XIAOTAI_NET_PATTERN_PROBE", "symbol": "xiaotai_net_console_probe_v2"},
+    {"command": "AT+NET", "verb": "TRACE", "usage": "[START|STOP]", "access": "action",
+     "option": "XIAOTAI_NET_PATH_TRACE", "symbol": "xiaotai_net_console_trace"},
+    {"command": "AT+COMPANION", "access": "read"},
+    {"command": "AT+COMPANION", "verb": "LIVE", "access": "read"},
+    {"command": "AT+COMPANION", "verb": "RETRY", "access": "action"},
+    {"command": "AT+COMPANION", "verb": "UPDATE", "usage": "<url> <sha256-hex>", "access": "guarded"},
+    {"command": "AT+COMPANION", "verb": "SEND", "usage": "<word>", "access": "action"},
+    {"command": "AT+COMPANION", "verb": "ROLLBACK", "access": "guarded"}
+  ]
+}

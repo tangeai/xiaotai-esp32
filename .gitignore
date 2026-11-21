@@ -1,0 +1,29 @@
+tmp/
+managed_components/
+build/
+dist/
+.vscode/
+.devcontainer/
+sdkconfig.old
+sdkconfig
+dependencies.lock
+.env
+/releases/
+.DS_Store
+.cache
+*.pyc
+__pycache__/
+.local/
+AGENTS.md
+*.bin
+
+.clangd
+
+# Local-only: assistant settings, conversation transcripts and private notes never leave this machine.
+.claude/settings.local.json
+.claude/projects/
+*.jsonl
+CLAUDE.local.md
+
+# Official TiRTC packages, downloaded by scripts/fetch_tirtc.py
+components/tirtc_sdk/packages/

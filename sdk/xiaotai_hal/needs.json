@@ -1,0 +1,58 @@
+{
+  "comment": [
+    "Hardware needs: the one table of names, bits and the parts that satisfy them.",
+    "xiaotai/needs.h (XIAOTAI_NEED_<NAME>), the derivation in src/hal.cc and the build's",
+    "check of board.json (scripts/sdk_selection.py) all follow this file; a test compares them.",
+    "A need is satisfied when the board has at least one part of the class whose fields match",
+    "every entry of 'where' (a field absent from board.json takes the value in 'defaults').",
+    "Bits never change once given; a new need is appended with the next bit.",
+    "A 'role' entry of 'where' names a role family: it matches the role itself and any role",
+    "that continues with '.' ('door' matches 'door' and 'door.gate', not 'doorbell').",
+    "'vocabulary' maps the board.json spellings to the C enumerators of xiaotai/hal.h (audio encodings:",
+    "the codec values of xiaotai/codec.h that hal.h takes). A spelling is the enumerator without its",
+    "prefix, in lower case; theme manifests use the same spellings for display.pixel.",
+    "Parts that are removable (none in this version) satisfy no need."
+  ],
+  "schema": 1,
+  "defaults": {
+    "audio_input": {"encoding": "pcm16"},
+    "display": {"touch": false}
+  },
+  "needs": [
+    {"name": "audio_in", "bit": 0, "part": "audio_input"},
+    {"name": "pcm_in", "bit": 1, "part": "audio_input", "where": {"encoding": ["pcm16"]}},
+    {"name": "audio_out", "bit": 2, "part": "audio_output"},
+    {"name": "display", "bit": 3, "part": "display"},
+    {"name": "touch", "bit": 4, "part": "display", "where": {"touch": [true]}},
+    {"name": "key", "bit": 5, "part": "input", "where": {"kind": ["button"]}},
+    {"name": "light", "bit": 6, "part": "output", "where": {"kind": ["light", "rgb_light"]}},
+    {"name": "relay", "bit": 7, "part": "output", "where": {"kind": ["relay"]}},
+    {"name": "camera", "bit": 8, "part": "camera"},
+    {"name": "network", "bit": 9, "part": "network"},
+    {"name": "external_ram", "bit": 10, "memory": "external_ram"},
+    {"name": "encoder", "bit": 11, "part": "input", "where": {"kind": ["encoder"]}},
+    {"name": "card", "bit": 12, "part": "input", "where": {"kind": ["card"]}},
+    {"name": "voice_command", "bit": 13, "part": "input", "where": {"kind": ["voice"]}},
+    {"name": "contact", "bit": 14, "part": "input", "where": {"kind": ["contact"]}},
+    {"name": "vibrator", "bit": 15, "part": "output", "where": {"kind": ["vibrator"]}},
+    {"name": "door_lock", "bit": 16, "part": "output", "where": {"kind": ["relay"], "role": ["door"]}}
+  ],
+  "vocabulary": {
+    "audio_input.encoding": {"pcm16": "XIAOTAI_CODEC_PCM16", "opus": "XIAOTAI_CODEC_OPUS",
+                             "g711a": "XIAOTAI_CODEC_G711A", "g711u": "XIAOTAI_CODEC_G711U"},
+    "display.pixel": {"rgb565": "XIAOTAI_PIXEL_RGB565", "mono1": "XIAOTAI_PIXEL_MONO1",
+                      "rgb888": "XIAOTAI_PIXEL_RGB888", "mono1_vlsb": "XIAOTAI_PIXEL_MONO1_VLSB"},
+    "input.kind": {"button": "XIAOTAI_INPUT_BUTTON", "encoder": "XIAOTAI_INPUT_ENCODER",
+                   "card": "XIAOTAI_INPUT_CARD", "voice": "XIAOTAI_INPUT_VOICE",
+                   "contact": "XIAOTAI_INPUT_CONTACT", "slider": "XIAOTAI_INPUT_SLIDER"},
+    "output.kind": {"light": "XIAOTAI_OUTPUT_LIGHT", "rgb_light": "XIAOTAI_OUTPUT_RGB_LIGHT",
+                    "vibrator": "XIAOTAI_OUTPUT_VIBRATOR", "relay": "XIAOTAI_OUTPUT_RELAY"},
+    "network.kind": {"wifi": "XIAOTAI_NETWORK_WIFI", "wifi_coprocessor": "XIAOTAI_NETWORK_WIFI_COPROCESSOR",
+                     "ethernet": "XIAOTAI_NETWORK_ETHERNET", "cellular": "XIAOTAI_NETWORK_CELLULAR"},
+    "measurement.kind": {"temperature": "XIAOTAI_MEASURE_TEMPERATURE", "humidity": "XIAOTAI_MEASURE_HUMIDITY",
+                         "battery_charge": "XIAOTAI_MEASURE_BATTERY_CHARGE", "voltage": "XIAOTAI_MEASURE_VOLTAGE",
+                         "illuminance": "XIAOTAI_MEASURE_ILLUMINANCE"}
+  },
+  "requested": [],
+  "requested_comment": "Needs waiting for their bit in xiaotai/needs.h (none now). An entry moves into 'needs' (and hal.cc derives it) together with the bit; until then nothing reads this list. door_lock is a relay in the role family the lock module claims, so that a board whose only relay is not a door lock fails the lock module's check. Network kinds and measurements derive no need: the driver of a network kind is found by the manifests that provide it, and a measurement is read when present."
+}

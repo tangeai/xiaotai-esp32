@@ -1,0 +1,16 @@
+flowchart TB
+    A["公共默认值<br/>config/xiaotai.defaults"] --> P["SDK 包默认值<br/>所选 TiRTC 包的 sdkconfig.defaults（有才读）"]:::product
+    P --> K["能力策略<br/>config/capabilities/&lt;能力&gt;.defaults<br/>（板子有该能力时，例如 PSRAM）"]:::product
+    K --> B["板级硬件事实<br/>sdkconfig.xiaotai"]:::hardware
+    B --> L["版本线差异<br/>sdkconfig.idf&lt;线&gt;（只在非默认线读）"]:::hardware
+    L --> C["产品追加值（可选）<br/>board.json 的 sdkconfig_append"]:::hardware
+    C --> S["SDK 契约要求<br/>libc、PSRAM 原子：只补空缺<br/>板级写了别的值就报错<br/>required 模式的加密项：直接写入"]:::product
+    S --> D["构建入口最后写入<br/>目标芯片、XIAOTAI_APP、产品功能"]:::product
+    D --> E["IDF 展开<br/>有效 sdkconfig + 配置头"]:::media
+    E --> F["verify_config<br/>逐项核对请求值"]:::interaction
+    N["同名设置以后面的输入为准<br/>产品 features 决定功能布尔值"]:::note -.- D
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33
+    classDef note fill:#ffffff,stroke:#8c969e,stroke-dasharray:5 4,color:#46535d

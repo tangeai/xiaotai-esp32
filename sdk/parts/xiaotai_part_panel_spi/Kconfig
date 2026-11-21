@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+config XIAOTAI_PART_PANEL_SPI_DMA_OWNERSHIP_FIX
+    bool "Use the reviewed SPI LCD DMA ownership correction"
+    depends on SOC_PSRAM_DMA_CAPABLE && SPIRAM
+    default n
+    help
+        The default uses stock esp_lcd, including its public PSRAM DMA option.
+        Enable only to use the reviewed build-local factory for external DMA.

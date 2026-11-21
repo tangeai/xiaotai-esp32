@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MIT
+# Third-party options the video engine's ESP-IDF backends rely on; merged into
+# a product's configuration only when the engine is selected (build
+# integration, layer 5). Camera options (sensor driver, ISP pipeline, CSI
+# buffers) belong to the camera parts.
+#
+# This file holds only symbols every target knows when the engine is selected.
+# Options of libraries that exist on some targets only live in
+# sdkconfig.defaults.<target>, merged for that target alone; a symbol the build
+# does not know would fail the read-back check of the merged configuration.
+# None so far: see sdkconfig.defaults.esp32p4.

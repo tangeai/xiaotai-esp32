@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai UI system. Each maps to the macro of the same name
+# without the CONFIG_ prefix in include/xiaotai/ui_config.h; the defaults here
+# and there are the same (the header holds the value without external RAM
+# where the default depends on it).
+menu "XiaoTai UI system"
+
+    config XIAOTAI_UI_TASK
+        bool "UI task for displays drawn whole-frame"
+        default y if SPIRAM
+        default n
+        help
+            With it, every display has its own UI task. Without it, a display
+            drawn by the whole-frame backend (small one-bit screens) is served
+            by timers on the framework owner task: no task stack, but each
+            frame transfer delays the owner task. Displays drawn with LVGL
+            always have their task, and so does a theme that needs more stack
+            than an owner-task handler may use.
+
+    config XIAOTAI_UI_OWNER_FRAME_WORKSPACE
+        bool "Borrow a reserved owner workspace for frame drawing"
+        depends on !XIAOTAI_UI_TASK && !XIAOTAI_UI_LVGL && !SPIRAM
+        default n
+        help
+            For single-display owner-timer FRAME builds only. A producer
+            may offer its typed view-build workspace during initialization;
+            the theme borrows it only for a later synchronous render.
+            Last-sent pixels and capture output are always independent.
+
+    config XIAOTAI_UI_TASK_PRIORITY
+        int "Priority of the UI task"
+        range 1 24
+        default 6
+        help
+            Each display has one UI task that draws and reads the pointer.
+            Keep it below the audio capture and playout tasks.
+
+    config XIAOTAI_UI_TASK_CORE
+        int "Core of the UI task (-1: any)"
+        range -1 1
+        default -1
+        help
+            Products with two cores keep the UI task off the core their audio
+            processing runs on.
+
+    config XIAOTAI_UI_TASK_STACK_BYTES
+        int "Least stack of the UI task in bytes"
+        range 2048 65536
+        default 4096
+        help
+            The task gets the larger of this and what its theme asks for. The
+            stack lives in external RAM where the board has it.
+
+    config XIAOTAI_UI_POINTER_READ_MS
+        int "Pointer read period in ms"
+        range 5 100
+        default 15
+        help
+            How often the UI task reads the touch controller, also while the
+            screen sleeps. Read before video is painted.
+
+    config XIAOTAI_UI_LVGL
+        bool "LVGL backend"
+        default n
+        help
+            Needed by the colour themes. Without it only the whole-frame
+            backend is built (small one-bit displays).
+            Products using LVGL select LV_USE_CUSTOM_MALLOC to put LVGL
+            allocations in the same BULK memory class as UI frame buffers.
+
+    config XIAOTAI_UI_CAPTURE
+        bool "Screen capture"
+        default y
+        help
+            Builds xiaotai_ui_capture() and the command AT+SCREEN. On the LVGL
+            backend a capture takes one more frame of memory while it runs.
+
+    config XIAOTAI_UI_THEMES_MAX
+        int "Themes the registry holds"
+        range 1 64
+        default 8
+        help
+            Registering more is an error at init, so the start fails instead
+            of losing a theme. The same holds for the three below.
+
+    config XIAOTAI_UI_TEMPLATES_MAX
+        int "Custom templates the registry holds"
+        range 1 128
+        default 16
+
+    config XIAOTAI_UI_IMAGES_MAX
+        int "Images the registry holds"
+        range 1 128
+        default 16
+
+    config XIAOTAI_UI_PAINTERS_MAX
+        int "Direct painters per display (LVGL backend)"
+        range 1 16
+        default 4
+
+endmenu

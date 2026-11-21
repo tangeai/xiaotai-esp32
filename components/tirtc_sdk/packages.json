@@ -1,0 +1,50 @@
+{
+  "schema": 2,
+  "default_line": "6.0",
+  "release": "https://repo-sdk.tange-ai.com/repository/tirtc-sdks/releases",
+  "lines": {
+    "6.0": {
+      "idf_versions": [
+        "6.0.3",
+        "6.0.2"
+      ],
+      "origin": "official",
+      "summary": "Default line. Official TiRTC 2.6.3 packages built for ESP-IDF 6.0.3, downloaded at build time. xmini-mini is an in-tree 2.5.0 Mini validation build for ESP-IDF 6.0.2 (development only).",
+      "packages": {
+        "generic-esp32s3": {
+          "version": "2.6.3",
+          "path": "espressif_esp32s3_idf6_0_3/tirtc__espressif_esp32s3_idf6_0_3__esp-idf6.0.3-xtensa-esp15.2.0_20251204__v2.6.3__mini",
+          "sha256": "e37e70f1760ac70070fc14c42c3c4d0c7a6e9b04357184e49d416e75ab60042f",
+          "contract": "contracts/6.0/esp32s3.json"
+        },
+        "generic-esp32p4": {
+          "version": "2.6.3",
+          "path": "espressif_esp32p4_idf6_0_3/tirtc__espressif_esp32p4_idf6_0_3__esp-idf6.0.3-riscv32-esp15.2.0_20251204__v2.6.3__mini",
+          "sha256": "b6f5fdc7a38ad8864e78870f18eb63181be2ce5a22610e0e6385eaea79dd6d73",
+          "contract": "contracts/6.0/esp32p4.json"
+        }
+      }
+    },
+    "5.5": {
+      "idf_versions": [
+        "5.5.5"
+      ],
+      "origin": "official",
+      "summary": "Optional line. Official TiRTC 2.6.3 packages built with ESP-IDF 5.5.4, used on ESP-IDF 5.5.5, downloaded at build time.",
+      "packages": {
+        "generic-esp32s3": {
+          "version": "2.6.3",
+          "path": "espressif_esp32s3/tirtc__espressif_esp32s3__esp-idf5.5.4-xtensa-esp14.2.0_20260121__v2.6.3__mini",
+          "sha256": "9b84bd97e2846b60aa9a4e508c8e78b14793614bf7cd7f30dcaf81a69aa5ff19",
+          "contract": "contracts/5.5/esp32s3.json"
+        },
+        "generic-esp32p4": {
+          "version": "2.6.3",
+          "path": "espressif_esp32p4/tirtc__espressif_esp32p4__esp-idf5.5.4-riscv32-esp14.2.0_20260121__v2.6.3__mini",
+          "sha256": "28e94ed3194c0897aa354148be0395aba2218d0e057aedfb41d67db137ffb6f4",
+          "contract": "contracts/5.5/esp32p4.json"
+        }
+      }
+    }
+  }
+}

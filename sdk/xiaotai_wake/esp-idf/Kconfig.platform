@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+# Target facts of the wake engine's ESP-IDF backend, sourced by ../Kconfig.
+# The defaults record what each target was validated with; a product changes
+# them only after the bench has validated the other choice.
+
+config XIAOTAI_WAKE_DILATED_FAST_PATH
+    bool "Dilated depthwise fast path in the inference library"
+    depends on XIAOTAI_WAKE_BUILTIN_MODEL
+    default y if IDF_TARGET_ESP32S3
+    default n
+    help
+        Patches the inference library with a fast path for the model's
+        dilated depthwise convolutions (the build checks the original file's
+        hash before patching). The fast path uses the optimized kernels'
+        global scratch buffer, so it assumes one inference owner. Validated
+        on the ESP32-S3 only; other targets run the library's own kernel.
+
+config XIAOTAI_WAKE_FFT_PORTABLE
+    bool "Portable C FFT instead of the optimized DSP kernel"
+    depends on XIAOTAI_WAKE_BUILTIN_MODEL
+    default y if IDF_TARGET_ESP32P4
+    default n
+    help
+        The feature front end uses the portable C FFT. On the ESP32-P4 the
+        optimized kernel faulted on the ESP-IDF 5.5 line; whether the 6.0
+        line still needs this is checked once per line (wake spec Q3).

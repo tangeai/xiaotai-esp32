@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai settings module. Each maps to the macro of the same
+# name without the CONFIG_ prefix in
+# include/xiaotai/modules/settings_config.h; the defaults here and there are
+# the same.
+menu "XiaoTai settings module"
+
+    config XIAOTAI_SETTINGS_TAKE_BACK_LATE_REFUSAL
+        bool "Take a setting back when the audio hardware refuses it later"
+        default n
+        help
+            When the media engine reports that it could not apply a volume,
+            speaker mute or microphone gain the user changed, the setting
+            returns to the value the hardware still has and the application
+            hears settings.refused. Off: the setting and the stored
+            preference keep the user's value; the failure is only counted.
+            Refusals the engine returns at once are taken back either way.
+
+    config XIAOTAI_SETTINGS_VOLUME_UP_UNMUTES
+        bool "Raising the volume with a step clears the speaker mute"
+        default n
+        help
+            A volume step upwards (keys, voice command, intent
+            audio.volume_up) also unmutes the speaker. Off: the mute stays.
+
+endmenu

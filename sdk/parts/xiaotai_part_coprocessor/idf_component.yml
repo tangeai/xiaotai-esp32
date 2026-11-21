@@ -1,0 +1,4 @@
+dependencies:
+  espressif/esp_hosted:
+    version: "==3.0.7"
+    require: private

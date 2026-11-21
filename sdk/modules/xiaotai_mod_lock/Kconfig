@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai lock module. Each maps to the macro of the same name
+# without the CONFIG_ prefix in include/xiaotai/modules/lock_config.h; the
+# defaults here and there are the same.
+menu "XiaoTai lock module"
+
+    config XIAOTAI_LOCK_AT_OPEN
+        bool "Register AT+LOCK OPEN and AT+LOCK CLOSE"
+        default n
+        help
+            Adds the verbs that release and lock a door lock from the console.
+            Bench and installation firmware only: with it anyone who reaches
+            the console can release the door. The status form of AT+LOCK is
+            always registered.
+
+    config XIAOTAI_LOCK_MAX
+        int "Door locks the module manages"
+        range 1 16
+        default 4
+        help
+            Door relays of the board beyond this number are ignored and
+            counted in the module's diagnostics. Each lock uses one timer
+            slot of the framework while it is released.
+
+endmenu
