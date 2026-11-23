@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include "xiaotai/config.h"
+
+#define XIAOTAI_PART_CAMERA_DVP_BENCH_POWER_DWELL \
+    XIAOTAI_CONFIG_BOOL(CONFIG_XIAOTAI_PART_CAMERA_DVP_BENCH_POWER_DWELL, 0)

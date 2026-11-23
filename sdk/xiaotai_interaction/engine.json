@@ -1,0 +1,13 @@
+{
+  "name": "interaction",
+  "registrations": {"commands": 1, "subscribers": 2},
+  "depends": ["eventlog", "at"],
+  "needs": [],
+  "start": true,
+  "commands": [
+    {"command": "AT+KEY", "access": "read"},
+    {"command": "AT+KEY", "verb": "CLICK", "usage": "[<role>]", "access": "action"},
+    {"command": "AT+KEY", "verb": "DOUBLE", "usage": "[<role>]", "access": "action"},
+    {"command": "AT+KEY", "verb": "HOLD", "usage": "[<role>]", "access": "action"}
+  ]
+}

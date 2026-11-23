@@ -1,0 +1,6 @@
+# Name,   Type, SubType, Offset,   Size,     Flags
+# nvs/phy_init 的偏移和大小必须保持不变：已配网、已绑定的设备只更新分区表和 APP 时数据才能保留。
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+# 不做 OTA：APP 分区占满 16 MB Flash 的剩余空间。
+factory,  app,  factory, 0x10000,  0xff0000,

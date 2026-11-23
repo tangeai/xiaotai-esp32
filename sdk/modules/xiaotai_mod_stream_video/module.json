@@ -1,0 +1,14 @@
+{
+  "name": "stream_video",
+  "registrations": {"intents": 1, "subscribers": 4},
+  "depends": ["stream", "platform", "video", "transport", "eventlog", "at"],
+  "optional_depends": ["ui"],
+  "needs": ["camera"],
+  "start": false,
+  "configure": [
+    {"function": "xiaotai_stream_video_configure", "header": "xiaotai/modules/stream_video.h",
+     "type": "xiaotai_stream_video_config_t",
+     "pointers": {"uplink": "xiaotai_video_profile_t", "downlink": "xiaotai_video_downlink_t",
+                  "viewport": "xiaotai_video_viewport_t", "placement": "xiaotai_video_placement_t"}}
+  ]
+}

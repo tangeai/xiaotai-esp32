@@ -1,0 +1,14 @@
+{
+  "name": "identity",
+  "depends": [],
+  "needs": [],
+  "configure": [
+    {"function": "xiaotai_identity_configure", "header": "xiaotai/identity.h",
+     "type": "xiaotai_identity_config_t"},
+    {"function": "xiaotai_preferences_configure", "header": "xiaotai/preferences.h",
+     "type": "xiaotai_preferences_config_t", "section": "preferences",
+     "arrays": {"bindings": {"type": "xiaotai_preference_binding_t", "count": "binding_count"},
+                "values": {"type": "int32_t", "count": "value_count"}},
+     "pointers": {"record": "xiaotai_preference_record_t"}}
+  ]
+}

@@ -1,0 +1,2 @@
+# Generated board component entry. The package owns all SRCS and requirements.
+include("@board_dir@/CMakeLists.txt")

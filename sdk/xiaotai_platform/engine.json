@@ -1,0 +1,18 @@
+{
+  "name": "platform",
+  "registrations": {"commands": 1, "subscribers": 3},
+  "depends": ["identity", "net", "eventlog", "at"],
+  "needs": ["network"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_platform_configure", "header": "xiaotai/platform.h",
+     "type": "xiaotai_platform_config_t",
+     "arrays": {"time_servers": {"type": "const char *", "count": "time_server_count"}},
+     "overrides": {"discovery_url": "discovery_url"}}
+  ],
+  "commands": [
+    {"command": "AT+PLATFORM", "access": "read"},
+    {"command": "AT+PLATFORM", "verb": "RECONNECT", "usage": "[<1..50>]", "access": "guarded",
+     "option": "XIAOTAI_PLATFORM_RECONNECT_COMMAND", "symbol": "xiaotai_platform_at_dev_"}
+  ]
+}

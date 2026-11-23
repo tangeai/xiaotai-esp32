@@ -1,0 +1,19 @@
+{
+  "name": "transport",
+  "registrations": {"commands": 3, "subscribers": 9},
+  "depends": ["identity", "net", "platform", "media", "eventlog", "at"],
+  "needs": ["network"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_transport_configure", "header": "xiaotai/transport.h",
+     "type": "xiaotai_transport_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+LINK", "usage": "", "access": "read"},
+    {"command": "AT+LINK", "verb": "TRACE", "usage": "", "access": "read"},
+    {"command": "AT+LOGLEVEL", "usage": "", "access": "read"},
+    {"command": "AT+LOGLEVEL", "verb": "TIRTC", "usage": "<0..17>", "access": "action"},
+    {"command": "AT+MEMTRACE", "usage": "", "access": "read",
+     "option": "XIAOTAI_TRANSPORT_MEMTRACE", "symbol": "xiaotai_transport_memtrace"}
+  ]
+}

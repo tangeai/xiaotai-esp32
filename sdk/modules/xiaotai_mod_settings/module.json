@@ -1,0 +1,15 @@
+{
+  "name": "settings",
+  "registrations": {
+    "subscribers": 2,
+    "settings": 1,
+    "when_selected": [{"any_of": ["media"], "intents": 5, "subscribers": 2, "settings": 5}]
+  },
+  "depends": ["identity", "eventlog", "at"],
+  "optional_depends": ["media"],
+  "needs": [],
+  "configure": [
+    {"function": "xiaotai_settings_configure", "header": "xiaotai/modules/settings.h",
+     "type": "xiaotai_settings_config_t"}
+  ]
+}

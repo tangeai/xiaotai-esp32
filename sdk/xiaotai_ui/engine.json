@@ -1,0 +1,24 @@
+{
+  "name": "ui",
+  "registrations": {"commands": 2, "intents": 4, "subscribers": 1},
+  "depends": ["eventlog", "at"],
+  "optional_depends": ["video"],
+  "needs": ["display"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_ui_configure", "header": "xiaotai/ui.h", "type": "xiaotai_ui_config_t",
+     "overrides": {"theme": "theme"}}
+  ],
+  "commands": [
+    {"command": "AT+UI", "access": "read"},
+    {"command": "AT+UI", "verb": "ACTIONS", "access": "read"},
+    {"command": "AT+UI", "verb": "PERF", "access": "read"},
+    {"command": "AT+UI", "verb": "SLEEP", "access": "guarded"},
+    {"command": "AT+UI", "verb": "REDRAW", "access": "action"},
+    {"command": "AT+UI", "verb": "TAP", "usage": "<x> <y>", "access": "action"},
+    {"command": "AT+UI", "verb": "SWIPE", "usage": "<x> <y> <x2> <y2> <ms>", "access": "action"},
+    {"command": "AT+UI", "verb": "POINTER", "usage": "<x> <y> <0|1>", "access": "action"},
+    {"command": "AT+SCREEN", "usage": "[<display>]", "access": "read",
+     "option": "XIAOTAI_UI_CAPTURE", "symbol": "xiaotai_ui_at_screen_"}
+  ]
+}

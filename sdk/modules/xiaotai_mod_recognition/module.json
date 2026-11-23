@@ -1,0 +1,21 @@
+{
+  "name": "recognition",
+  "registrations": {"commands": 1, "intents": 5, "subscribers": 5},
+  "depends": ["binding", "recognition_config", "platform", "identity", "media", "sounds", "eventlog", "at"],
+  "needs": ["audio_in", "pcm_in", "network", "external_ram"],
+  "start": true,
+  "activities": {"recognition": 2},
+  "configure": [
+    {"function": "xiaotai_recognition_configure", "header": "xiaotai/modules/recognition.h",
+     "type": "xiaotai_recognition_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+RECOGNITION", "access": "read"},
+    {"command": "AT+RECOGNITION", "verb": "RECORD", "usage": "<seconds:1..60>", "access": "action"},
+    {"command": "AT+RECOGNITION", "verb": "CANCEL", "access": "action"},
+    {"command": "AT+RECOGNITION", "verb": "QUERY", "access": "action"},
+    {"command": "AT+RECOGNITION", "verb": "RESUME", "usage": "<request-id>", "access": "action"},
+    {"command": "AT+RECOGNITION", "verb": "DISMISS", "usage": "<request-id> <item-id>", "access": "action"},
+    {"command": "AT+RECOGNITION", "verb": "ARCHIVE", "usage": "<request-id> <revision>", "access": "action"}
+  ]
+}

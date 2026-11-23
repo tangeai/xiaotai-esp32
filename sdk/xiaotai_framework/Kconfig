@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai runtime framework. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/framework_config.h; the
+# defaults here and there are the same (the header holds the value without
+# external RAM where the default depends on it).
+menu "XiaoTai runtime framework"
+
+    config XIAOTAI_FRAMEWORK_OWNER_ON_MAIN
+        bool "Run the framework owner on the calling main task"
+        default n
+        help
+            The successful xiaotai_start() call does not return. Use only
+            with a console configuration that can run without the caller's
+            separate service loop and a main task stack sized for the owner.
+
+    config XIAOTAI_FRAMEWORK_OWNER_STACK_BYTES
+        int "Stack of the owner task in bytes"
+        range 4096 65536
+        default 24576 if SPIRAM
+        default 6144
+        help
+            Every handler of every engine, module and application runs on
+            this task; each may use XIAOTAI_FRAMEWORK_HANDLER_STACK_BYTES
+            (3072). Allocated as XIAOTAI_MEM_BULK. The "framework" diagnostic
+            section reports it; measure the deepest path on the bench before
+            lowering it.
+
+    config XIAOTAI_FRAMEWORK_OWNER_PRIORITY
+        int "Priority of the owner task"
+        range 1 24
+        default 5
+
+    config XIAOTAI_FRAMEWORK_QUEUE_DEPTH
+        int "Messages the owner task's queue holds"
+        range 8 256
+        default 32
+
+    config XIAOTAI_FRAMEWORK_RESTART_DELAY_MS
+        int "Delay between the restart announcement and the restart (ms)"
+        range 0 10000
+        default 1000
+
+    config XIAOTAI_FRAMEWORK_RESTART_STACK_BYTES
+        int "Stack of the task that performs the restart (bytes)"
+        range 2048 16384
+        default 4096
+        help
+            Internal RAM, only while the orderly restart calls
+            xiaotai_restart(): on boards with a radio coprocessor the restart
+            path must not run on a stack in external RAM.
+
+    config XIAOTAI_FRAMEWORK_RESTART_GUARD_WAIT_MS
+        int "Longest wait for the quiesce guards before a restart (ms)"
+        range 0 60000
+        default 10000
+
+    config XIAOTAI_FRAMEWORK_MAX_MODULES
+        int "Engines and modules"
+        range 8 255
+        default 48
+
+    config XIAOTAI_FRAMEWORK_MAX_APPLICATIONS
+        int "Applications"
+        range 1 32
+        default 8
+
+    config XIAOTAI_FRAMEWORK_MAX_INTENTS
+        int "Intents"
+        range 16 1024
+        default 96
+
+    config XIAOTAI_FRAMEWORK_MAX_SUBSCRIBERS
+        int "Event subscriptions"
+        range 16 1024
+        default 160
+
+    config XIAOTAI_FRAMEWORK_COMPACT_SUBSCRIBERS
+        bool "Use compiled event subscription descriptors"
+        default n
+        help
+            Store only activation order and application scope for compiled
+            descriptors. Runtime subscriptions allocate their data on demand.
+            Only select this once the product's selected modules use const
+            descriptors for enough registrations to achieve a net saving.
+
+    config XIAOTAI_FRAMEWORK_MAX_ATTACHMENTS
+        int "Activity attachments"
+        range 1 64
+        default 8
+
+    config XIAOTAI_FRAMEWORK_MAX_SETTINGS
+        int "Settings"
+        range 8 512
+        default 48
+
+    config XIAOTAI_FRAMEWORK_MAX_COMMANDS
+        int "Commands"
+        range 8 512
+        default 64
+
+    config XIAOTAI_FRAMEWORK_MAX_DIAGNOSTICS
+        int "Diagnostic sections"
+        range 4 256
+        default 32
+
+    config XIAOTAI_FRAMEWORK_MAX_TIMERS
+        int "Owner-task timers"
+        range 4 256
+        default 24
+        help
+            Timers pending at once. The preferences service keeps one slot
+            permanently; with no free slot its writes are postponed, not lost.
+
+    config XIAOTAI_FRAMEWORK_MAX_QUIESCE_GUARDS
+        int "Quiesce guards"
+        range 1 64
+        default 8
+
+endmenu

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+# Third-party options of the video engine's ESP-IDF backends on targets that
+# have the H.264 libraries (esp_h264, and esp_video's hardware H.264 device);
+# merged after sdkconfig.defaults when the engine is selected for this target.
+# The values equal what both camera products set today, so their merged
+# configuration does not change.
+
+# Software H.264 decoder (esp_h264): hot paths in IRAM keep a 384 x 256
+# picture inside its frame time; one task only (decoder_h264_sw runs it on the
+# engine's decode task, which is not pinned to a core; the library's second
+# task races with the first).
+CONFIG_ESP_H264_DECODER_IRAM=y
+# CONFIG_ESP_H264_DUAL_TASK is not set
+
+# Hardware H.264 encoder: esp_video registers the encoder as a memory-to-memory
+# video device. The engine's encoder backend calls esp_h264 directly and never
+# opens that device; the option stays enabled as it is today until a bench run
+# confirms that turning it off changes nothing else (memory taken at
+# esp_video_init, the encoder's clock and reset handling).
+CONFIG_ESP_VIDEO_ENABLE_HW_H264_VIDEO_DEVICE=y

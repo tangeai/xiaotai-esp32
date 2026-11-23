@@ -1,0 +1,3 @@
+# Keep validated sources, SDK headers and assets byte-identical in Git snapshots.
+* -text
+tools/xt/xt.py whitespace=cr-at-eol

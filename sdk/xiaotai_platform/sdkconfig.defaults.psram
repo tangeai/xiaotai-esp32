@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# Signaling client (esp-mqtt) memory on boards with external RAM; merged into a
+# product's configuration only when the platform core is selected and the board
+# has external RAM. Kept with the component, not with the external-RAM
+# capability, so a product without the platform core never requests these
+# symbols.
+# Payloads (receive and message buffers, outbox data) go to external RAM.
+CONFIG_MQTT_USE_CUSTOM_CONFIG=y
+CONFIG_MQTT_BUFFERS_ON_EXTERNAL_MEMORY=y
+CONFIG_MQTT_OUTBOX_DATA_ON_EXTERNAL_MEMORY=y
+# The client task and its locks stay internal: they run while the flash cache
+# is off.
+CONFIG_MQTT_TASK_STACK_ON_EXTERNAL_MEMORY=n

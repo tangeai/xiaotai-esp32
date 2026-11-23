@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai contacts module. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/modules/contacts_config.h;
+# the defaults here and there are the same.
+menu "XiaoTai contacts module"
+
+    config XIAOTAI_CONTACT_KINDS_MAX
+        int "Contact kinds the registry holds"
+        range 1 16
+        default 4
+        help
+            Each call module registers the kind of contact it dials.
+            Registering more is an error at init, so the start fails instead
+            of silently skipping a kind's contacts.
+
+    config XIAOTAI_CONTACTS_FETCH_NEEDS_PROFILE
+        bool "Every contacts fetch waits for an accepted device profile"
+        default n
+        help
+            Off: once the platform is online a requested fetch (refresh,
+            signal, page change) is sent at once, and the profile only decides
+            when the first automatic fetch of a session happens. On: every
+            fetch waits until the profile was accepted in the present session,
+            as the deployed firmware of some products does.
+
+endmenu

@@ -1,0 +1,15 @@
+{
+  "name": "stream",
+  "registrations": {
+    "intents": 1, "subscribers": 12, "settings": 1,
+    "when_selected": [{"any_of": ["contacts"], "subscribers": 1}]
+  },
+  "depends": ["binding", "platform", "transport", "media", "eventlog", "at"],
+  "optional_depends": ["contacts"],
+  "needs": ["audio_out", "network"],
+  "start": true,
+  "activities": {"stream": 2},
+  "configure": [
+    {"function": "xiaotai_stream_configure", "header": "xiaotai/modules/stream.h", "type": "xiaotai_stream_config_t"}
+  ]
+}

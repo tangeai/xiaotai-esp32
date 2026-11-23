@@ -1,0 +1,22 @@
+{
+  "name": "contacts",
+  "registrations": {"commands": 2, "intents": 6, "subscribers": 7},
+  "depends": ["binding", "platform", "identity", "eventlog", "at", "net"],
+  "needs": ["network"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_contacts_configure", "header": "xiaotai/modules/contacts.h",
+     "type": "xiaotai_contacts_config_t", "pointers": {"source": "xiaotai_contacts_source_t"}}
+  ],
+  "commands": [
+    {"command": "AT+CONTACTS", "access": "read"},
+    {"command": "AT+CONTACTS", "verb": "REFRESH", "access": "action"},
+    {"command": "AT+CONTACTS", "verb": "PAGE", "usage": "<ALL|kind> [<page>]", "access": "action"},
+    {"command": "AT+CONTACTS", "verb": "PENDING", "usage": "[<page>]", "access": "action"},
+    {"command": "AT+CONTACT", "verb": "REQUEST", "usage": "<id>", "access": "action"},
+    {"command": "AT+CONTACT", "verb": "ACCEPT", "usage": "<id>", "access": "action"},
+    {"command": "AT+CONTACT", "verb": "REJECT", "usage": "<id>", "access": "action"},
+    {"command": "AT+CONTACT", "verb": "DELETE", "usage": "<id>", "access": "action"},
+    {"command": "AT+CONTACT", "verb": "REMARK", "usage": "<id> <hex|->", "access": "action"}
+  ]
+}

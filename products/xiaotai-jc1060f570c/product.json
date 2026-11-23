@@ -1,0 +1,350 @@
+{
+  "schema": 1,
+  "name": "xiaotai-jc1060f570c",
+  "board": "guition/jc1060f570c",
+  "applications": [
+    "companion"
+  ],
+  "home": "companion",
+  "needs_any": [
+    "key",
+    "touch"
+  ],
+  "modules": [
+    "theme_lcd480",
+    "contacts",
+    "ai_talk",
+    "call",
+    "wechat",
+    "room",
+    "stream",
+    "wake",
+    "recognition",
+    "environment"
+  ],
+  "priorities": {
+    "call": 3,
+    "ai": 2,
+    "recognition": 2,
+    "room": 1,
+    "stream": 1
+  },
+  "preemptions": [
+    {
+      "activity": "recognition",
+      "over": "room",
+      "preempts": false
+    },
+    {
+      "activity": "recognition",
+      "over": "stream",
+      "preempts": false
+    }
+  ],
+  "parameters": {
+    "contacts": {
+      "at_device_dial_prefix": 8
+    },
+    "eventlog": {
+      "reader_stack_bytes": 4096
+    },
+    "platform": {
+      "discovery_url": "http://ep-open.tangeopen.com/services",
+      "board_model": "@board.identity.profile_model",
+      "chip_model": "@board.identity.profile_chip",
+      "mqtt_address_unchecked": true,
+      "subscribe_per_topic": true,
+      "signal_payload_on_demand": true,
+      "http_no_delay": true,
+      "request_full_timeout": true
+    },
+    "transport": {
+      "links": 1,
+      "command_pool_mode": 2,
+      "command_oom_ends_link": true,
+      "start_before_signaling": true,
+      "start_reserve_bytes": 20480,
+      "connect_reserve_bytes": 17408,
+      "poll_timeout_ms": 20,
+      "stack_log_level": 3,
+      "unsolicited_stop": "XIAOTAI_TRANSPORT_RECOVER_FAULT",
+      "release_failures_tolerated": true,
+      "early_events_dropped": true,
+      "once_consumed_on_refusal": true,
+      "endpoint_required": true,
+      "yield_connect_free_bytes": 65536,
+      "yield_connect_block_bytes": 32768
+    },
+    "environment": {
+      "require_platform_binding_idle": true
+    },
+    "binding": {
+      "present_environment_boot_failure": true,
+      "require_active_presave_window": true,
+      "reject_manual_disconnect_during_commit": true,
+      "voice": "XIAOTAI_BINDING_VOICE_SERVER",
+      "announce_rounds": 3,
+      "announce_gap_ms": 350
+    },
+    "wechat": {
+      "allow_reopen_incoming_room": true,
+      "anonymous_waiting_is_busy": true,
+      "require_reject_server_token": false,
+      "voice_profile_geometry": true,
+      "incoming_busy_during": [
+        "recognition"
+      ],
+      "at_reject_incoming_hangup": true,
+      "latency": {
+        "start_ms": 200,
+        "base_ms": 60,
+        "min_ms": 60,
+        "max_ms": 500,
+        "surplus_ms": 60,
+        "settle_s": 10,
+        "slow_permille": 3,
+        "step_down_ms": 20
+      }
+    },
+    "media": {
+      "capture.agc_db": 15,
+      "capture.agc_stack_bytes": 6144,
+      "capture.reset_effects_on_mute": 1,
+      "diagnostics.capture_window": 1,
+      "playout.mixer": 0,
+      "playout.pacer_policy": 1,
+      "aec.strict_feed": 1,
+      "aec.stamp_wait_ms": 0,
+      "aec.input_slots": 4,
+      "aec.ring_frames": 12,
+      "opus.low_delay": 0,
+      "uplink.boost_cdb": 600,
+      "uplink.boost_stack_bytes": 6144,
+      "aec.nlp": 1,
+      "wake_engine.threshold_milli": 900,
+      "wake_engine.task_priority": 3,
+      "aec.gain_cdb": 600,
+      "output.mute_after_accept": 1
+    },
+    "preferences": {
+      "retain_maintenance_failures": true,
+      "bindings": [
+        {
+          "setting": "volume",
+          "storage": "XIAOTAI_PREFERENCE_INT",
+          "space": "product",
+          "key": "volume",
+          "raw_max": 10,
+          "values": [
+            0,
+            10,
+            20,
+            30,
+            40,
+            50,
+            60,
+            70,
+            80,
+            90,
+            100
+          ]
+        },
+        {
+          "setting": "spk_mute",
+          "storage": "XIAOTAI_PREFERENCE_INT",
+          "space": "product",
+          "key": "spk_mute",
+          "raw_max": 1
+        },
+        {
+          "setting": "mic_mute",
+          "storage": "XIAOTAI_PREFERENCE_INT",
+          "space": "product",
+          "key": "mic_mute",
+          "raw_max": 1
+        },
+        {
+          "setting": "ack_voice",
+          "storage": "XIAOTAI_PREFERENCE_INT",
+          "space": "product",
+          "key": "ack_voice",
+          "raw_max": 1
+        },
+        {
+          "setting": "sleep",
+          "storage": "XIAOTAI_PREFERENCE_INT",
+          "space": "product",
+          "key": "sleep",
+          "raw_max": 4,
+          "values": [
+            60,
+            300,
+            600,
+            1800,
+            0
+          ]
+        },
+        {
+          "setting": "emoji",
+          "storage": "XIAOTAI_PREFERENCE_INT",
+          "space": "product",
+          "key": "emoji",
+          "raw_max": 22
+        }
+      ]
+    },
+    "net": {
+      "dns_fallback": "XIAOTAI_NET_DNS_FALLBACK_ALL_EMPTY",
+      "retry": {
+        "steps_ms": [
+          1000,
+          2000,
+          4000,
+          8000,
+          15000,
+          30000
+        ]
+      }
+    },
+    "ui": {
+      "theme": "lcd480",
+      "local_rejection_toast": "操作未受理，请重试"
+    },
+    "settings": {
+      "speaker_accept_before_save": true,
+      "volume_accept_before_save": true
+    },
+    "companion": {
+      "binding_retry_control": "XIAOTAI_COMPANION_BINDING_RETRY_HEADER",
+      "save_choice_on_reselect": true,
+      "ignore_invalid_choice_values": true,
+      "wake_ack_on_admission": true,
+      "save_only_current_revision": true,
+      "main_button_on_press": true,
+      "binding_url": "https://xiaotai.chat/",
+      "ai_contact_tools": "XIAOTAI_COMPANION_AI_CONTACT_TOOLS_LEGACY",
+      "ai_caption_speaker_prefix": true,
+      "stream_camera_status": true,
+      "room_local_hold": true,
+      "announce_on_code": true
+    },
+    "room": {
+      "accept_alaw_join_reply": true,
+      "wait_superseded_lease": true,
+      "command_max_bytes": 32768,
+      "recover_oversized_command": true,
+      "talk_tail_ms": "XIAOTAI_ROOM_NO_TAIL"
+    },
+    "ai_talk": {
+      "latency": {
+        "start_ms": 200,
+        "base_ms": 60,
+        "min_ms": 60,
+        "max_ms": 500,
+        "surplus_ms": 60,
+        "settle_s": 10,
+        "slow_permille": 3,
+        "step_down_ms": 20
+      }
+    },
+    "call": {
+      "strict_failed_accept_room_id": true,
+      "accept_peer_audio_stream": true,
+      "voice_profile_geometry": true,
+      "incoming_busy_during": [
+        "recognition"
+      ],
+      "at_reject_incoming_hangup": true,
+      "latency": {
+        "start_ms": 200,
+        "base_ms": 60,
+        "min_ms": 60,
+        "max_ms": 500,
+        "surplus_ms": 60,
+        "settle_s": 10,
+        "slow_permille": 3,
+        "step_down_ms": 20
+      }
+    },
+    "recognition": {
+      "autoplay": true,
+      "resume_after_dismiss": true,
+      "query_legacy_http": true,
+      "legacy_four_http_slots": true
+    },
+    "stream": {
+      "preserve_inbound_on_environment": true,
+      "pause_admission_on_local_stop": true,
+      "receive_pcma_only": true
+    },
+    "at": {
+      "no_platform_console": false
+    }
+  },
+  "options": {
+    "BINDING_DEV_COMMANDS": true,
+    "NET_CONSOLE_FORGET": true,
+    "COMPANION_WECHAT_CODE": true,
+    "UI_CAPTURE": false,
+    "MEDIA_PROCESSOR_AEC_DUAL": true,
+    "MEDIA_EFFECT_AGC": true,
+    "MEDIA_CODEC_OPUS_DECODER": true,
+    "WAKE_BUILTIN_MODEL": true,
+    "SOUNDS_PACK_TONES_PCM8K": true,
+    "UI_TASK_CORE": 0,
+    "NET_SCAN_TIMEOUT_MS": 5000,
+    "PROVISIONING_LOCAL_POLICY": 1
+  },
+  "sdkconfig": [
+    "CONFIG_COMPILER_OPTIMIZATION_SIZE=y",
+    "CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=2048",
+    "CONFIG_ESP_IPC_TASK_STACK_SIZE=2048",
+    "CONFIG_PM_ENABLE=n",
+    "CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192",
+    "CONFIG_LWIP_MAX_SOCKETS=16",
+    "CONFIG_LWIP_SNTP_MAX_SERVERS=2",
+    "CONFIG_MBEDTLS_TLS_SERVER_AND_CLIENT=y",
+    "CONFIG_MBEDTLS_SSL_PROTO_TLS1_2=y",
+    "CONFIG_MBEDTLS_AES_C=y",
+    "CONFIG_MBEDTLS_SHA1_C=y",
+    "CONFIG_MBEDTLS_ECP_C=y",
+    "CONFIG_MBEDTLS_ECDH_C=y",
+    "CONFIG_MBEDTLS_ECDSA_C=y",
+    "CONFIG_LV_COLOR_DEPTH=16",
+    "CONFIG_LV_DEF_REFR_PERIOD=30",
+    "CONFIG_LV_USE_CLIB_STRING=y",
+    "CONFIG_LV_USE_CLIB_SPRINTF=y",
+    "CONFIG_LV_USE_DRAW_SW=y",
+    "CONFIG_LV_DPI_DEF=130",
+    "CONFIG_LV_DRAW_LAYER_SIMPLE_BUF_SIZE=12288",
+    "CONFIG_LV_USE_ASSERT_NULL=y",
+    "CONFIG_LV_USE_ASSERT_MALLOC=y",
+    "CONFIG_LV_ASSERT_HANDLER_INCLUDE=\"assert.h\"",
+    "CONFIG_LV_FONT_MONTSERRAT_14=y",
+    "CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14=y",
+    "CONFIG_LV_USE_IMAGE=y",
+    "CONFIG_LV_USE_LABEL=y",
+    "CONFIG_LV_USE_BUTTON=y",
+    "CONFIG_LV_USE_FLEX=y",
+    "CONFIG_LV_USE_THEME_DEFAULT=y",
+    "CONFIG_LV_FONT_MONTSERRAT_12=y",
+    "CONFIG_LV_USE_QRCODE=y"
+  ],
+  "variants": {
+    "diagnostics": {
+      "parameters": {
+        "at": {
+          "no_platform_console": false,
+          "start_locked": false,
+          "restart_direct_when_running": true
+        }
+      },
+      "options": {
+        "AT_SETTING_WRITE": false,
+        "AT_INTENT_COMMAND": false,
+        "UI_CAPTURE": true,
+        "NET_CONSOLE_FORGET": true
+      }
+    }
+  }
+}

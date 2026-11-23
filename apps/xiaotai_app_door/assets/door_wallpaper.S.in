@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: MIT */
+.section .rodata.xiaotai_door_wallpaper,"a",@progbits
+.balign 4
+.global xiaotai_door_wallpaper
+.type xiaotai_door_wallpaper, @object
+xiaotai_door_wallpaper:
+.incbin "@door_wallpaper@"
+.size xiaotai_door_wallpaper, .-xiaotai_door_wallpaper
+#ifdef __linux__
+.section .note.GNU-stack,"",@progbits
+#endif

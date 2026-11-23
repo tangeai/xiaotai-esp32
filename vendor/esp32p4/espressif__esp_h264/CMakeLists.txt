@@ -1,0 +1,94 @@
+set(public_include_dirs "./interface/include"
+                        "./sw/include"
+                        "./port/include/")
+set(private_include_dirs  "./port/inc/"
+                          "./sw/libs/tinyh264_inc"
+                          "./sw/libs/openh264_inc"
+                          "./sw/src/")
+set(src_dirs "./port/src/"
+             "./interface/src"
+             "./sw/src")
+set(target_lib_path "${IDF_TARGET}")
+
+IF ("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_LESS "5.3" )
+
+set(exclude_srcs "./port/src/esp_h264_alloc.c"
+                 "./port/src/esp_h264_cache.c")
+
+ELSE()
+
+set(exclude_srcs "./port/src/esp_h264_alloc_less_than_5_3.c")
+list(APPEND public_requires esp_mm)
+
+ENDIF ()
+
+IF (${IDF_TARGET} STREQUAL "esp32p4")
+
+list(APPEND public_include_dirs "./hw/include")
+list(APPEND private_include_dirs  "./hw/hal/esp32p4" "./hw/soc/esp32p4")
+
+if(CONFIG_ESP32P4_SELECTS_REV_LESS_V3)
+    set(target_lib_path "esp32p4_less_v3")
+endif()
+message(STATUS "esp_h264: ESP32-P4 prebuilt library profile: ${target_lib_path}")
+
+idf_build_get_property(p4_rev CONFIG_ESP32P4_REV_MIN_FULL)
+
+if(p4_rev)
+    if(p4_rev GREATER_EQUAL 300)
+        list(APPEND private_include_dirs "./hw/soc/esp32p4/hw_ver3")
+    else()
+        list(APPEND private_include_dirs "./hw/soc/esp32p4/hw_ver1")
+    endif()
+else()
+    message(STATUS "CONFIG_ESP32P4_REV_MIN_FULL not defined, using default version")
+    list(APPEND private_include_dirs "./hw/soc/esp32p4/hw_ver1")
+endif()
+
+list(APPEND src_dirs "./hw/src"
+                     "./hw/hal/esp32p4" )
+
+ENDIF ()
+
+IF (${IDF_TARGET} STREQUAL "esp32s31" AND NOT CONFIG_ESP_H264_S31_USE_ASM)
+
+set(target_lib_path "esp32s31_esp_c")
+
+ENDIF ()
+
+IF (${IDF_TARGET} STREQUAL "esp32s31")
+
+message(STATUS "esp_h264: ESP32-S31 prebuilt library profile: ${target_lib_path}")
+
+ENDIF ()
+
+IF (${IDF_TARGET} STREQUAL "esp32s3")
+
+list(APPEND src_dirs "./sw/src/asm/${IDF_TARGET}")
+
+ENDIF ()
+
+set(private_requires esp_hw_support efuse esp_timer)
+IF ("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_LESS "6.0")
+    list(APPEND private_requires bootloader_support)
+ENDIF ()
+
+idf_component_register(SRC_DIRS "${src_dirs}"
+                       EXCLUDE_SRCS "${exclude_srcs}"
+                       INCLUDE_DIRS "${public_include_dirs}"
+                       PRIV_INCLUDE_DIRS "${private_include_dirs}"
+                       REQUIRES "${public_requires}"
+                       PRIV_REQUIRES "${private_requires}"
+                       LDFRAGMENTS "linker.lf")
+
+add_prebuilt_library(tinyh264 "${CMAKE_CURRENT_LIST_DIR}/sw/libs/${target_lib_path}/libtinyh264.a"
+                    REQUIRES freertos)
+add_prebuilt_library(openh264 "${CMAKE_CURRENT_LIST_DIR}/sw/libs/${target_lib_path}/libopenh264.a"
+                    REQUIRES freertos)
+target_link_libraries(${COMPONENT_LIB} INTERFACE tinyh264 openh264)
+
+IF (${IDF_TARGET} STREQUAL "esp32s3")
+
+add_definitions(-DHAVE_ESP32S3 )
+
+ENDIF ()

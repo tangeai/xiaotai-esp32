@@ -1,0 +1,14 @@
+{
+  "source_repository": "https://github.com/google/fonts",
+  "revision": "6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec",
+  "font_sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+  "license_sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+  "em_pixels": 128,
+  "weight": 300,
+  "optical_size": "source default",
+  "line_height": 144,
+  "baseline": 118,
+  "charset": " -0123456789:",
+  "bitmap_bytes": 28103,
+  "generated_sha256": "f07592f9fa48190b6fc82f09492c0520dff78bb8936da1af3b6c7e35acee5d39"
+}

@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: MIT */
+.section .rodata.waveshare_c6_app,"a",@progbits
+.balign 4
+.global _binary_waveshare_c6_app_bin_start
+_binary_waveshare_c6_app_bin_start:
+.incbin "@image@"
+.section .note.GNU-stack,"",@progbits

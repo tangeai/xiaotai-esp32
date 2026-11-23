@@ -1,0 +1,9 @@
+# ESP-SR 2.6 links its GTCRN noise suppression (libnsnet3.a) through the AFE even
+# when the AFE leaves NS off (ns_init = false), as all products do. Its static tables would
+# otherwise take about 18 KB of internal RAM; they are never used, so keep them
+# in PSRAM.
+[mapping:esp_sr_nsnet3_psram]
+archive: libnsnet3.a
+entries:
+  if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+    * (extram_bss)

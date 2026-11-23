@@ -1,0 +1,42 @@
+{
+  "name": "door",
+  "modules": ["call", "contacts", "provisioning", "binding", "settings", "net", "platform",
+              "ui", "feedback", "sounds", "eventlog", "at"],
+  "optional_modules": ["video_call", "stream", "stream_video", "lock", "wechat"],
+  "registrations": {
+    "commands": 1,
+    "intents": 19,
+    "settings": 2,
+    "subscribers": 24,
+    "when_selected": [
+      {"any_of": ["video_call"], "subscribers": 3},
+      {"any_of": ["stream"], "intents": 1, "subscribers": 2},
+      {"any_of": ["stream_video"], "subscribers": 3},
+      {"any_of": ["wechat"], "intents": 1, "subscribers": 4}
+    ]
+  },
+  "needs": ["display", "touch", "audio_in", "audio_out", "network"],
+  "start": true,
+  "foreground": true,
+  "page_step": true,
+  "handles": ["call.incoming", "call.state", "call.connected", "call.ended",
+              "video_call.state", "video_call.remote", "video_call.unsupported",
+              "stream.started", "stream.state", "stream.ended",
+              "stream_video.remote", "stream_video.unsupported",
+              "wechat.state", "wechat.connected", "wechat.ended"],
+  "claims": true,
+  "commands": [
+    {"command": "AT+DOOR", "access": "read"},
+    {"command": "AT+DOOR", "verb": "HOME", "access": "action"},
+    {"command": "AT+DOOR", "verb": "NEXT", "access": "action"},
+    {"command": "AT+DOOR", "verb": "PREVIOUS", "access": "action"},
+    {"command": "AT+DOOR", "verb": "VIEWER", "access": "guarded"},
+    {"command": "AT+DOOR", "verb": "SENDER", "access": "guarded"},
+    {"command": "AT+DOOR", "verb": "DEVICES", "access": "action"},
+    {"command": "AT+DOOR", "verb": "BACK", "access": "action"}
+  ],
+  "configure": [
+    {"function": "xiaotai_app_door_configure", "header": "xiaotai/apps/door.h",
+     "type": "xiaotai_app_door_config_t"}
+  ]
+}

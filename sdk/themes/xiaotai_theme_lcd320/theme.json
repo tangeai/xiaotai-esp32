@@ -1,0 +1,8 @@
+{
+  "name": "theme_lcd320",
+  "depends": ["ui", "theme_lcd_kit"],
+  "needs": ["display"],
+  "start": false,
+  "options": {"UI_LVGL": true},
+  "display": {"pixel": ["rgb565"], "width": [320, 320], "height": [240, 240]}
+}

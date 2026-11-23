@@ -1,0 +1,10 @@
+{
+  "board": "guition/jc1060f570c",
+  "target": "esp32s31",
+  "idf_line": "6.1",
+  "idf_version": "6.1.0",
+  "tirtc_package": "6.1/generic-esp32s31",
+  "sdkconfig": {
+    "CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY": "n"
+  }
+}

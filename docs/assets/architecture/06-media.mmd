@@ -1,0 +1,12 @@
+flowchart TB
+    H["硬件格式<br/>PCM 或外设已编码帧<br/>采样率、声道、帧长"]:::hardware
+    P["内部处理格式<br/>按需要做 AEC、重采样或编解码<br/>明确缓冲所有权"]:::media
+    W["传输格式<br/>按业务和方向分别约定<br/>codec、包时长、流号、时间戳"]:::product
+    H <-->|采集 / 播放适配| P
+    P <-->|会话媒体适配| W
+    N["编码帧不一定需要再次编码<br/>不把所有路径强制转成 PCM"]:::note
+    P -.- N
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef note fill:#ffffff,stroke:#8c969e,stroke-dasharray:5 4,color:#46535d

@@ -1,0 +1,24 @@
+{
+  "name": "alarm",
+  "modules": ["clock", "ui", "feedback", "sounds", "eventlog", "at"],
+  "registrations": {
+    "commands": 1,
+    "intents": 20,
+    "settings": 2,
+    "subscribers": 4
+  },
+  "needs": ["display", "audio_out"],
+  "start": true,
+  "foreground": true,
+  "page_step": true,
+  "handles": ["clock.due"],
+  "claims": true,
+  "activities": {"alarm": 1},
+  "commands": [
+    {"command": "AT+ALARM", "access": "read"}
+  ],
+  "configure": [
+    {"function": "xiaotai_app_alarm_configure", "header": "xiaotai/apps/alarm.h",
+     "type": "xiaotai_app_alarm_config_t"}
+  ]
+}

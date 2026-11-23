@@ -1,0 +1,6 @@
+dependencies:
+  lvgl/lvgl:
+    version: "==9.5.0"
+    require: private
+    matches:
+      - if: "$CONFIG{XIAOTAI_UI_LVGL} == True"
