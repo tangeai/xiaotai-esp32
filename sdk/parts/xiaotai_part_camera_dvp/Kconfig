@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+config XIAOTAI_PART_CAMERA_DVP_NATIVE
+    bool "Apply the reviewed DVP camera driver overlay"
+    default n
+    help
+        The default uses the original esp32-camera public API. Select this only
+        with the reviewed driver to use native nonblocking dequeue, producer
+        drop counters and checked SCCB cleanup. Legacy products are unaffected.
+
+config XIAOTAI_PART_CAMERA_DVP_BENCH_DIAG
+    bool "Sample DVP inputs after missing the first frame (bench only)"
+    depends on IDF_TARGET_ESP32S3 && !XIAOTAI_PART_CAMERA_DVP_NATIVE
+    default n
+    help
+        Read GPIO and LCD_CAM state if the stock driver produces no first
+        frame in 500 ms. Results count sampled transitions, not wire edges.
+        No pin setup, interrupt, sensor transaction, retry, or timeout change.
+
+config XIAOTAI_PART_CAMERA_DVP_BENCH_POWER_DWELL
+    bool "Compare DVP with 100 ms PWDN hold and 50 ms settle (bench only)"
+    depends on IDF_TARGET_ESP32S3 && !XIAOTAI_PART_CAMERA_DVP_NATIVE && !XIAOTAI_PART_CAMERA_DVP_BENCH_DIAG
+    default n
+    help
+        On a camera with a power-control line, hold PWDN for at least 100 ms
+        after a successful assertion and settle for 50 ms after release.
+        This does not imply that power to the sensor was removed. No retry.

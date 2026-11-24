@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "noto_sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+  "icons": [
+    "back",
+    "next",
+    "down",
+    "more",
+    "phone",
+    "hangup",
+    "check",
+    "close",
+    "stop",
+    "wifi",
+    "wifi_2",
+    "wifi_1",
+    "wifi_0",
+    "wifi_off",
+    "volume",
+    "volume_off",
+    "mic",
+    "mic_off",
+    "video",
+    "video_off",
+    "settings",
+    "refresh",
+    "lock",
+    "user",
+    "users",
+    "smile",
+    "sound",
+    "pulse",
+    "bell",
+    "timer",
+    "clock",
+    "door",
+    "key",
+    "plus",
+    "minus",
+    "backspace",
+    "info",
+    "alert",
+    "sun",
+    "moon",
+    "calendar",
+    "leaf"
+  ],
+  "faces": {
+    "lcd_icons_20": {
+      "glyphs": 42,
+      "bitmap_bytes": 4834
+    },
+    "lcd_icons_28": {
+      "glyphs": 42,
+      "bitmap_bytes": 9160
+    },
+    "lcd_font_num_48": {
+      "glyphs": 16,
+      "bitmap_bytes": 5522,
+      "weight": 400
+    },
+    "lcd_font_num_64": {
+      "glyphs": 16,
+      "bitmap_bytes": 9579,
+      "weight": 400
+    },
+    "lcd_font_num_96": {
+      "glyphs": 16,
+      "bitmap_bytes": 20229,
+      "weight": 300
+    },
+    "lcd_font_num_160": {
+      "glyphs": 16,
+      "bitmap_bytes": 55951,
+      "weight": 300
+    },
+    "lcd_font_cn_26": {
+      "glyphs": 4045,
+      "bitmap_bytes": 599294,
+      "not_in_source": []
+    }
+  },
+  "tools": {
+    "pillow": "12.2.0",
+    "freetype": "2.14.3",
+    "fonttools": "4.62.1"
+  },
+  "generated_sha256": {
+    "lcd_icons.h": "22bc536bc384853fdd33cacbee8e4b5e2aae7e43f471b1af95b75be969dc1564",
+    "lcd_icons.c": "067bbe1ce34c7b25fc8a5fc5a9f5eef02e6dafbd5d501a9c71f987787d50b8fe",
+    "lcd_font_num.c": "376cdf84c6974d534df2e3302847a67d849e5479e3dfa939228d912a8fd625cc",
+    "lcd_font_cn_26.c": "38814f659fb43a8710804da963dc067eab59fb017cb82df810349dd05b27279c"
+  }
+}

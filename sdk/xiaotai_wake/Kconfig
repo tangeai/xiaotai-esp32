@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai wake-word engine. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/wake_config.h; the
+# defaults here and there are the same, except where the default depends on
+# the target (esp-idf/Kconfig.platform, which wake_config.h names).
+menu "XiaoTai wake-word engine"
+
+    config XIAOTAI_WAKE_BUILTIN_MODEL
+        bool "Embed the built-in wake model"
+        default n
+        help
+            Embeds the model for the product's wake phrase with its feature
+            front end and registers it when the engine initializes. The
+            threshold is not a build option: it comes from the media tuning
+            table of the product configuration ("wake_engine.threshold_milli").
+
+    # Inference-library facts of the target: what the built-in model may use
+    # there. Defined with their per-target defaults in the platform directory,
+    # so target names stay out of the portable part of the component.
+    rsource "esp-idf/Kconfig.platform"
+
+endmenu

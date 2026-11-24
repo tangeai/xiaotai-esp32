@@ -1,0 +1,11 @@
+dependencies:
+  espressif/esp-sr:
+    version: "==2.6.1"
+    require: private
+    rules:
+      - if: "target in [esp32s3, esp32p4, esp32s31]"
+  espressif/esp_audio_codec:
+    version: "==2.6.2"
+    require: private
+    rules:
+      - if: "target in [esp32s3, esp32p4, esp32c3, esp32s31]"

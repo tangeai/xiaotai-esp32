@@ -1,0 +1,25 @@
+{
+  "name": "binding",
+  "registrations": {
+    "commands": 1,
+    "intents": 5, "subscribers": 7,
+    "when_selected": [{"any_of": ["media"], "subscribers": 1}]
+  },
+  "depends": ["provisioning", "net", "platform", "identity", "eventlog", "at"],
+  "optional_depends": ["media", "sounds"],
+  "needs": ["network"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_binding_configure", "header": "xiaotai/modules/binding.h",
+     "type": "xiaotai_binding_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+BIND", "access": "read"},
+    {"command": "AT+BIND", "verb": "RETRY", "access": "action"},
+    {"command": "AT+BIND", "verb": "REPLAY", "access": "action"},
+    {"command": "AT+BIND", "verb": "SET", "usage": "<device-id> <key-hex> [<client-id>]", "access": "guarded",
+     "option": "XIAOTAI_BINDING_DEV_COMMANDS", "symbol": "xiaotai_binding_at_dev_"},
+    {"command": "AT+BIND", "verb": "CLEAR", "access": "guarded",
+     "option": "XIAOTAI_BINDING_DEV_COMMANDS", "symbol": "xiaotai_binding_at_dev_"}
+  ]
+}

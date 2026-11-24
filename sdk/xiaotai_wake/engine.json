@@ -1,0 +1,12 @@
+{
+  "name": "wake_engine",
+  "registrations": {"commands": 1},
+  "depends": ["media", "eventlog", "at"],
+  "needs": ["pcm_in", "external_ram"],
+  "start": true,
+  "commands": [
+    {"command": "AT+WAKE", "usage": "", "access": "read"},
+    {"command": "AT+WAKE", "verb": "THRESHOLD", "usage": "<50..990>", "access": "action"},
+    {"command": "AT+WAKE", "verb": "WATCH", "usage": "[<5..30>]", "access": "read"}
+  ]
+}

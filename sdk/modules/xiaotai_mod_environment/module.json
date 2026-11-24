@@ -1,0 +1,17 @@
+{
+  "name": "environment",
+  "registrations": {"commands": 1, "intents": 2, "subscribers": 1},
+  "depends": ["net", "platform", "identity", "eventlog", "at"],
+  "needs": ["network"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_environment_configure", "header": "xiaotai/modules/environment.h",
+     "type": "xiaotai_environment_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+EP", "access": "read"},
+    {"command": "AT+EP", "verb": "SET", "usage": "<base>", "access": "guarded"},
+    {"command": "AT+EP", "verb": "RESET", "access": "guarded"},
+    {"command": "AT+EP", "verb": "CANCEL", "access": "action"}
+  ]
+}

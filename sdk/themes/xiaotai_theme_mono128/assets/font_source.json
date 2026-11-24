@@ -1,0 +1,18 @@
+{
+  "family": "Noto Sans CJK SC",
+  "license": "OFL-1.1",
+  "pixels": 12,
+  "source_url": "https://github.com/notofonts/noto-cjk",
+  "font_index": 2,
+  "source_sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+  "file": "../src/mono_font_cn.inc",
+  "sha256": "a3ce7c8be8a91172645284835ac8f8c897bae8d9ab686fd790a412e10b4590d4",
+  "glyphs": 21087,
+  "pinyin_supplement": {
+    "file": "../src/mono_font_pinyin.inc",
+    "family": "Noto Sans SC Regular",
+    "source_sha256": "faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9",
+    "sha256": "a538b42eb168113c3387aabd72662b3137b789ab2e2d147afe2e6b33220451bc",
+    "glyphs": 50
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "provisioning",
+  "registrations": {"commands": 1, "intents": 4, "subscribers": 6},
+  "depends": ["net", "identity", "eventlog", "at"],
+  "optional_depends": ["platform"],
+  "needs": ["network"],
+  "start": true,
+  "commands": [
+    {"command": "AT+NET", "verb": "PROVISION", "usage": "[FORCE]", "access": "action"},
+    {"command": "AT+NET", "verb": "PROVISION", "usage": "FORGET [FORCE]", "access": "guarded",
+     "option": "XIAOTAI_NET_CONSOLE_FORGET", "symbol": "xiaotai_provisioning_at_forget_"},
+    {"command": "AT+NET", "verb": "CANCEL", "access": "action"}
+  ]
+}

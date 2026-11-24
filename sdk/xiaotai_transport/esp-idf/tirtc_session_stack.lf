@@ -1,0 +1,7 @@
+[mapping:xt_session_stack]
+archive: libTiRTC.a
+entries:
+    tgtrp:signal_tgtrp_listener_callback_wrapper (default);
+        text -> flash_text SURROUND(xt_session_inbound)
+    tgtrp:tgtrp_connection_whip_new (default);
+        text -> flash_text SURROUND(xt_session_outbound)

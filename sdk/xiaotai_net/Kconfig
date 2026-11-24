@@ -1,0 +1,153 @@
+# SPDX-License-Identifier: MIT
+# Build options of the network engine. Each symbol maps to the macro of the
+# same name without CONFIG_ in include/xiaotai/net_config.h, which also holds
+# the value used where Kconfig does not exist (the host). Keep both in step.
+menu "XiaoTai network engine"
+
+    config XIAOTAI_NET_SCAN_MAX
+        int "Networks kept from one scan"
+        range 4 32
+        default 24 if SPIRAM
+        default 16
+
+    config XIAOTAI_NET_QUEUE_DEPTH
+        int "Driver events and requests that may wait for the worker"
+        range 8 64
+        default 16
+
+    config XIAOTAI_NET_WORKER_STACK_BYTES
+        int "Worker task stack (bytes, internal RAM)"
+        range 3072 16384
+        default 8192 if ESP_WIFI_REMOTE_ENABLED
+        default 4096
+        help
+            The worker runs every driver call, the network part's bring-up
+            hook and the immediate restart after a coprocessor update or
+            rollback. Wi-Fi on a coprocessor needs the larger stack: its
+            bring-up verifies and writes firmware images.
+
+    config XIAOTAI_NET_PORTAL_STACK_BYTES
+        int "Setup page server task stack (bytes)"
+        range 4096 16384
+        default 8192 if SPIRAM
+        default 7168
+
+    config XIAOTAI_NET_DNS_STACK_BYTES
+        int "Captive name-server task stack (bytes)"
+        range 3072 8192
+        default 4096
+
+    config XIAOTAI_NET_COPROCESSOR_IMAGE_MAX
+        hex "Largest coprocessor firmware image the console downloads (bytes)"
+        default 0x180000
+
+    config XIAOTAI_NET_FAILURES_NOTICE
+        int "Consecutive failures before the stored network counts as failing"
+        range 1 100
+        default 5
+
+    config XIAOTAI_NET_ADDRESS_TIMEOUT_MS
+        int "Longest wait for an address after joining (ms, 0: no limit)"
+        range 0 120000
+        default 30000
+
+    config XIAOTAI_NET_SCAN_INTERVAL_MS
+        int "Shortest time between two scans (ms)"
+        range 1000 60000
+        default 5000
+
+    config XIAOTAI_NET_SCAN_TIMEOUT_MS
+        int "Longest scan (ms)"
+        range 2000 30000
+        default 10000
+
+    config XIAOTAI_NET_SIGNAL_INTERVAL_MS
+        int "Signal sampling period while the link is up (ms)"
+        range 5000 600000
+        default 30000
+
+    config XIAOTAI_NET_VERIFY_TIMEOUT_MS
+        int "Longest verification of submitted credentials (ms)"
+        range 5000 120000
+        default 30000
+
+    config XIAOTAI_NET_VERIFY_RETRIES
+        int "Losses retried during one verification"
+        range 0 10
+        default 3
+
+    config XIAOTAI_NET_MAC_RETRY_MS
+        int "Interval of station MAC reads while up without one (ms)"
+        range 1000 60000
+        default 5000
+        help
+            On a coprocessor the station MAC is a remote read. When it
+            fails after an address was obtained, the worker reads it again at
+            this interval and announces the link again once it is known.
+
+    config XIAOTAI_NET_COPROCESSOR_REPLY_WAIT_MS
+        int "Longest wait for the caller's report after a coprocessor rollback (ms)"
+        range 100 5000
+        default 1000
+        help
+            After a rollback command succeeded the worker restarts the
+            device once the caller has written its reply and released the
+            restart, or after this wait if the caller never does.
+
+    config XIAOTAI_NET_FALLBACK_DNS_IPV4
+        string "Fallback name server (IPv4, empty: none)"
+        default "223.5.5.5"
+        help
+            Written into the last name-server slot where the product's rule
+            (dns_fallback of the network configuration) allows it. Name
+            servers the network assigned are never replaced.
+
+    config XIAOTAI_NET_PROVISION_PORTAL
+        bool "Setup access point with page and captive name server"
+        default y
+
+    config XIAOTAI_NET_PROVISION_SERIAL
+        bool "Serial provisioning commands"
+        default y
+
+    config XIAOTAI_NET_CONSOLE_FORGET
+        bool "Console commands that erase the stored network (development builds)"
+        default n
+        help
+            Registers AT+NET FORGET and the FORGET word of AT+NET PROVISION
+            (the shared `wifi-clear`). Anyone with the console can then clear
+            Wi-Fi; products whose console matches the BK7258 line's turn it
+            on, the others leave it off.
+
+    config XIAOTAI_NET_PATTERN_PROBE
+        bool "Deterministic LAN receive probe (diagnostic builds only)"
+        default n
+        help
+            Adds AT+NET PROBE2. A physical console can authorize one short
+            receive run from an exact private IPv4 address and source port.
+            The probe never responds to network traffic and is off by default.
+
+    config XIAOTAI_NET_PATH_TRACE
+        bool "Packet path capture (diagnostic builds only)"
+        default n
+        help
+            Records one row of counters per second along the receive path and
+            wraps two functions of the network stack for the whole firmware.
+            Never enable it in a product build.
+
+    config XIAOTAI_NET_PATH_TRACE_SECONDS
+        int "Longest packet path capture (seconds)"
+        depends on XIAOTAI_NET_PATH_TRACE
+        range 60 3600
+        default 1800
+
+    config XIAOTAI_NET_PATH_TRACE_TRANSPORT
+        bool "Packet path capture also records transport statistics"
+        depends on XIAOTAI_NET_PATH_TRACE
+        default n
+        help
+            While a capture runs, the transport records its statistics
+            samples and logs them. That logging changes weak-network timing,
+            so leave it off unless those samples are needed.
+
+endmenu

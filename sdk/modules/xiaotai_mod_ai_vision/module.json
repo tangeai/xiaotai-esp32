@@ -1,0 +1,11 @@
+{
+  "name": "ai_vision",
+  "registrations": {"intents": 1, "subscribers": 1, "settings": 1},
+  "depends": ["ai_talk", "video", "transport", "eventlog", "at"],
+  "needs": ["camera"],
+  "start": false,
+  "configure": [
+    {"function": "xiaotai_ai_vision_configure", "header": "xiaotai/modules/ai_vision.h",
+     "type": "xiaotai_ai_vision_config_t"}
+  ]
+}

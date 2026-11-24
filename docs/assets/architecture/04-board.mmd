@@ -1,0 +1,12 @@
+flowchart TB
+    A["1 判断类型<br/>同类新板、新器件、新交互、新芯片"]:::hardware
+    B["2 备齐资料<br/>原理图、器件型号、供电和复位"]:::hardware
+    C["3 建板目录<br/>板包、产品清单、构建档案"]:::product
+    D["4 写 board.cc<br/>按原理图把器件接起来"]:::product
+    E["5 主机检查和编译<br/>先在电脑上过，再编出固件"]:::interaction
+    F["6 烧录和上板验证<br/>启动、音频、联网、业务、内存"]:::media
+    A --> B --> C --> D --> E --> F
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33

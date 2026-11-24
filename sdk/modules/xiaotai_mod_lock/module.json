@@ -1,0 +1,16 @@
+{
+  "name": "lock",
+  "depends": ["eventlog", "at"],
+  "needs": ["door_lock"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_lock_configure", "header": "xiaotai/modules/lock.h", "type": "xiaotai_lock_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+LOCK", "access": "read"},
+    {"command": "AT+LOCK", "verb": "OPEN", "usage": "[<index> [<ms>]]", "access": "guarded",
+     "option": "XIAOTAI_LOCK_AT_OPEN", "symbol": "xiaotai_lock_at_open_"},
+    {"command": "AT+LOCK", "verb": "CLOSE", "usage": "[<index>]", "access": "action",
+     "option": "XIAOTAI_LOCK_AT_OPEN", "symbol": "xiaotai_lock_at_open_"}
+  ]
+}

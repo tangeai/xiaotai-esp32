@@ -1,0 +1,29 @@
+{
+  "theme": "base",
+  "look": "classic",
+  "markdownAutoWrap": false,
+  "securityLevel": "strict",
+  "fontFamily": "Microsoft YaHei, Noto Sans CJK SC, sans-serif",
+  "themeVariables": {
+    "fontFamily": "Microsoft YaHei, Noto Sans CJK SC, sans-serif",
+    "fontSize": "20px",
+    "primaryColor": "#f2f4f7",
+    "primaryTextColor": "#202b33",
+    "primaryBorderColor": "#7a8791",
+    "lineColor": "#66727c",
+    "edgeLabelBackground": "#ffffff",
+    "clusterBkg": "#ffffff",
+    "clusterBorder": "#bac3ca"
+  },
+  "flowchart": {
+    "look": "classic",
+    "wrappingWidth": 360,
+    "htmlLabels": false,
+    "curve": "linear",
+    "nodeSpacing": 36,
+    "rankSpacing": 42,
+    "padding": 18,
+    "diagramPadding": 24,
+    "useMaxWidth": false
+  }
+}

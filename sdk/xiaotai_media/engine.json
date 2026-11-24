@@ -1,0 +1,43 @@
+{
+  "name": "media",
+  "registrations": {"commands": 3},
+  "depends": ["sounds", "eventlog", "at"],
+  "optional_depends": ["net"],
+  "needs": [],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_media_tune", "header": "xiaotai/media.h", "type": "xiaotai_media_param_t",
+     "form": "table", "pairs": ["name", "value"]}
+  ],
+  "commands": [
+    {"command": "AT+AUDIO", "usage": "", "access": "read"},
+    {"command": "AT+AUDIO", "verb": "TONE", "usage": "", "access": "action",
+     "option": "XIAOTAI_MEDIA_TEST_COMMANDS", "symbol": "xiaotai_media_at_test_"},
+    {"command": "AT+AUDIO", "verb": "RECORD", "usage": "", "access": "action",
+     "option": "XIAOTAI_MEDIA_TEST_COMMANDS", "symbol": "xiaotai_media_at_test_"},
+    {"command": "AT+AUDIO", "verb": "PLAY", "usage": "", "access": "action",
+     "option": "XIAOTAI_MEDIA_TEST_COMMANDS", "symbol": "xiaotai_media_at_test_"},
+    {"command": "AT+AUDIO", "verb": "STOP", "usage": "", "access": "action",
+     "option": "XIAOTAI_MEDIA_TEST_COMMANDS", "symbol": "xiaotai_media_at_test_"},
+    {"command": "AT+AUDIO", "verb": "DUMP", "usage": "", "access": "read",
+     "option": "XIAOTAI_MEDIA_TEST_COMMANDS", "symbol": "xiaotai_media_at_test_"},
+    {"command": "AT+AUDIO", "verb": "SENDTONE", "usage": "", "access": "action",
+     "option": "XIAOTAI_MEDIA_TEST_COMMANDS", "symbol": "xiaotai_media_at_test_"},
+    {"command": "AT+AUDIO", "verb": "ECHO", "usage": "<0|1>", "access": "action",
+     "option": "XIAOTAI_MEDIA_TEST_COMMANDS", "symbol": "xiaotai_media_at_test_"},
+    {"command": "AT+SOUND", "usage": "", "access": "read",
+     "option": "XIAOTAI_MEDIA_SOUND_COMMANDS", "symbol": "xiaotai_media_at_sound_"},
+    {"command": "AT+SOUND", "verb": "PLAY", "usage": "<name> [<6 digits>]", "access": "action",
+     "option": "XIAOTAI_MEDIA_SOUND_COMMANDS", "symbol": "xiaotai_media_at_sound_"},
+    {"command": "AT+SOUND", "verb": "STOP", "usage": "", "access": "action",
+     "option": "XIAOTAI_MEDIA_SOUND_COMMANDS", "symbol": "xiaotai_media_at_sound_"},
+    {"command": "AT+TRACE", "verb": "ARM", "usage": "[<50..limit>]", "access": "action",
+     "option": "XIAOTAI_MEDIA_TRACE", "symbol": "xiaotai_media_trace_"},
+    {"command": "AT+TRACE", "verb": "DUMP", "usage": "", "access": "read",
+     "option": "XIAOTAI_MEDIA_TRACE", "symbol": "xiaotai_media_trace_"},
+    {"command": "AT+TRACE", "verb": "OFF", "usage": "", "access": "action",
+     "option": "XIAOTAI_MEDIA_TRACE", "symbol": "xiaotai_media_trace_"},
+    {"command": "AT+AUDIOTRACE?", "usage": "", "access": "read",
+     "option": "XIAOTAI_MEDIA_TRACE_ARRIVALS", "symbol": "xiaotai_media_trace_arrivals_"}
+  ]
+}

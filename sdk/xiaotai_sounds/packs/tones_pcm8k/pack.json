@@ -1,0 +1,56 @@
+{
+  "name": "tones_pcm8k",
+  "source": "0f93f4147b2978211f47ce5e80c5739449451892:main/xiaotai/ui/s3/starter_product/assets",
+  "files": {
+    "xt_sound_tones_pcm8k_kids_watch_incoming_tiny.wav": "b0032215edc26d08136746093bb8e7cf88e8a105b6c2305b5ec5be97b2b19137",
+    "xt_sound_tones_pcm8k_kids_watch_outgoing_tiny.wav": "7716d1f060ce7e23a63ffcb404d584cb3ec7b05527f6b4aeeefe3c623bfddb36",
+    "xt_sound_tones_pcm8k_ai_ack_female_8k.wav": "1f6b6755ef7420e491e0b9f7c9d4893c768a21b2547a6cd402d6a94d7379f547",
+    "xt_sound_tones_pcm8k_ai_ack_male_8k.wav": "0c70005175fa5228cb0d99c256d82a39cb6b3c9177b4cee41729b5bf7f15615f"
+  },
+  "sounds": [
+    {
+      "name": "ring.incoming",
+      "file": "xt_sound_tones_pcm8k_kids_watch_incoming_tiny.wav",
+      "encoding": "pcm16",
+      "container": "wav",
+      "rate_hz": 8000,
+      "channels": 1,
+      "duration_ms": 1280,
+      "sha256": "b0032215edc26d08136746093bb8e7cf88e8a105b6c2305b5ec5be97b2b19137",
+      "source_file": "rings/kids_watch_incoming_tiny.wav"
+    },
+    {
+      "name": "ring.outgoing",
+      "file": "xt_sound_tones_pcm8k_kids_watch_outgoing_tiny.wav",
+      "encoding": "pcm16",
+      "container": "wav",
+      "rate_hz": 8000,
+      "channels": 1,
+      "duration_ms": 930,
+      "sha256": "7716d1f060ce7e23a63ffcb404d584cb3ec7b05527f6b4aeeefe3c623bfddb36",
+      "source_file": "rings/kids_watch_outgoing_tiny.wav"
+    },
+    {
+      "name": "ack.female",
+      "file": "xt_sound_tones_pcm8k_ai_ack_female_8k.wav",
+      "encoding": "pcm16",
+      "container": "wav",
+      "rate_hz": 8000,
+      "channels": 1,
+      "duration_ms": 1224,
+      "sha256": "1f6b6755ef7420e491e0b9f7c9d4893c768a21b2547a6cd402d6a94d7379f547",
+      "source_file": "prompts/ai_ack_female_8k.wav"
+    },
+    {
+      "name": "ack.male",
+      "file": "xt_sound_tones_pcm8k_ai_ack_male_8k.wav",
+      "encoding": "pcm16",
+      "container": "wav",
+      "rate_hz": 8000,
+      "channels": 1,
+      "duration_ms": 1584,
+      "sha256": "0c70005175fa5228cb0d99c256d82a39cb6b3c9177b4cee41729b5bf7f15615f",
+      "source_file": "prompts/ai_ack_male_8k.wav"
+    }
+  ]
+}

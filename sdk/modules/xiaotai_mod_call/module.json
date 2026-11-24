@@ -1,0 +1,27 @@
+{
+  "name": "call",
+  "registrations": {
+    "commands": 1,
+    "intents": 7, "subscribers": 5,
+    "when_selected": [{"any_of": ["settings"], "subscribers": 1}]
+  },
+  "depends": ["contacts", "platform", "transport", "media", "identity", "eventlog", "at"],
+  "optional_depends": ["settings"],
+  "needs": ["audio_in", "audio_out", "network"],
+  "activities": {"call": 3},
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_call_configure", "header": "xiaotai/modules/call.h",
+     "type": "xiaotai_call_config_t",
+     "arrays": {"incoming_busy_during": {"type": "const char *", "terminated": true}}}
+  ],
+  "commands": [
+    {"command": "AT+CALL", "access": "read"},
+    {"command": "AT+CALL", "verb": "DEVICE", "usage": "<device-id>", "access": "action"},
+    {"command": "AT+CALL", "verb": "INDEX", "usage": "<n>", "access": "action"},
+    {"command": "AT+CALL", "verb": "ACCEPT", "access": "action"},
+    {"command": "AT+CALL", "verb": "REJECT", "access": "action"},
+    {"command": "AT+CALL", "verb": "HANGUP", "access": "action"},
+    {"command": "AT+CALL", "verb": "MUTE", "usage": "0|1", "access": "action"}
+  ]
+}

@@ -1,0 +1,4 @@
+# Preserve the supplied tuning file's CRLF bytes.
+assets/sc2336_isp.json -text whitespace=cr-at-eol
+# Unified-diff context includes a single leading space on blank lines.
+build-support/tools/patches/esp-hosted-3.0.7-spi-diagnostics.patch -whitespace

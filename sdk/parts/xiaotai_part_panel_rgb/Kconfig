@@ -1,0 +1,11 @@
+menu "XiaoTai RGB panel part"
+
+    config XIAOTAI_PART_PANEL_RGB
+        bool
+        default y
+        select XIAOTAI_UI_RGB_SCANOUT
+        help
+            Present whenever a board builds this part: the UI then keeps the
+            event slots it needs to scan out from an RGB panel's buffers.
+
+endmenu

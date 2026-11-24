@@ -1,0 +1,15 @@
+menu "XiaoTai colour theme kit"
+
+    config XIAOTAI_THEME_LCD_LARGE_TEXT
+        bool "26 px text on large displays"
+        default n
+        help
+            Carries the 26 px text face, the 28 px icons and the larger digits
+            (about 0.7 MB of flash) and draws displays of 800 x 480 and more
+            with them, in a page area twice the 320 x 240 design size. The
+            build turns it on for a board whose first display is that large
+            (scripts/sdk_selection.py); a product may set it either way in
+            its "options". Off: every display uses the 18 px set, and a large
+            display shows its pages 1.75 times the design size.
+
+endmenu

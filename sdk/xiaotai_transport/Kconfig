@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai transport engine. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/transport_config.h; the
+# defaults here and there are the same.
+menu "XiaoTai transport engine"
+
+    config XIAOTAI_TIRTC_IDLE_STACK_COMPACT
+        bool "Use the audited Mini RTC startup queue profile"
+        default n
+        help
+            Keep both vendor 8192-byte listener stacks and reduce the startup
+            queue stack to 2048 bytes during TiRtcStart. This is a fixed profile
+            for the locked no-external-RAM Mini port, not a general stack-size override.
+            The build rejects an incompatible target or SDK. Independent
+            session stacks are configured separately.
+
+    config XIAOTAI_TIRTC_SESSION_STACK_9216
+        bool "Reserve 9216 bytes for independent TiRTC session tasks"
+        depends on !SPIRAM && FREERTOS_CHECK_STACKOVERFLOW_CANARY && APP_BUILD_USE_FLASH_SECTIONS
+        default n
+        help
+            For the audited Mini SDK and toolchain, reserve an extra 1024
+            bytes for newly created session tasks. Shared listeners, other
+            tasks and other SDKs are unaffected. The product generator enables
+            it by default for boards with no external RAM.
+
+    config XIAOTAI_TRANSPORT_MEMTRACE
+        bool "Trace the RTC stack's own allocations (diagnostic builds)"
+        default n
+        help
+            Wraps the RTC package's allocator (Mx_malloc, Mx_calloc,
+            Mx_realloc, Mx_free) at link time, records which blocks the stack
+            holds and its failed allocations, and registers AT+MEMTRACE. The
+            linked package must call these functions, otherwise the link
+            fails. Diagnostic builds only: every allocation of the stack then
+            takes a short critical section.
+
+    config XIAOTAI_TRANSPORT_LISTENERS
+        int "Inbound link listeners"
+        range 1 16
+        default 4
+        help
+            Listeners the modules of this build may register
+            (xiaotai_link_listen). The table, about 100 bytes per entry, is
+            one block of BULK memory taken at the first registration (none in
+            a provisioning boot). Raise it when the selected modules register
+            more than four.
+
+endmenu

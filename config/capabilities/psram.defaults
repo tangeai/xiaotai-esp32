@@ -1,0 +1,17 @@
+# Applied by scripts/xiaotai_build.py to every product whose board layers turn on
+# PSRAM (CONFIG_SPIRAM=y). Policy: whatever can live in PSRAM lives there, so the
+# scarce internal RAM stays free for DMA buffers, Wi-Fi and the TiRTC reserve.
+# Board files keep only hardware facts (size, speed, cache, reserve) and never restate
+# this policy. A chip that cannot take a setting on one ESP-IDF line overrides it in
+# that line's native profile, and tests/test_psram_policy.py lists it in PLATFORM_LIMITS.
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y
+# esp-mqtt payloads: receive and message buffers, outbox data.
+CONFIG_MQTT_USE_CUSTOM_CONFIG=y
+CONFIG_MQTT_BUFFERS_ON_EXTERNAL_MEMORY=y
+CONFIG_MQTT_OUTBOX_DATA_ON_EXTERNAL_MEMORY=y
+# The MQTT task and its locks stay internal: they run while the flash cache is off.
+CONFIG_MQTT_TASK_STACK_ON_EXTERNAL_MEMORY=n
+# ESP-SR AFE working set (see main/Kconfig.projbuild).
+CONFIG_XIAOTAI_AFE_MEMORY_PREFER_PSRAM=y

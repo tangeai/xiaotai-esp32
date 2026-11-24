@@ -1,0 +1,16 @@
+flowchart TB
+    B["板包 board.json<br/>这块板有什么：芯片、屏、音频、相机"]:::hardware
+    P["产品清单 product.json<br/>这款产品用什么：应用、模块、参数"]:::product
+    M["组件清单 module.json 等<br/>每个模块需要哪些硬件、依赖谁"]:::interaction
+    B --> C{"选型器核对<br/>需要的能力板上都有吗"}
+    P --> C
+    M --> C
+    C -->|缺一项| E["报错并停下<br/>不会悄悄去掉功能"]:::error
+    C -->|都满足| S["生成本产品的组件表、配置和指令词表"]:::product
+    K["TiRTC 官方包<br/>下载后按哈希和契约核对"]:::media --> F
+    S --> F["独立的构建目录<br/>固件、分区表、构建记录"]:::media
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33
+    classDef error fill:#fbecee,stroke:#b8616b,color:#202b33

@@ -1,0 +1,23 @@
+{
+  "xmini": {"port": "COM9", "kind": "xmini", "device_id": "TIRXXXXXXXXX"},
+  "m5": {
+    "port": "COM5", "kind": "cores3", "device_id": "TIRYYYYYYYYY", "phone_wx_button": [408, 1643],
+    "phone_wx_out": {"caller": "示例板摄像头", "banner_png": "../../../phone-private/reviewed-m5-banner.png"},
+    "phone_wx_in": {
+      "device_id": "TIRYYYYYYYYY", "adb_serial": "TEST_PHONE_SERIAL",
+      "list_png": "../../../phone-private/reviewed-m5-device-list.png",
+      "card_box": [48, 1320, 1380, 1820],
+      "identity_box": [80, 1400, 455, 1470], "call_box": [135, 1590, 470, 1694],
+      "account_box": [786, 200, 1024, 284]
+    }
+  },
+  "szpi": {"port": "COM25", "kind": "szpi", "device_id": "TIRZZZZZZZZZ"},
+  "phone": {
+    "note": "Tap points in screen pixels of the XiaoTai mini program; measure on your own phone.",
+    "adb_serial": "TEST_PHONE_SERIAL",
+    "drawer_xiaotai": [229, 1937], "list_probe": [408, 961], "add_button_probe": [1043, 395],
+    "wx_caller_box": [100, 286, 475, 382], "wx_controls_box": [895, 273, 1340, 473],
+    "answer_banner": [1228, 374], "hangup": [717, 2544], "close_buttons": [[717, 2544], [717, 2768]],
+    "popup_close": [1198, 739]
+  }
+}

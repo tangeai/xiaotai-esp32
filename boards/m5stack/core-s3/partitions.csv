@@ -1,0 +1,5 @@
+# Name,   Type, SubType, Offset,   Size,     Flags
+# Preserve the backed-up CoreS3-SE NVS location. No OTA: the old otadata
+# entry is dropped and the APP partition fills the rest of the 16 MB flash.
+nvs,      data, nvs,     0x9000,   0x5000,
+factory,  app,  factory, 0x10000,  0xff0000,

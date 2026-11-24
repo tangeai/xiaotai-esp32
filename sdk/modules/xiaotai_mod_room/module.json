@@ -1,0 +1,23 @@
+{
+  "name": "room",
+  "registrations": {"commands": 1, "intents": 8, "subscribers": 8},
+  "depends": ["binding", "platform", "identity", "transport", "media", "eventlog", "at"],
+  "needs": ["audio_in", "audio_out", "network"],
+  "start": true,
+  "activities": {"room": 2},
+  "configure": [
+    {"function": "xiaotai_room_configure", "header": "xiaotai/modules/room.h", "type": "xiaotai_room_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+ROOM", "access": "read"},
+    {"command": "AT+ROOM", "verb": "OPEN", "access": "action"},
+    {"command": "AT+ROOM", "verb": "CLOSE", "access": "action"},
+    {"command": "AT+ROOM", "verb": "REFRESH", "access": "action"},
+    {"command": "AT+ROOM", "verb": "LEAVE", "access": "action"},
+    {"command": "AT+ROOM", "verb": "CREATE", "usage": "[<4-digit-password>]", "access": "action"},
+    {"command": "AT+ROOM", "verb": "JOIN", "usage": "<6-digit-code> [<4-digit-password>]", "access": "action"},
+    {"command": "AT+ROOM", "verb": "CONNECT", "access": "action"},
+    {"command": "AT+ROOM", "verb": "DISCONNECT", "access": "action"},
+    {"command": "AT+ROOM", "verb": "PTT", "usage": "0|1", "access": "action"}
+  ]
+}

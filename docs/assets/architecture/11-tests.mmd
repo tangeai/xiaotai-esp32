@@ -1,0 +1,12 @@
+flowchart TB
+    A["静态检查<br/>目录、依赖方向、产品契约 · 几十秒"]:::hardware
+    B["主机测试<br/>模块逻辑和失败路径，在电脑上跑 · 几分钟"]:::hardware
+    C["界面预览<br/>每一页画成图片 · 每款几分钟"]:::interaction
+    D["构建核验<br/>受影响的产品完整编译"]:::product
+    E["设备回归<br/>真机上的通话、AI、内存"]:::media
+    F["真人确认<br/>听感和手感"]
+    A --> B --> C --> D --> E --> F
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33

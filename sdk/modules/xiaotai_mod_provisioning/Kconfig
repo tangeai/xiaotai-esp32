@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai provisioning module. Each maps to the macro of the
+# same name without the CONFIG_ prefix in
+# include/xiaotai/modules/provisioning_config.h; the defaults here and there
+# are the same.
+menu "XiaoTai provisioning module"
+
+    config XIAOTAI_PROVISIONING_LOCAL_POLICY
+        int "Local policy (0 orderly, 1 direct network change, 2 direct restart)"
+        range 0 2
+        default 0
+        help
+            0: quiesce, drain and settle before a request. Keep this for
+            idle-only products. 1: change network without ending the active
+            session first; needs concurrent network provisioning. 2: commit
+            the Wi-Fi data and restart without ending the active session
+            first; needs exclusive network provisioning. These policies are
+            for native local actions; console commands keep policy 0.
+
+    config XIAOTAI_PROVISIONING_SETTLE_WAIT_MS
+        int "Longest wait for settings and the platform gate (ms, 0: no bound)"
+        range 0 60000
+        default 5000
+        help
+            Before handing a request to start over to the network engine the
+            module waits until accepted setting changes have reached storage
+            and, where a restart follows, until the platform gate is drained.
+            After stored credentials it holds the restart until the settings
+            are written. With the packed write barrier enabled, a timeout
+            after stored credentials is reported without releasing the hold.
+            0 waits without a deadline.
+
+    config XIAOTAI_PROVISIONING_BEGIN_FAILURE
+        int "Begin with a restart after it: on a setting not written (0 release, 1 hold, 2 continue)"
+        range 0 2
+        default 0
+        help
+            0: stop, open the platform gate, end the quiesce and report the
+            failure. 1: stop and keep the quiesce and the gate until the
+            begin is cancelled. 2: count the failure and continue as where
+            provisioning is concurrent.
+
+    config XIAOTAI_PROVISIONING_STORE_SETTINGS_HOLD
+        bool "Keep the restart held when a setting is not written after stored credentials"
+        default n
+        help
+            The failure is reported and an explicit retry waits for the
+            settings again. Off: the restart goes ahead.
+
+    config XIAOTAI_PROVISIONING_STORE_PACKED_RETRY
+        bool "Require the packed settings commit before restarting after Wi-Fi setup"
+        default n
+        help
+            On exclusive provisioning boot, hold on a failed packed settings
+            write. Explicit retry submits only the already accepted image.
+
+    config XIAOTAI_PROVISIONING_STORE_RETRY_MS
+        int "Store failed credentials again every (ms, 0: only on request)"
+        range 0 600000
+        default 0
+        help
+            Credentials that were accepted but could not be stored are stored
+            again on this period until they are stored or provisioning
+            changes phase.
+
+endmenu
