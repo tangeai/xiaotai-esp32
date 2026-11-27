@@ -60,6 +60,7 @@ public:
         camera.href_pin = 46;
         camera.pclk_pin = 7;
         camera.sensor_id = 0x2145;  // GC2145
+        camera.alternate_sensor_id = 0x009b;  // GC0308
         camera.max_width = 320;
         camera.max_height = 240;
         camera.power = camera_power;

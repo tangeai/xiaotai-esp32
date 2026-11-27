@@ -8,7 +8,7 @@
 | PCA9557 | `0x19`；IO0 屏片选低有效、IO1 功放高有效、IO2 相机电源低有效 |
 | ST7789 + FT5x06 | 320×240，SPI3：GPIO40（MOSI）、41（SCLK）、39（DC）；背光 GPIO42，低有效，5 kHz PWM，可调光 |
 | ES7210 + ES8311 | I2S0：GPIO38（MCLK）、14（BCLK）、13（WS）、12（DIN）、45（DOUT）；16 kHz，本地采集四槽、输出双槽 |
-| GC2145 | DVP，GPIO5 输出 20 MHz XCLK；相机需要时才上电 |
+| GC2145 或 GC0308（自动识别） | DVP，GPIO5 输出 20 MHz XCLK；相机需要时才上电 |
 | 用户键 | GPIO0，上拉低有效，50 ms 消抖；启动时已按住不产生按键事件 |
 
 配置面向 16 MiB Flash、80 MHz 八线 PSRAM 的板。分区表包含 `nvs`、`phy_init`、13 MiB 的应用分区 `factory` 和约 3 MiB 的数据分区 `xt_scratch`（放内存放不下的长录音），没有 OTA 分区。

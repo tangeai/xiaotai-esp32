@@ -42,7 +42,7 @@ typedef struct {
     uint8_t xclk_timer, xclk_channel;
     int data_pins[8];           /* D0..D7 */
     int vsync_pin, href_pin, pclk_pin;
-    /* Sensor identity the board declares. A different sensor answers open()
+    /* Primary sensor identity. A PID outside the board's accepted IDs answers open()
      * with XIAOTAI_ERR_NOT_SUPPORTED (the part then still needs close()). */
     uint16_t sensor_id;
     uint16_t max_width, max_height;
@@ -53,6 +53,7 @@ typedef struct {
     uint16_t power_settle_ms;
     uint16_t reset_settle_ms;
     bool hold_reset_when_off;
+    uint16_t alternate_sensor_id; /* optional second sensor fitted to the same wiring; 0 disables */
 } xiaotai_camera_dvp_config_t;
 
 /* [board] Creates the camera part; touches no hardware except driving the
