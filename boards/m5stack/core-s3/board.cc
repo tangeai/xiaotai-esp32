@@ -188,7 +188,7 @@ private:
     {
         const xiaotai_camera_dvp_config_t camera{
             bus_, -1, 20000000, 1, 1, {39, 40, 41, 42, 15, 16, 48, 47}, 46, 38, 45,
-            kGc0308Pid, 240, 176, 0, 0, power, reset, 10, 10, true,
+            kGc0308Pid, 240, 176, 0, 0, power, reset, 10, 10, true, 0,
         };
         return xiaotai_camera_dvp_create(&camera, &camera_);
     }

@@ -274,12 +274,23 @@ static void verify_camera(const xiaotai_camera_t* camera)
     CHECK(camera->set_power(camera->self, false) == XIAOTAI_ERR_INVALID_STATE);
     CHECK(camera->close(camera->self) == XIAOTAI_OK);
     CHECK(camera->set_power(camera->self, false) == XIAOTAI_OK && pca_output() == 5);
+    CHECK(camera->set_power(camera->self, true) == XIAOTAI_OK);
+    xt_dvp_fake_script_t probe{};
+    const uint16_t supported[] = {0x2145, 0x009b};
+    for (uint16_t pid : supported) {
+        probe.sensor_id = pid;
+        xt_dvp_fake_script(&probe);
+        CHECK(camera->open(camera->self, &mode) == XIAOTAI_OK);
+        xt_dvp_fake_frame(0x55, 320U * 240U * 2U, 320, 240, XIAOTAI_CAMERA_YUV422, 1000);
+        xiaotai_camera_frame_t frame{};
+        CHECK(camera->borrow(camera->self, &frame) == XIAOTAI_OK && frame.data[0] == 0x55);
+        CHECK(camera->release(camera->self, &frame) == XIAOTAI_OK && camera->close(camera->self) == XIAOTAI_OK);
+    }
+    probe.sensor_id = 0x1234;
+    xt_dvp_fake_script(&probe);
+    CHECK(camera->open(camera->self, &mode) == XIAOTAI_ERR_NOT_SUPPORTED);
+    CHECK(camera->close(camera->self) == XIAOTAI_OK);
     xt_dvp_fake_script(nullptr);
-    CHECK(camera->set_power(camera->self, true) == XIAOTAI_OK && camera->open(camera->self, &mode) == XIAOTAI_OK);
-    xt_dvp_fake_frame(0x55, 320U * 240U * 2U, 320, 240, XIAOTAI_CAMERA_YUV422, 1000);
-    xiaotai_camera_frame_t frame{};
-    CHECK(camera->borrow(camera->self, &frame) == XIAOTAI_OK && frame.data[0] == 0x55);
-    CHECK(camera->release(camera->self, &frame) == XIAOTAI_OK && camera->close(camera->self) == XIAOTAI_OK);
     xiaotai_bus_host_i2c_fail(0, 0x19, XIAOTAI_BUS_HOST_WRITE, 1, kFailure);
     CHECK(camera->set_power(camera->self, false) == kFailure && pca_output() == 1);
     CHECK(camera->set_power(camera->self, false) == XIAOTAI_OK && pca_output() == 5);

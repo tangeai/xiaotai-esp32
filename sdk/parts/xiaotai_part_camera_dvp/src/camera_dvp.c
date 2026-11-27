@@ -111,7 +111,9 @@ static xiaotai_err_t open_camera(void *self, const xiaotai_camera_mode_t *mode)
     bool external_dma;
     err = xt_dvp_io_sensor(dvp->io, &sensor, &external_dma);
     if (err != XIAOTAI_OK) return err;
-    if (sensor != dvp->config.sensor_id || external_dma) return XIAOTAI_ERR_NOT_SUPPORTED;
+    const bool supported_sensor = sensor == dvp->config.sensor_id ||
+                                  (sensor != 0 && sensor == dvp->config.alternate_sensor_id);
+    if (!supported_sensor || external_dma) return XIAOTAI_ERR_NOT_SUPPORTED;
     err = xt_dvp_io_upright(dvp->io);
     if (err != XIAOTAI_OK) return err;
     dvp->mode = *mode;
