@@ -1,0 +1,70 @@
+{
+ "schema": 3,
+ "target": "esp32p4",
+ "identity": {
+  "title": "启明云端 WT9932P4C61-TINY",
+  "model": "wt9932p4c61-tiny",
+  "revision": "1.0",
+  "profile_model": "WT9932P4C61-TINY",
+  "profile_chip": "ESP32-P4"
+ },
+ "memory": {
+  "external_ram": true
+ },
+ "parts": {
+  "audio_input": [
+   {
+    "encoding": "pcm16",
+    "rate_hz": 16000,
+    "roles": [
+     "mic"
+    ]
+   }
+  ],
+  "audio_output": [
+   {
+    "encoding": "pcm16",
+    "rate_hz": 16000,
+    "channels": 1
+   }
+  ],
+  "input": [
+   {
+    "kind": "button",
+    "role": "main"
+   }
+  ],
+  "camera": [
+   {
+    "formats": [
+     "yuv420_paired"
+    ],
+    "width": 1024,
+    "height": 600
+   }
+  ],
+  "network": [
+   {
+    "kind": "wifi_coprocessor",
+    "provisioning": [
+     "portal",
+     "serial"
+    ],
+    "wifi": {
+     "tx_buffers_on_demand": true
+    }
+   }
+  ]
+ },
+ "components": [
+  "xiaotai_part_bus",
+  "xiaotai_part_audio",
+  "xiaotai_part_button",
+  "xiaotai_part_camera_csi",
+  "xiaotai_part_coprocessor"
+ ],
+ "partitions": "partitions.csv",
+ "idf": [
+  "6.0"
+ ]
+}

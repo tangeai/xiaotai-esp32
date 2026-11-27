@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai AI talk module. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/modules/ai_talk_config.h;
+# the defaults here and there are the same.
+menu "XiaoTai AI talk module"
+
+    config XIAOTAI_AI_TALK_ROLE_REQUIRED
+        bool "Refuse a session token without a role"
+        default n
+        help
+            A token reply whose data.role_id is missing or empty ends the
+            conversation as refused. Off: the role is optional.
+
+    config XIAOTAI_AI_TALK_START_NEEDS_PROFILE
+        bool "Start a conversation only after the device profile was accepted"
+        default n
+        help
+            Until the platform reports the device profile accepted in the
+            current session, a start is refused as if the platform were
+            offline.
+
+    config XIAOTAI_AI_TALK_NOTIFY_FAILURES
+        bool "Tell the service when a conversation fails on the device"
+        default n
+        help
+            A conversation that ends because of a deadline, a refused or
+            unsupported session, the audio session, a dropped command or a
+            failed send sends end_session first while its link is open. Off:
+            only a local stop and a revocation send it.
+
+    config XIAOTAI_AI_TALK_DROPPED_ENDS
+        bool "End the conversation on a command the transport could not keep"
+        default n
+        help
+            A command delivered as dropped (too large, or no room in the
+            command pool) ends the conversation. Off: it is ignored.
+
+    config XIAOTAI_AI_TALK_TOOLS_MAX
+        int "Tools the conversation's registry holds"
+        range 1 64
+        default 32
+        help
+            Names applications and modules may register for the service's
+            device actions. Each entry is 20 bytes of static memory; a
+            product without external RAM sets what its applications use.
+
+endmenu

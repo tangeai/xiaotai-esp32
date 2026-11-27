@@ -1,0 +1,17 @@
+{
+  "name": "doorbell",
+  "modules": ["call", "contacts", "binding", "feedback", "interaction", "sounds", "eventlog"],
+  "registrations": {
+    "intents": 3,
+    "subscribers": 6
+  },
+  "needs": ["key", "audio_in", "audio_out", "network"],
+  "start": true,
+  "foreground": true,
+  "handles": ["call.incoming", "call.state", "call.connected", "call.ended"],
+  "claims": true,
+  "configure": [
+    {"function": "xiaotai_app_doorbell_configure", "header": "xiaotai/apps/doorbell.h",
+     "type": "xiaotai_app_doorbell_config_t"}
+  ]
+}

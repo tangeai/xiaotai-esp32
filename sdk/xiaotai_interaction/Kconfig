@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai interaction engine. Each maps to the macro of the
+# same name without the CONFIG_ prefix in
+# include/xiaotai/interaction_config.h; the defaults here and there are the
+# same (the header holds the value without external RAM where the default
+# depends on it).
+menu "XiaoTai interaction engine"
+
+    config XIAOTAI_INTERACTION_TASK
+        bool "Own task for polling the inputs"
+        default y if SPIRAM
+        default n
+        help
+            With it, a task polls every input part each 10 ms. Without it, a
+            timer on the framework owner task does the same: no task stack,
+            but the polls run at the owner's priority and wait behind its
+            handlers, so key timing is as late as the owner is busy.
+
+    config XIAOTAI_INTERACTION_TASK_PRIORITY
+        int "Priority of the input poll task"
+        depends on XIAOTAI_INTERACTION_TASK
+        range 1 24
+        default 5
+        help
+            The task polls every input part each 10 ms. Keep it above the
+            network tasks so a key is sampled on time during a TLS handshake.
+
+    config XIAOTAI_INTERACTION_TASK_STACK_BYTES
+        int "Stack of the input poll task in bytes"
+        depends on XIAOTAI_INTERACTION_TASK
+        range 1536 16384
+        default 3072
+        help
+            Allocated as XIAOTAI_MEM_BULK (external RAM where the board has
+            it); the task never touches flash or NVS.
+
+    config XIAOTAI_INTERACTION_PROFILES_MAX
+        int "Interaction profiles the registry holds"
+        range 1 64
+        default 8
+        help
+            Registering more is an error at init, so the start fails instead
+            of losing a profile.
+
+    config XIAOTAI_INTERACTION_LAYERS_MAX
+        int "Layers pushed at once"
+        range 1 16
+        default 4
+
+    config XIAOTAI_INTERACTION_INPUTS_MAX
+        int "Input parts polled"
+        range 1 32
+        default 8
+
+endmenu

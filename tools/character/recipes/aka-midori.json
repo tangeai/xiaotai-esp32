@@ -1,0 +1,56 @@
+{
+  "name": "aka-midori",
+  "kind": "puppets",
+  "note": "An example of a layered figure. Its pack is not shipped with the firmware; whoever bakes and ships it credits the two puppets as their entries below say.",
+  "about": "Sky-blue bob, pink eyes, navy dress with a pink heart. The head (hair, face) is the puppet Aka without her fox ears, tail and leaf; the dress and the arms are the puppet Midori's. The head is drawn 12% larger than the puppet's.",
+  "puppets": {
+    "head": {
+      "file": "Aka.inx",
+      "sha256": "dbf82ffb86d1c761bca883ad37ec1c47487a447f8104290b459ce60aaee81e0f",
+      "source": "https://github.com/Inochi2D/example-models",
+      "credit": "Aka, design and rigging by seagetch",
+      "licence": "CC BY 4.0"
+    },
+    "body": {
+      "file": "Midori.inx",
+      "sha256": "bfa33997dad3b7b94bca3a0dc61241fd5f2464ed9e3d28381bafc8ad5fcc870a",
+      "source": "https://github.com/Inochi2D/example-models",
+      "credit": "Midori, design and rigging by seagetch",
+      "licence": "CC BY 4.0"
+    }
+  },
+  "drop": [
+    "ears",
+    "tail",
+    "leaf"
+  ],
+  "head_scale": 1.12,
+  "height": 540,
+  "fade": 0.1,
+  "frame": {"top": -2420.0, "bottom": -30.0, "anchor_x": -60.0},
+  "yaw": [0.0, -0.7, 0.7],
+  "arms": [
+    {"move": 0.0},
+    {"move": 0.5},
+    {"move": 1.0},
+    {"move": 1.0, "lift": 32.0}
+  ],
+  "colour": {
+    "head": {
+      "backhair": {"hue": 0.56, "sat": 0.5, "lift": 0.08},
+      "fronthair": {"hue": 0.56, "sat": 0.5, "lift": 0.08},
+      "brow": {"hue": 0.56, "sat": 0.6},
+      "iris": {"hue": 0.93, "sat": 0.85},
+      "hairshadow": {"hue": 0.62, "sat": 0.45}
+    },
+    "body": {
+      "body": {"only": [ 0.2, 0.45 ], "hue": 0.62, "sat": 0.8, "val": 1.1},
+      "neck": {"sat": 0.5},
+      "skirt": {"only": [ 0.1, 0.45 ], "min_sat": 0.05, "hue": 0.62, "sat": 0.9, "val": 1.2, "lift": 0.05},
+      "ribbon": {"hue": 0.62, "sat": 1.0, "val": 1.3, "lift": 0.08},
+      "heart": {"only": [ 0.2, 0.45 ], "hue": 0.62, "sat": 0.8, "val": 1.1},
+      "collar": {"only": [ 0.2, 0.45 ], "hue": 0.62, "sat": 0.8, "val": 1.1},
+      "arm": {"sat": 0.2, "lift": 0.04}
+    }
+  }
+}

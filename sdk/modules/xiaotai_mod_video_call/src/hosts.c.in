@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT
+#include "video_call_internal.h"
+
+@scene_declarations@
+@ui_declaration@
+
+const video_call_host_t *const video_call_hosts[] = {
+@scene_entries@    NULL,
+};
+
+const video_call_ui_t *const video_call_ui = @ui_entry@;

@@ -1,0 +1,9 @@
+# Name,   Type, SubType, Offset,   Size,     Flags
+# 模板没有媒体文件分区；摄像头和麦克风数据由产品硬件实时提供。
+# nvs/phy_init 的偏移和大小必须保持不变：已配网、已绑定的设备只更新分区表和 APP 时数据才能保留。
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+# 不做 OTA：APP 分区 13 MB（镜像约 6 MB）。
+factory,  app,  factory, 0x10000,  0xd00000,
+# 内存放不下的大块临时数据（长录音上传前放这里），xiaotai/port/scratch.h 按名字找它。
+xt_scratch, data, 0x40,  0xd10000, 0x2f0000,

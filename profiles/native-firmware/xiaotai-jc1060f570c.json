@@ -1,0 +1,14 @@
+{
+  "board": "guition/jc1060f570c",
+  "target": "esp32s31",
+  "idf_line": "6.1",
+  "idf_version": "6.1.0",
+  "tirtc_package": "6.1/generic-esp32s31",
+  "sdkconfig": {
+    "CONFIG_ESP_H264_DECODER_IRAM": "n",
+    "CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY": "n"
+  },
+  "vendor_hashes": {
+    "espressif/esp_h264": "0a53c9eb5427b17cb0776bb702c905c04634aaaa9fd5a39cb060c6c23a362c0b"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "source": "xiaotai_at.md section 4.3; canonical declaration checks, not runtime authorization",
+  "migrated": [
+    {"legacy": ["AT", "help", "version", "AT+DEVICE? (version)"], "owners": ["at"], "forms": ["AT", "AT+HELP", "AT+VERSION"]},
+    {"legacy": ["status", "AT+STATUS?", "AT+CACHE", "AT+CONSOLE (USB diagnostics)", "AT+HW?", "AT+HW", "AT+LCD?", "AT+CAMINFO?"], "owners": ["at"], "forms": ["AT+STATUS [<section>]"]},
+    {"legacy": ["AT+CLI?", "AT+CLI=ON|OFF", "AT+CONSOLE", "memory", "Heap/HEAPCAP diagnostics"], "owners": ["at"], "forms": ["AT+CLI", "AT+CLI ON", "AT+CLI OFF", "AT+CONSOLE", "AT+MEM"]},
+    {"legacy": ["restart", "AT+REBOOT", "AT+RESTART"], "owners": ["at"], "forms": ["AT+RESTART", "AT+RESTART FORCE"], "condition": "Per-product restart options; FORCE also needs the parent option."},
+    {"legacy": ["AT+DIAG USB_TICK"], "owners": ["at"], "forms": ["AT+PORT PROBE [<name>]"], "condition": "Only on ports exposing the corresponding named probe."},
+    {"legacy": ["AT+MEMTRACE"], "owners": ["transport"], "forms": ["AT+MEMTRACE"], "condition": "Development build option."},
+    {"legacy": ["AT+VOL", "AT+MIC (Xmini gain)", "AT+GUIDANCE", "AT+UI PREFS"], "owners": ["at"], "forms": ["AT+SET [<name>]", "AT+SET <name> <value>", "AT+STATUS [<section>]"], "condition": "Settings module provides the values; AT owns these spellings; setting writes must be enabled."},
+    {"legacy": ["AT+MIC (CoreS3 enable)", "AT+CALL=MUTE,0|1"], "owners": ["call", "wechat"], "forms": ["AT+CALL MUTE 0|1"], "condition": "Selected call owner consumes the mute request; other contributions PASS."},
+    {"legacy": ["voice-config", "AT+WAKE?", "Voicute status", "voice-diag"], "owners": ["wake_engine"], "forms": ["AT+WAKE", "AT+WAKE THRESHOLD <50..990>", "AT+WAKE WATCH [<5..30>]"]},
+    {"legacy": ["voice-test self-test", "voice-test <phrase>"], "owners": ["wake"], "forms": ["AT+WAKE SELFTEST", "AT+WAKE TEST <phrase-hex>"]},
+    {"legacy": ["AT+AI STATE", "AT+AI START|STOP", "AT+AI=START|STOP", "ai-start", "ai-stop", "AT+AI INTERRUPT|SUBMIT"], "owners": ["ai_talk"], "forms": ["AT+AI", "AT+AI START", "AT+AI STOP", "AT+AI INTERRUPT", "AT+AI SUBMIT"]},
+    {"legacy": ["AT+CALL?", "AT+RTC (session)"], "owners": ["call", "wechat", "video_call"], "forms": ["AT+CALL"], "condition": "Each selected owner contributes its own status record."},
+    {"legacy": ["AT+CALL DIAL", "AT+CALL DEVICE"], "owners": ["call"], "forms": ["AT+CALL DEVICE <device-id>"]},
+    {"legacy": ["AT+CALL WX"], "owners": ["wechat"], "forms": ["AT+CALL WX <contact-id>"]},
+    {"legacy": ["AT+CALL <index>", "AT+CALL=<index>", "call <1..8>", "AT+ANSWER", "AT+REJECT", "AT+HANGUP", "AT+CALL=ACCEPT|REJECT|HANGUP", "answer", "reject", "hangup", "cancel"], "owners": ["call", "wechat"], "forms": ["AT+CALL INDEX <index>", "AT+CALL ACCEPT", "AT+CALL REJECT", "AT+CALL HANGUP"]},
+    {"legacy": ["AT+VIDCALL", "AT+CALL=CAMERA,0|1"], "owners": ["video_call"], "forms": ["AT+CALL VIDEO <index>", "AT+CALL CAMERA 0|1"]},
+    {"legacy": ["AT+CALL DISMISS"], "owners": ["app.companion"], "forms": ["AT+CALL DISMISS"], "condition": "Only products selecting the companion application."},
+    {"legacy": ["AT+CONTACTS", "AT+CONTACTS?", "AT+CONTACTS=REFRESH", "contacts", "AT+CONTACTS ALL|DEV|WX", "AT+PENDING", "AT+CONTACT REQUEST|ACCEPT|REJECT|DELETE|REMARK"], "owners": ["contacts"], "forms": ["AT+CONTACTS", "AT+CONTACTS REFRESH", "AT+CONTACTS PAGE <source> [<page>]", "AT+CONTACTS PENDING [<page>]", "AT+CONTACT REQUEST <id>", "AT+CONTACT ACCEPT <id>", "AT+CONTACT REJECT <id>", "AT+CONTACT DELETE <id>", "AT+CONTACT REMARK <id> <remark-hex>"]},
+    {"legacy": ["AT+ROOM STATUS", "AT+ROOM?", "AT+RTC (group)", "AT+ROOM OPEN|CLOSE|REFRESH|LEAVE|CREATE|JOIN", "AT+GROUP REFRESH|LEAVE|CREATE|JOIN|CONNECT|DISCONNECT|PTT_DOWN|PTT_UP", "AT+PTT", "AT+ROOM=PTT"], "owners": ["room"], "forms": ["AT+ROOM", "AT+ROOM OPEN", "AT+ROOM CLOSE", "AT+ROOM REFRESH", "AT+ROOM LEAVE", "AT+ROOM CREATE [<password>]", "AT+ROOM JOIN <code> [<password>]", "AT+ROOM CONNECT", "AT+ROOM DISCONNECT", "AT+ROOM PTT 0|1"]},
+    {"legacy": ["AT+RECOGNITION STATE", "AT+RECOGNITION RECORD|CANCEL|QUERY|RESUME|DISMISS|ARCHIVE"], "owners": ["recognition"], "forms": ["AT+RECOGNITION", "AT+RECOGNITION RECORD <seconds>", "AT+RECOGNITION CANCEL", "AT+RECOGNITION QUERY", "AT+RECOGNITION RESUME <id>", "AT+RECOGNITION DISMISS <request> <item>", "AT+RECOGNITION ARCHIVE <id> <revision>"]},
+    {"legacy": ["AT+RECOGNITION CONFIG"], "owners": ["recognition_config"], "forms": ["AT+RECOGNITION CONFIG"], "condition": "Thin read-only owner also serves Xmini without the full recognition module."},
+    {"legacy": ["AT+WIFI?", "AT+NET?", "AT+NETWORK", "AT+PRODUCT (Wi-Fi)", "wifi-set", "AT+WIFI", "AT+WIFI=", "wifi JSON", "AT+RETRY (network)"], "owners": ["net"], "forms": ["AT+NET", "AT+NET WIFI <ssid> <password>", "AT+NET STORE <ssid> <password>", "AT+NET RETRY"], "condition": "WIFI is for provisioning; STORE saves credentials before retry or reboot."},
+    {"legacy": ["wifi-clear", "AT+DISCONNECT", "AT+NET=DISCONNECT", "AT+NETDIAG?", "AT+NETRX=START", "AT+PTRACE=START|STOP", "AT+PTRACE?"], "owners": ["net"], "forms": ["AT+NET FORGET", "AT+NET DISCONNECT", "AT+NET DIAG", "AT+NET PROBE", "AT+NET TRACE [START|STOP]"], "condition": "FORGET and TRACE require their documented build options."},
+    {"legacy": ["AT+WIFI SETUP", "AT+WIFI CANCEL"], "owners": ["provisioning"], "forms": ["AT+NET PROVISION [FORCE]", "AT+NET PROVISION FORGET [FORCE]", "AT+NET CANCEL"], "condition": "FORGET requires its separate build option and access level."},
+    {"legacy": ["AT+CPINFO?", "AT+COMPANIONRETRY", "AT+C6RETRY", "AT+C61=INFO|RXRESET|SINK0|SINK1|ROLLBACK", "AT+CPOTA"], "owners": ["net"], "forms": ["AT+COMPANION", "AT+COMPANION LIVE", "AT+COMPANION RETRY", "AT+COMPANION SEND <word>", "AT+COMPANION ROLLBACK", "AT+COMPANION UPDATE <url> <digest>"], "condition": "Cached AT+COMPANION on Waveshare, LIVE on WT99; other forms depend on companion support."},
+    {"legacy": ["AT+EP", "AT+EP SHOW", "ep-show", "AT+EP SET|RESET|CANCEL", "ep-set", "ep-reset", "ep-cancel"], "owners": ["environment"], "forms": ["AT+EP", "AT+EP SET <base>", "AT+EP RESET", "AT+EP CANCEL"]},
+    {"legacy": ["AT+PRODUCT (binding)", "id", "AT+DEVICE? (binding)", "AT+BIND REPLAY", "AT+RETRY (binding)", "retry", "tirtc-set", "tirtc-clear"], "owners": ["binding"], "forms": ["AT+BIND", "AT+BIND REPLAY", "AT+BIND RETRY", "AT+BIND SET <id> <key> [<client>]", "AT+BIND CLEAR"], "condition": "SET/CLEAR require their development option."},
+    {"legacy": ["Platform status", "AT+PRODUCT (platform online)"], "owners": ["platform"], "forms": ["AT+PLATFORM"], "condition": "Declaration only; runtime output is checked separately by P-6."},
+    {"legacy": ["AT+UI", "AT+UI?", "AT+UI PERF", "AT+UI SLEEP", "AT+TAP", "AT+SWIPE", "AT+UI=POINTER", "AT+DISPLAY", "display", "AT+SCREEN"], "owners": ["ui"], "forms": ["AT+UI", "AT+UI ACTIONS", "AT+UI PERF", "AT+UI SLEEP", "AT+UI TAP <x> <y>", "AT+UI SWIPE <x> <y> <x2> <y2> <ms>", "AT+UI POINTER <x> <y> 0|1", "AT+UI REDRAW", "AT+SCREEN [<display>]"], "condition": "SCREEN requires its capture option."},
+    {"legacy": ["AT+KEY CLICK|DOUBLE|HOLD", "AT+UI (input)"], "owners": ["interaction"], "forms": ["AT+KEY", "AT+KEY CLICK [<role>]", "AT+KEY DOUBLE [<role>]", "AT+KEY HOLD [<role>]"]},
+    {"legacy": ["AT+DOOR?", "AT+DOOR=HOME|NEXT|PREVIOUS|VIEWER|SENDER|DEVICES|BACK"], "owners": ["app.door"], "forms": ["AT+DOOR", "AT+DOOR HOME", "AT+DOOR NEXT", "AT+DOOR PREVIOUS", "AT+DOOR VIEWER", "AT+DOOR SENDER", "AT+DOOR DEVICES", "AT+DOOR BACK"]},
+    {"legacy": ["AT+AUDIO", "AT+AUDIO TONE|RECORD|PLAY|STOP|DUMP", "tone", "record", "play", "stop", "AT+MEDIA TONE", "AT+TRACE ARM|DUMP|OFF", "AT+AUDIOTRACE?", "AT+GUIDE", "prompt", "ring", "cue"], "owners": ["media"], "forms": ["AT+AUDIO", "AT+AUDIO TONE", "AT+AUDIO RECORD", "AT+AUDIO PLAY", "AT+AUDIO STOP", "AT+AUDIO DUMP", "AT+AUDIO SENDTONE", "AT+TRACE ARM [<frames>]", "AT+TRACE DUMP", "AT+TRACE OFF", "AT+SOUND", "AT+SOUND PLAY <name> [<code>]", "AT+SOUND STOP"], "condition": "Media developer options are separate; WT99's additional old diagnostic is also retained by product decision."},
+    {"legacy": ["AT+RTC (transport)", "TiRTC status", "AT+CMDTRACE"], "owners": ["transport"], "forms": ["AT+LINK", "AT+LINK TRACE"]},
+    {"legacy": ["video-capture start|stop|status|clear|dump", "VID/CAM diagnostics", "AT+CAMTEST"], "owners": ["video"], "forms": ["AT+VIDEO", "AT+VIDEO CAPTURE START|STOP|STATUS|CLEAR|DUMP", "AT+VIDEO PROBE"]}
+  ],
+  "added_in_section": [
+    {"owners": ["at"], "forms": ["AT+LOG [<after>]", "AT+LOG FOLLOW 0|1", "AT+LOG TOPICS", "AT+LOG STATS", "AT+STATE", "AT+INTENT <intent> [<value> [<text>]]"]},
+    {"owners": ["net"], "forms": ["AT+NET SCAN", "AT+NET LIST"]},
+    {"owners": ["platform"], "forms": ["AT+PLATFORM RECONNECT [<rounds>]"], "condition": "Development build option."},
+    {"owners": ["clock"], "forms": ["AT+CLOCK", "AT+CLOCK ALARM <time> <days> [<label>]", "AT+CLOCK COUNTDOWN <seconds> [<label>]", "AT+CLOCK REMOVE <id>", "AT+CLOCK ENABLE <id> 0|1"]},
+    {"owners": ["lock"], "forms": ["AT+LOCK", "AT+LOCK OPEN [<index> [<ms>]]", "AT+LOCK CLOSE [<index>]"], "condition": "OPEN requires its development option."},
+    {"owners": ["feedback"], "forms": ["AT+FEEDBACK", "AT+FEEDBACK STATES", "AT+FEEDBACK SET <state> 0|1", "AT+FEEDBACK FIRE <effect> [FORCE]", "AT+FEEDBACK CANCEL", "AT+FEEDBACK GROUP <group> 0|1"]}
+  ],
+  "no_canonical_form": [
+    {"legacy": ["AT+ECHO", "rx-dump", "rx-record", "AT+AUDIO DETAIL", "AT+AUDIO RXTRACE", "AT+TXTRACE", "AT+TRACE TX"], "reason": "Retired developer probes; read-only diagnostic alternatives do not recreate their effects."},
+    {"legacy": ["MZ28 boot help", "old REPL prompt and line editor"], "reason": "Console readiness and the bench tool replace these presentation behaviors."},
+    {"legacy": ["AT+CAMERA", "AT+USB", "AT+USB TICK", "AT+CP"], "reason": "Unadopted interim proposals, not additional firmware aliases; use the documented canonical commands."}
+  ]
+}

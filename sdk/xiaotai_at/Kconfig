@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai console engine. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/at_config.h; the
+# defaults here and there are the same (test/at_config_test.c checks it).
+# Products set the options per today's console (spec xiaotai_at.md 4.7).
+menu "XiaoTai console engine"
+
+    config XIAOTAI_AT_SOURCES_MAX
+        int "Byte sources one console serves"
+        range 1 8
+        default 3
+        help
+            The platform console and every source a product attaches with
+            xiaotai_at_attach(). Attaching one more is an error.
+
+    config XIAOTAI_AT_LOCAL_MAX
+        int "Local commands the table holds"
+        range 12 128
+        default 24
+        help
+            Commands that run on the console task, the engine's own nine
+            included. Registering more is an error at init, so the start
+            fails instead of losing a command. The table lives in external
+            RAM where the board has it.
+
+    config XIAOTAI_AT_VERB_SETS_MAX
+        int "Verb tables the build registers"
+        range 8 256
+        default 48
+        help
+            One table per component and shared command (AT+CALL, AT+NET,
+            AT+WAKE). Registering more is an error at init. The table lives
+            in external RAM where the board has it.
+
+    config XIAOTAI_AT_RESTART_COMMAND
+        bool "Command AT+RESTART"
+        default y
+        help
+            Orderly restart from the console (the framework quiesces the
+            system and waits for the restart holds). Off for products whose
+            console has no restart command today; the console then cannot
+            restart the device.
+
+    config XIAOTAI_AT_RESTART_FORCE
+        bool "Command AT+RESTART FORCE"
+        depends on XIAOTAI_AT_RESTART_COMMAND
+        default y
+        help
+            Restart 200 ms after OK without asking any component. Off for
+            products whose console restarts only when idle today.
+
+    config XIAOTAI_AT_SETTING_WRITE
+        bool "Command AT+SET <name> <value>"
+        default y
+        help
+            Writing settings from the console. Reading them (AT+SET [<name>])
+            stays either way. Off for products whose console changes no
+            setting today.
+
+    config XIAOTAI_AT_INTENT_COMMAND
+        bool "Command AT+INTENT"
+        default y
+        help
+            Posting intents from the console, as a button or the screen
+            would. Intents registered as local only are refused either way.
+            Off for products whose console has nothing it replaces today.
+
+endmenu

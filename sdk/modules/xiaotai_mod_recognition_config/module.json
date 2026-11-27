@@ -1,0 +1,12 @@
+{
+  "name": "recognition_config",
+  "registrations": {"commands": 1},
+  "depends": ["platform", "at"],
+  "configure": [
+    {"function": "xiaotai_recognition_config_configure", "header": "xiaotai/modules/recognition_config.h",
+     "type": "xiaotai_recognition_config_options_t"}
+  ],
+  "commands": [
+    {"command": "AT+RECOGNITION", "verb": "CONFIG", "access": "read"}
+  ]
+}

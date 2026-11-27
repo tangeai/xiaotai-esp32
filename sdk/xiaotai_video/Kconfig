@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai video engine. Each one is mapped to a macro of the
+# same name without the CONFIG_ prefix in include/xiaotai/video_config.h, whose
+# defaults equal the defaults here.
+menu "XiaoTai video engine"
+
+    config XIAOTAI_VIDEO_UPLINK_CLOCK_OVERLAY
+        bool "Draw the time of day on uplink pictures"
+        default n
+        help
+            Draws HH:MM:SS.mmm into the top-left corner of every uplink
+            picture that passes through a transform, before it is encoded.
+            A bench aid for measuring end-to-end delay; the peer sees it.
+
+    config XIAOTAI_VIDEO_SOFTWARE_UPLINK_CORE
+        int "Core of the camera task with a software encoder (-1: any)"
+        range -1 1
+        default 0
+        help
+            A software encoder competes with echo cancellation for the cache
+            of external RAM. Keep it on the core that does not run audio
+            processing.
+
+    config XIAOTAI_VIDEO_HARDWARE_TASK_PRIORITY
+        int "Priority of the hardware codec tasks"
+        range 3 20
+        default 7
+        help
+            Priority of the camera task with a hardware encoder and of the
+            hardware JPEG decode task. Keep it strictly below every audio
+            task of the media engine: 7 when audio runs at 8 or above, 5
+            when audio capture runs at 7.
+
+    config XIAOTAI_VIDEO_ACCELERATORS
+        bool "Use the chip's picture accelerators"
+        default n if XIAOTAI_UI_RGB_SCANOUT
+        default y
+        help
+            The pixel accelerator and the hardware JPEG decoder. Both move
+            pictures with the two-dimensional DMA. On a display the chip
+            scans out of external memory by itself (an RGB panel) that work
+            makes the panel lose pixels and the picture roll until the next
+            start, so it is off there and software does the same.
+
+    config XIAOTAI_VIDEO_JPEG_SOFTWARE_DECODER
+        bool "Decode JPEG pictures in software"
+        default y if XIAOTAI_UI_RGB_SCANOUT
+        default n
+        help
+            For a product that shows JPEG pictures of another device on a
+            chip without a JPEG decoder, or with one it does not use (above).
+
+    config XIAOTAI_VIDEO_JPEG_ENCODER
+        bool "Encode JPEG pictures in software"
+        default y
+        help
+            A product that sends no pictures can leave it out.
+
+    config XIAOTAI_VIDEO_PROFILES_MAX
+        int "Uplink profiles the requirement table holds"
+        range 1 32
+        default 8
+        help
+            Each table is allocated from bulk memory by its first
+            registration. Registering more is an error at init, so the start
+            fails instead of losing a profile. The same holds for the two
+            below.
+
+    config XIAOTAI_VIDEO_VIEWPORTS_MAX
+        int "Viewports the requirement table holds (one per display)"
+        range 1 16
+        default 4
+
+    config XIAOTAI_VIDEO_BACKENDS_MAX
+        int "Backends of one kind (encoders, decoders, transforms)"
+        range 2 32
+        default 8
+
+endmenu

@@ -1,0 +1,7 @@
+# Keep the verified P4 NVS and PHY locations. No OTA, coredump or SPIFFS user:
+# the former ota_0/ota_1/coredump/storage area becomes one APP partition that
+# starts at the old ota_0 offset and fills the rest of the 16 MB flash.
+# Name,     Type, SubType,  Offset,    Size,      Flags
+nvs,        data, nvs,      0x9000,    0x4000,
+phy_init,   data, phy,      0xF000,    0x1000,
+factory,    app,  factory,  0x10000,   0xFF0000,

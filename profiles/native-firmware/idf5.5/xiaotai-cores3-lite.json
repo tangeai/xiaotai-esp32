@@ -1,0 +1,13 @@
+{
+  "board": "m5stack/core-s3",
+  "target": "esp32s3",
+  "idf_line": "5.5",
+  "idf_version": "5.5.5",
+  "tirtc_package": "5.5/generic-esp32s3",
+  "defaults_layers": [
+    "sdk/xiaotai_port/sdkconfig.defaults",
+    "sdk/xiaotai_platform/sdkconfig.defaults.psram",
+    "sdk/xiaotai_video/sdkconfig.defaults",
+    "sdk/themes/xiaotai_theme_lcd_kit/sdkconfig.defaults"
+  ]
+}

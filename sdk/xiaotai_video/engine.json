@@ -1,0 +1,15 @@
+{
+  "name": "video",
+  "registrations": {"commands": 1},
+  "depends": ["transport", "eventlog", "at"],
+  "needs": ["external_ram"],
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_video_configure", "header": "xiaotai/video.h", "type": "xiaotai_video_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+VIDEO", "access": "read"},
+    {"command": "AT+VIDEO", "verb": "CAPTURE", "usage": "START|STOP|STATUS|CLEAR|DUMP", "access": "action"},
+    {"command": "AT+VIDEO", "verb": "PROBE", "access": "action"}
+  ]
+}

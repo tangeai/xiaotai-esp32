@@ -1,0 +1,50 @@
+{
+  "name": "companion",
+  "modules": ["provisioning", "binding", "settings", "platform", "media", "feedback", "interaction", "sounds",
+              "eventlog", "at"],
+  "optional_modules": ["ui", "contacts", "ai_talk", "wake", "ai_vision", "call", "wechat", "video_call", "room",
+                       "stream", "stream_video", "recognition", "environment", "transport"],
+  "registrations": {
+    "commands": 1,
+    "intents": 34,
+    "settings": 2,
+    "subscribers": 51,
+    "when_selected": [
+      {"any_of": ["ui"], "intents": 1, "subscribers": 3},
+      {"any_of": ["contacts"], "intents": 11, "subscribers": 2},
+      {"any_of": ["ai_talk"], "intents": 2, "subscribers": 2},
+      {"any_of": ["wake"], "subscribers": 4},
+      {"any_of": ["call", "wechat"], "intents": 6, "subscribers": 6},
+      {"any_of": ["call"], "subscribers": 4},
+      {"any_of": ["wechat"], "subscribers": 4},
+      {"any_of": ["ai_vision"], "intents": 1, "subscribers": 1},
+      {"any_of": ["video_call"], "subscribers": 3},
+      {"any_of": ["room"], "intents": 4, "subscribers": 7},
+      {"any_of": ["stream"], "intents": 1, "subscribers": 2},
+      {"any_of": ["stream_video"], "subscribers": 4},
+      {"any_of": ["recognition"], "intents": 3, "subscribers": 5},
+      {"any_of": ["environment"], "subscribers": 1},
+      {"any_of": ["transport"], "subscribers": 1}
+    ]
+  },
+  "needs": ["audio_in", "audio_out", "network"],
+  "start": true,
+  "foreground": true,
+  "page_step": true,
+  "activities": {"companion_hold": 1},
+  "handles": ["call.incoming", "call.state", "call.connected", "call.ended",
+              "wechat.incoming", "wechat.state", "wechat.connected", "wechat.ended",
+              "video_call.state", "video_call.remote", "video_call.unsupported",
+              "ai_talk.state", "room.state", "stream.started", "stream.state", "stream.ended",
+              "stream_video.remote", "stream_video.unsupported", "recognition.state",
+              "provisioning.changed", "provisioning.opened", "provisioning.done", "provisioning.failed",
+              "binding.changed", "binding.code", "binding.failed", "binding.bound"],
+  "claims": true,
+  "commands": [
+    {"command": "AT+CALL", "verb": "DISMISS", "access": "action"}
+  ],
+  "configure": [
+    {"function": "xiaotai_app_companion_configure", "header": "xiaotai/apps/companion.h",
+     "type": "xiaotai_app_companion_config_t"}
+  ]
+}

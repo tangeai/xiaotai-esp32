@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai event log. Each maps to the macro of the same name
+# without the CONFIG_ prefix in include/xiaotai/eventlog_config.h; the
+# defaults here and there are the same (test/eventlog_config_test.c checks it).
+menu "XiaoTai event log"
+
+    config XIAOTAI_EVENTLOG_SINKS_MAX
+        int "Sinks the table holds"
+        range 1 16
+        default 4
+        help
+            Receivers of every event (the console's AT+LOG FOLLOW, later a
+            persistent store). Registering more is an error at init.
+
+    config XIAOTAI_EVENTLOG_TOPICS_MAX
+        int "Topics the table holds"
+        range 1 64
+        default 16
+        help
+            Mailboxes of real-time reports, one per report of the selected
+            engines. Registering more is an error at init and the producer
+            gets no handle. The table lives in external RAM where the board
+            has it.
+
+endmenu

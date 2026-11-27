@@ -1,0 +1,141 @@
+{
+  "name": "xiaotai",
+  "kind": "flat",
+  "about": "XiaoTai: long hair that runs from titanium silver to sky blue, a fringe, a small braid with a hexagonal hairpin, aqua eyes, a white hooded dress with a navy sailor collar and a sky-blue bow. An original character of this project, drawn with an image model.",
+  "pictures": "The folder given with --pictures holds anchor/ and parts/ (1024x1536 on a plain green screen: the base picture and the edits of its face), gen5/ (later edits of the face, the same way), norm/ (the base and the poses cut out and lined up with it, 1024x1536 with alpha) and fx/ (effects drawn at the stage's size, with alpha).",
+  "canvas": [1024, 1536],
+  "centre_x": 512,
+  "height": 560,
+  "sink": 14,
+  "fade": 0,
+  "palette": true,
+  "base": "anchor/base.png",
+  "body": "norm/base.png",
+  "boxes": {
+    "eyes": [335, 340, 690, 445],
+    "mouth": [430, 465, 600, 580],
+    "brows": [300, 270, 720, 345],
+    "face": [330, 270, 700, 592]
+  },
+  "marks": {
+    "eye_l": [610, 388],
+    "eye_r": [425, 388],
+    "mouth": [515, 515],
+    "brow_y": 332,
+    "cheek_y": 455,
+    "chin_y": 590,
+    "hair_top": 28,
+    "head_half": 200,
+    "shoulder_y": 700,
+    "shoulder_half": 330,
+    "arm_l": [785, 760],
+    "arm_r": [250, 760],
+    "hand_r": [195, 732],
+    "hand_half": 110
+  },
+  "eyes": {
+    "half": "parts/eyes/half.png",
+    "smile": "anchor/joy.png",
+    "shut": "anchor/blink.png",
+    "ponder": "parts/eyes/ponder.png",
+    "soft": "parts/eyes/soft.png",
+    "bright": "parts/eyes/bright.png",
+    "comfort": "parts/brows/comfort.png",
+    "serious": "parts/brows/serious.png",
+    "glad": "gen5/faces5b/smile_soft.png",
+    "down": "gen5/faces5b/down.png",
+    "teary": "gen5/faces5b/teary.png"
+  },
+  "mouth": {
+    "pout": "parts/mouth/pout.png",
+    "flat": "parts/mouth/flat.png",
+    "small": "parts/mouth/small.png",
+    "medium": "anchor/open.png",
+    "round": "parts/mouth/round.png",
+    "laugh": "gen5/faces5c/laugh_open.png",
+    "comfort": "parts/brows/comfort.png",
+    "serious": "parts/brows/serious.png",
+    "smirk": "gen5/faces5c/smirk.png",
+    "frown": "gen5/faces5c/frown_small.png"
+  },
+  "brows": {
+    "raised": "parts/brows/raised.png",
+    "cross": "parts/brows/angry.png",
+    "sad": "parts/brows/sad.png",
+    "comfort": "parts/brows/comfort.png",
+    "serious": "parts/brows/serious.png"
+  },
+  "poses": {
+    "wave": {"file": "norm/s3.png", "face": {"eyes": "gen5/faces5b/smile_soft.png"}},
+    "cheer": {"file": "norm/s5.png"},
+    "think": {"file": "norm/think2.png"},
+    "shy": {"file": "norm/shy.png"},
+    "sulk": {"file": "norm/sulk.png"},
+    "stretch": {"file": "norm/stretch.png"},
+    "sleep": {"file": "norm/sleep.png"},
+    "highfive": {"file": "norm/s3.png"},
+    "laugh": {"file": "norm/laugh_lady.png"},
+    "nod": {"file": "norm/nod.png"},
+    "tilt": {"file": "norm/tilt_l.png"},
+    "listen": {"file": "norm/hands_clasp.png"},
+    "heart": {"file": "norm/hand_chest.png"},
+    "pet": {"file": "norm/pet.png"}
+  },
+  "clips": {
+    "dance": {
+      "loop": [["norm/s1.png", 625], ["norm/s2.png", 625], ["norm/s1.png", 625], ["norm/s2.png", 625], ["norm/s4.png", 625],
+        ["norm/s5.png", 625], ["norm/s3.png", 625], ["norm/s8.png", 625], ["norm/s1.png", 625], ["norm/s2.png", 625],
+        ["norm/s1.png", 625], ["norm/s2.png", 625], ["norm/s6.png", 625], ["norm/s7.png", 625], ["norm/s4.png", 625],
+        ["norm/s5.png", 625]],
+      "style": "pop"
+    },
+    "nod": {
+      "enter": [["norm/nod_mid.png", 90], ["@pose", 260], ["norm/nod_mid.png", 90], ["@base", 220], ["norm/nod_mid.png", 90],
+        ["@pose", 260]],
+      "leave": [["norm/nod_mid.png", 90]]
+    },
+    "think": {
+      "enter": [["norm/think_mid.png", 90]],
+      "loop": [["@pose", 0]],
+      "leave": [["norm/think_mid.png", 90]]
+    },
+    "shy": {
+      "enter": [["norm/shy_mid.png", 90]],
+      "loop": [["@pose", 0]],
+      "leave": [["norm/shy_mid.png", 90]]
+    },
+    "stretch": {
+      "enter": [["norm/stretch_mid.png", 90]],
+      "loop": [["@pose", 0]],
+      "leave": [["norm/stretch_mid.png", 90]]
+    },
+    "tilt": {
+      "enter": [["norm/tilt_mid.png", 90]],
+      "loop": [["@pose", 0]],
+      "leave": [["norm/tilt_mid.png", 90]]
+    },
+    "sulk": {
+      "loop": [["@pose", 2600], ["norm/sulk_b.png", 700, "@pose"]],
+      "style": "soft"
+    },
+    "sleep": {
+      "loop": [["@pose", 2000], ["norm/sleep_b.png", 2000, "@pose"]],
+      "style": "soft"
+    }
+  },
+  "fx": {
+    "heart": {"file": "fx/heart.png", "scale": 1.3, "palette": true},
+    "heart_small": {"file": "fx/heart_s.png", "scale": 1.2, "palette": true},
+    "zed": {"file": "fx/zed.png", "scale": 1.5, "palette": true},
+    "note": {"file": "fx/note.png", "palette": true},
+    "note2": {"file": "fx/note2.png", "palette": true},
+    "sparkle_gold": {"file": "fx/sparkle_gold.png", "frames": 8, "scale": 1.5, "palette": true, "every": 2},
+    "glint": {"file": "fx/glint.png", "frames": 6, "scale": 1.5, "palette": true, "every": 2},
+    "petal": {"file": "fx/petal.png", "frames": 4, "scale": 1.35, "palette": true},
+    "rose": {"file": "fx/rose_petal.png", "frames": 4, "scale": 1.35, "palette": true},
+    "ribbon": {"file": "fx/ribbon.png", "frames": 6, "scale": 1.6, "palette": true},
+    "drop": {"file": "fx/drop.png", "palette": true},
+    "question": {"file": "fx/mark_q.png", "palette": true},
+    "exclaim": {"file": "fx/mark_ex.png", "scale": 1.5, "palette": true}
+  }
+}

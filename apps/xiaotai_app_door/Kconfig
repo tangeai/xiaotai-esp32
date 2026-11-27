@@ -1,0 +1,15 @@
+menu "XiaoTai door application"
+
+    config XIAOTAI_DOOR_TEMPLATES
+        bool "The door's own pages for large colour displays"
+        depends on XIAOTAI_UI_LVGL
+        default y
+        help
+            Carries the door's own page templates, pictures, icons and fonts
+            (about 1 MB of flash) for displays of 440 x 300 and more. Smaller
+            displays show the door with the theme's ordinary pages; the build
+            turns this off for a board whose first display is that small
+            (scripts/sdk_selection.py). A product may set it either way in its
+            "options".
+
+endmenu

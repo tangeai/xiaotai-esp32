@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai binding module. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/modules/binding_config.h;
+# the defaults here and there are the same.
+menu "XiaoTai binding module"
+
+    config XIAOTAI_BINDING_DEV_COMMANDS
+        bool "Register AT+BIND SET and AT+BIND CLEAR"
+        default n
+        help
+            Adds two verbs to AT+BIND that write (key in hexadecimal) and
+            erase the stored device identity directly, without the server,
+            then restart. Anyone with the console can replace the device's
+            identity, so a product turns it on only where its console is as
+            open as the BK7258 line's (the shared `tirtc-set`/`tirtc-clear`).
+            The device key is never echoed.
+
+    config XIAOTAI_BINDING_GUARDS_MAX
+        int "Binding guards the registry holds"
+        range 1 16
+        default 4
+        help
+            Other modules' vetoes against starting a binding attempt.
+            Registering more is an error at init, so the start fails instead
+            of losing a veto. The same holds for the option below.
+
+    config XIAOTAI_BINDING_PREPARES_MAX
+        int "Binding preparation steps the registry holds"
+        range 1 8
+        default 2
+        help
+            Other modules' storage steps that must succeed before a binding
+            report is sent. Each may take up to 10 seconds of an attempt.
+
+endmenu

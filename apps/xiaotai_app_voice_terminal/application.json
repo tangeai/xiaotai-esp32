@@ -1,0 +1,21 @@
+{
+  "name": "voice_terminal",
+  "modules": ["wechat", "contacts", "provisioning", "binding", "net", "platform",
+              "feedback", "interaction", "sounds", "eventlog", "at"],
+  "optional_modules": ["environment", "settings"],
+  "registrations": {
+    "intents": 4,
+    "subscribers": 23,
+    "when_selected": [
+      {"any_of": ["environment"], "subscribers": 1},
+      {"any_of": ["settings"], "subscribers": 1}
+    ]
+  },
+  "needs": ["audio_in", "audio_out", "key", "network"],
+  "start": true,
+  "foreground": false,
+  "configure": [
+    {"function": "xiaotai_app_voice_terminal_configure", "header": "xiaotai/apps/voice_terminal.h",
+     "type": "xiaotai_app_voice_terminal_config_t"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "board": "lckfb/szpi-esp32s3",
+  "target": "esp32s3",
+  "idf_line": "5.5",
+  "idf_version": "5.5.5",
+  "tirtc_package": "5.5/generic-esp32s3",
+  "sdkconfig": {
+    "CONFIG_FREERTOS_IDLE_TASK_STACKSIZE": "2048",
+    "CONFIG_ESP_IPC_TASK_STACK_SIZE": "2048"
+  }
+}

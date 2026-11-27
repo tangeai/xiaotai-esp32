@@ -1,0 +1,8 @@
+{
+  "name": "theme_lcd_kit",
+  "depends": ["ui"],
+  "optional_depends": ["media"],
+  "needs": ["display"],
+  "start": false,
+  "options": {"UI_LVGL": true}
+}

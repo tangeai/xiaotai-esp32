@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai sound resources. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/sounds_config.h; the
+# defaults here and there are the same.
+menu "XiaoTai sound resources"
+
+    config XIAOTAI_SOUNDS_PACK_TONES_PCM8K
+        bool "Pack tones_pcm8k: rings and wake acknowledgements (8 kHz PCM)"
+        default n
+
+    config XIAOTAI_SOUNDS_PACK_GUIDE_ZH_ALAW8K
+        bool "Pack guide_zh_alaw8k: spoken guidance and digits (8 kHz A-law)"
+        default n
+
+endmenu

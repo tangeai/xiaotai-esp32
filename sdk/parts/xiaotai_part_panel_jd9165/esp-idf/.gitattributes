@@ -1,0 +1,2 @@
+# Do not normalize trailing spaces in the byte-identical supplier snapshot.
+esp_lcd_jd9165.c whitespace=-blank-at-eol

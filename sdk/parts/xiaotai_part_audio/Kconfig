@@ -1,0 +1,11 @@
+menu "XiaoTai PCM audio part"
+
+    config XIAOTAI_AUDIO_RETAIN_I2S_DMA
+        bool "Keep I2S channels and DMA reserved after boot"
+        default n
+        help
+            Reserve I2S DMA at boot. Idle closes the codecs and stops audio
+            clocks without releasing DMA. The product selector enables this
+            for boards without external RAM unless the product overrides it.
+
+endmenu

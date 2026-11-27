@@ -1,0 +1,3 @@
+# ESP HTTP broadcasts events independently of the socket deadline.
+CONFIG_XIAOTAI_PORT_HTTP_DEADLINE_TRANSPORT=y
+CONFIG_ESP_HTTP_CLIENT_EVENT_POST_TIMEOUT=0

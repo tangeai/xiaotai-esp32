@@ -1,0 +1,40 @@
+{
+  "target": "esp32p4",
+  "origin": "official",
+  "sdk_version": "2.6.3",
+  "package": "tirtc__espressif_esp32p4__esp-idf5.5.4-riscv32-esp14.2.0_20260121__v2.6.3__mini.tgz",
+  "package_sha256": "28e94ed3194c0897aa354148be0395aba2218d0e057aedfb41d67db137ffb6f4",
+  "producer_idf_version": "5.5.4",
+  "idf_version": "5.5.5",
+  "compiler_version": "14.2.0",
+  "toolchain_release": "esp-14.2.0_20260121",
+  "sha256": "c2b88d10e4adf812de22051c22fbff3194b7bd8d82e8fa3f1df98be51e41d268",
+  "headers": {
+    "basedef.h": "23883b8040838fcda10927523536def667cfe7be7fcd8b6f4a1c9410d3e03c04",
+    "tgtrp.h": "b7606c815b12bbf5101f8ef1588a46fb2177a481ac1439b04d64f78f231fc273",
+    "tiRTC.h": "98a2102a40ebff4bd03128b4e6c44c30bc59f0f22071e989cc9ddecf8f47bc84",
+    "tiRTC_stat.h": "2932246a6a09aad0cc3d8252410b34c349e45ffe052682a6dfc0ac10ee1d6541",
+    "ticloudstorage.h": "7b4963d656bc2987b3ff04beca6371e695884b564f6b61bcc37a4b5bd761489d"
+  },
+  "http_tls_backend": "none",
+  "libc_config": {
+    "CONFIG_LIBC_NEWLIB": "y"
+  },
+  "crypto_mode": "required",
+  "crypto_config": {
+    "CONFIG_MBEDTLS_DES_C": "y",
+    "CONFIG_MBEDTLS_HARDWARE_SHA": "y"
+  },
+  "crypto_provenance": "The archive calls ESP-IDF's Mbed TLS for: mbedtls_des_crypt_cbc, mbedtls_des_free, mbedtls_des_init, mbedtls_des_setkey_dec, mbedtls_des_setkey_enc, mbedtls_md5, mbedtls_md_hmac, mbedtls_md_info_from_type, mbedtls_sha1, mbedtls_sha256, mbedtls_sha256_finish, mbedtls_sha256_init, mbedtls_sha256_starts, mbedtls_sha256_update",
+  "abi": {
+    "static_semaphore": 84,
+    "static_task": 340,
+    "tick": 4,
+    "time": 8,
+    "semaphore_alignment": 4
+  },
+  "freertos_hz": 1000,
+  "trace_enabled": false,
+  "runtime_stats": false,
+  "production_ready": true
+}

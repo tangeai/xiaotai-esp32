@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: MIT
+# Options of the XiaoTai platform core. Each maps to the macro of the same
+# name without the CONFIG_ prefix in include/xiaotai/platform_config.h; the
+# defaults here and there are the same.
+menu "XiaoTai platform core"
+
+    config XIAOTAI_PLATFORM_SIGNALING_EVENT_STACK_BYTES
+        int "Stock MQTT signaling event worker stack (bytes, internal RAM)"
+        range 0 16384
+        default 0
+        help
+            Stack of the stock ESP MQTT event worker for formal signaling.
+            Zero inherits the MQTT task stack size; nonzero values must be at
+            least 2560 bytes. Does not size the vendor or guest MQTT task.
+
+    config XIAOTAI_PLATFORM_RECONNECT_COMMAND
+        bool "AT+PLATFORM RECONNECT (development builds)"
+        default n
+        help
+            Registers AT+PLATFORM RECONNECT [<1..50>]: each round drops the
+            signaling connection with a hold, rebuilds it and prints the
+            internal free memory and largest block, for the reconnect
+            memory measurement on boards without external RAM. Development
+            builds only: production firmware never drops its signaling on a
+            console request.
+
+endmenu

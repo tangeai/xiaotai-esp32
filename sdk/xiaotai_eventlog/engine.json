@@ -1,0 +1,15 @@
+{
+  "name": "eventlog",
+  "registrations": {"subscribers": 6},
+  "depends": [],
+  "needs": [],
+  "start": true,
+  "configure": [
+    {
+      "function": "xiaotai_eventlog_init",
+      "header": "xiaotai/eventlog.h",
+      "type": "xiaotai_eventlog_config_t",
+      "always": true
+    }
+  ]
+}

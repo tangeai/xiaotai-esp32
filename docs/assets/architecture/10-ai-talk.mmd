@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant U as 用户
+    participant W as 唤醒模块
+    participant A as 应用（界面）
+    participant T as AI 对话模块
+    participant F as 运行框架
+    participant L as 传输（TiRTC）
+    U->>W: 说“你好小钛”
+    W->>T: 带着唤醒前后的录音开始对话
+    W-->>A: 事件 wake.detected，界面给出提示
+    T->>F: 申请前台活动 ai
+    F-->>T: 批准，发给这次会话一个代次
+    T->>L: 建立 AI 会话
+    L-->>T: 语音上行，AI 的回答下行
+    T-->>A: 事件 ai_talk.state，界面显示“正在聆听”
+    U->>A: AI 回答时开口，或点一下屏幕
+    A->>T: 意图 talk.interrupt
+    T->>F: 对话结束，交还前台活动
+    F-->>A: 回到“待唤醒”

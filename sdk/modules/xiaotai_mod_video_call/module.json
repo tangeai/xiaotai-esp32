@@ -1,0 +1,18 @@
+{
+  "name": "video_call",
+  "registrations": {"commands": 1, "intents": 3, "subscribers": 4},
+  "depends": ["platform", "video", "transport", "eventlog", "at"],
+  "optional_depends": ["call", "wechat", "ui"],
+  "one_of": [["call", "wechat"]],
+  "needs": [],
+  "start": false,
+  "configure": [
+    {"function": "xiaotai_video_call_configure", "header": "xiaotai/modules/video_call.h",
+     "type": "xiaotai_video_call_config_t"}
+  ],
+  "commands": [
+    {"command": "AT+CALL", "access": "read"},
+    {"command": "AT+CALL", "verb": "VIDEO", "usage": "<n>", "access": "action"},
+    {"command": "AT+CALL", "verb": "CAMERA", "usage": "0|1", "access": "action"}
+  ]
+}

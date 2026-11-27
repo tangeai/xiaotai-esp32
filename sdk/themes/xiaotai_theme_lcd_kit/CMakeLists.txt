@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: MIT
+# XiaoTai colour theme kit (xiaotai/theme_lcd.h): the one LVGL implementation
+# of the generic view kinds for RGB565 displays, which every colour theme
+# (xiaotai_theme_lcd320, xiaotai_theme_lcd480, any later size) depends on and
+# forwards to. theme.json has no display rule: the kit registers no theme and
+# takes no part in the build-time display check, so a product selecting only
+# a large-display theme no longer brings in the 320x240 one. UI_LVGL in
+# theme.json switches the UI system's LVGL backend on for every product that
+# selects a colour theme; the LVGL configuration the colour products share
+# goes into this component's sdkconfig.defaults, and only here.
+#
+# The generated glyphs are a common asset, not a dependency on the old UI
+# component. Keep exactly one source and leave the old build inputs intact.
+# assets/ holds what the kit draws with besides that 18 px face: its own line
+# icons, the digit faces and the 26 px text face of large displays
+# (scripts/generate_lcd_theme_assets.py). The 26 px face, the 28 px icons and
+# the larger digits are only referenced with XIAOTAI_THEME_LCD_LARGE_TEXT, so a
+# product without it links none of them.
+set(sources src/lcd_kit_unit.c src/lcd_actor.c)
+set(views src/lcd_kit.c src/lcd_layout.c src/lcd_widgets.c src/lcd_motion.c src/lcd_home.c
+    src/lcd_clock.c src/lcd_almanac.c
+    src/lcd_face.c src/lcd_face_ink.c src/lcd_face_look.c src/lcd_face_data.c src/lcd_face_life.c
+    src/lcd_face_live.c src/lcd_pages.c src/lcd_form.c
+    assets/lcd_icons.c assets/lcd_font_num.c)
+set(assets "${CMAKE_CURRENT_SOURCE_DIR}/../../../components/xiaotai_lvgl/fonts")
+list(APPEND views "${assets}/ui_font_cn_18.c" "${assets}/ui_font_cn_18_supplement.c")
+set(requires xiaotai_port xiaotai_framework xiaotai_hal xiaotai_ui)
+# The mouth follows the sound where the product has the media engine.
+if(ESP_PLATFORM)
+    idf_build_get_property(selected XIAOTAI_SELECTED_COMPONENTS)
+elseif(XIAOTAI_HOST_PRODUCT_SELECTION)
+    set(selected ${XIAOTAI_SELECTED_COMPONENTS})
+else()
+    set(selected "")
+endif()
+if(xiaotai_media IN_LIST selected)
+    list(APPEND requires xiaotai_media)
+    set(with_media ON)
+endif()
+if(ESP_PLATFORM)
+    if(CONFIG_XIAOTAI_THEME_LCD_LARGE_TEXT)
+        list(APPEND views assets/lcd_font_cn_26.c)
+    endif()
+    idf_component_register(SRCS ${sources} ${views} INCLUDE_DIRS "include"
+                           REQUIRES ${requires} PRIV_REQUIRES lvgl)
+    # The drawing code (face rasterizer, page layout) has always been built at
+    # -O2 on the product that renders the face directly into the frame; the
+    # kit applies it on every target.
+    target_compile_options(${COMPONENT_LIB} PRIVATE -O2)
+    # The face works on fractions of pixels: roots and minima as instructions, not as calls.
+    set_source_files_properties(src/lcd_face.c src/lcd_face_ink.c src/lcd_face_life.c PROPERTIES
+        COMPILE_OPTIONS "-fno-math-errno;-ffinite-math-only;-fno-trapping-math;-fno-signed-zeros")
+    if(with_media)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE XIAOTAI_THEME_LCD_WITH_MEDIA=1)
+    endif()
+    return()
+endif()
+
+# Host build (tests/sdk; helpers in sdk/cmake/xiaotai_host.cmake).
+xiaotai_host_require(${requires})
+add_library(xiaotai_theme_lcd_kit STATIC ${sources})
+target_include_directories(xiaotai_theme_lcd_kit PUBLIC include)
+target_link_libraries(xiaotai_theme_lcd_kit PUBLIC ${requires})
+if(with_media)
+    target_compile_definitions(xiaotai_theme_lcd_kit PRIVATE XIAOTAI_THEME_LCD_WITH_MEDIA=1)
+endif()
+if(TARGET lvgl::lvgl)
+    target_sources(xiaotai_theme_lcd_kit PRIVATE ${views} assets/lcd_font_cn_26.c)
+    target_link_libraries(xiaotai_theme_lcd_kit PRIVATE lvgl::lvgl m)
+endif()
+if(XIAOTAI_HOST_TESTS)
+    add_subdirectory(test)
+endif()

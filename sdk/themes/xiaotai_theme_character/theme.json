@@ -1,0 +1,15 @@
+{
+  "name": "theme_character",
+  "depends": ["ui", "at", "theme_lcd_kit"],
+  "optional_depends": ["media"],
+  "needs": ["display", "external_ram"],
+  "start": false,
+  "options": {"UI_LVGL": true},
+  "registrations": {"subscribers": 14, "commands": 1},
+  "commands": [
+    {"command": "AT+CHARACTER", "access": "read"},
+    {"command": "AT+CHARACTER", "verb": "CUE", "usage": "<name> [<value>]", "access": "action"},
+    {"command": "AT+CHARACTER", "verb": "SHOW", "usage": "<mood> [<phase> [<conditions> [<seconds>]]]", "access": "action"},
+    {"command": "AT+CHARACTER", "verb": "SHARE", "usage": "<0|1>", "access": "action"}
+  ]
+}

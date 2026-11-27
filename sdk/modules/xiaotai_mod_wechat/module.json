@@ -1,0 +1,27 @@
+{
+  "name": "wechat",
+  "registrations": {
+    "commands": 1,
+    "intents": 7, "subscribers": 8,
+    "when_selected": [{"any_of": ["settings"], "subscribers": 1}]
+  },
+  "depends": ["contacts", "binding", "platform", "transport", "media", "identity", "eventlog", "at"],
+  "optional_depends": ["settings"],
+  "needs": ["audio_in", "audio_out", "network"],
+  "activities": {"call": 3},
+  "start": true,
+  "configure": [
+    {"function": "xiaotai_wechat_configure", "header": "xiaotai/modules/wechat.h",
+     "type": "xiaotai_wechat_config_t",
+     "arrays": {"incoming_busy_during": {"type": "const char *", "terminated": true}}}
+  ],
+  "commands": [
+    {"command": "AT+CALL", "access": "read"},
+    {"command": "AT+CALL", "verb": "WX", "usage": "<contact-id>", "access": "action"},
+    {"command": "AT+CALL", "verb": "INDEX", "usage": "<n>", "access": "action"},
+    {"command": "AT+CALL", "verb": "ACCEPT", "access": "action"},
+    {"command": "AT+CALL", "verb": "REJECT", "access": "action"},
+    {"command": "AT+CALL", "verb": "HANGUP", "access": "action"},
+    {"command": "AT+CALL", "verb": "MUTE", "usage": "0|1", "access": "action"}
+  ]
+}

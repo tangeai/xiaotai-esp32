@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+config XIAOTAI_COMPANION_WECHAT_CODE
+    bool "Include the companion WeChat contact QR image"
+    depends on XIAOTAI_UI_LVGL
+    default n
+    help
+        Include the shipped QR image when the product selects xiaotai_ui
+        and offers adding WeChat contacts by scanning the display.

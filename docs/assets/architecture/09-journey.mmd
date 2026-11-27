@@ -1,0 +1,9 @@
+flowchart LR
+    A["1 选板<br/>认准完整型号"]:::hardware --> B["2 烧录<br/>浏览器写入固件"]:::product
+    B --> C["3 配网<br/>手机连设备热点"]:::interaction
+    C --> D["4 绑定<br/>输入六位码"]:::interaction
+    D --> E["5 开口<br/>说“你好小钛”"]:::media
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33

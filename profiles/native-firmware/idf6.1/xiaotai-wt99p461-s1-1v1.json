@@ -1,0 +1,41 @@
+{
+  "board": "wt/wt99p461-s1",
+  "cli_board": "wt99p461-s1",
+  "target": "esp32p4",
+  "idf_line": "6.1",
+  "idf_version": "6.1.0",
+  "tirtc_package": "6.1/generic-esp32p4",
+  "defaults_layers": [
+    "sdk/xiaotai_port/sdkconfig.defaults",
+    "sdk/xiaotai_platform/sdkconfig.defaults.psram",
+    "sdk/xiaotai_video/sdkconfig.defaults",
+    "sdk/xiaotai_video/sdkconfig.defaults.esp32p4",
+    "sdk/themes/xiaotai_theme_lcd_kit/sdkconfig.defaults"
+  ],
+  "sdkconfig": {
+    "CONFIG_COMPILER_OPTIMIZATION_PERF": "y",
+    "CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT": "y",
+    "CONFIG_ESP_VIDEO_DISABLE_MIPI_CSI_DRIVER_BACKUP_BUFFER": "y",
+    "CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER": "y",
+    "CONFIG_LWIP_MAX_SOCKETS": "16",
+    "CONFIG_LWIP_TCPIP_RECVMBOX_SIZE": "64",
+    "CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS": "4",
+    "CONFIG_LWIP_TCP_RECVMBOX_SIZE": "64",
+    "CONFIG_LWIP_TCP_SACK_OUT": "y",
+    "CONFIG_LWIP_TCP_SND_BUF_DEFAULT": "65534",
+    "CONFIG_LWIP_TCP_WND_DEFAULT": "65534",
+    "CONFIG_LWIP_UDP_RECVMBOX_SIZE": "64",
+    "CONFIG_MBEDTLS_CERTIFICATE_BUNDLE": "y"
+  },
+  "project_assets": {
+    "boards/wt/wt99p461-s1/assets/sc2336_isp.json": "boards/wt/wt99p461-s1/assets/sc2336_isp.json"
+  },
+  "vendor_hashes": {
+    "esp_cam_sensor": "3c2d9eb3784c5e66f53bb86977ee5d06e60c59facb43661b7fe52b141e94caa0",
+    "esp_ipa": "b8c6afb5e45380a38d5ea7186561f17f44e6f65f8b6b42d622fe9d7b5445bc09",
+    "esp_sccb_intf": "f32aa987876f624b945725b617db8e162cd5d66cae23b23d2ea4c65d2542d5f2",
+    "espressif/esp_h264": "0a53c9eb5427b17cb0776bb702c905c04634aaaa9fd5a39cb060c6c23a362c0b",
+    "espressif/esp_video": "2fc8c52c5ac7cca7ed530688c72663183ccb6b21ef48769e7b9464eb56a9d99f",
+    "espressif/esp_wifi_remote": "062e1bf8df69222a856ff60b31fd6c5bc3efaeef8af478502d9cbd8ac4a72a2b"
+  }
+}

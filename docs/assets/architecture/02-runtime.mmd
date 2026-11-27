@@ -1,0 +1,13 @@
+flowchart TB
+    A["应用 apps/<br/>伴侣、门禁、闹钟：页面流程和交互"]:::product
+    M["基础模块 sdk/modules/<br/>AI 对话、通话、微信、房间、配网"]:::product
+    F["运行框架<br/>意图、事件、前台活动仲裁、设置、指令"]:::interaction
+    E["引擎<br/>网络、平台、传输、媒体、唤醒、界面"]:::media
+    H["硬件抽象、零件库、板包<br/>屏、音频芯片、相机、按键的驱动和接线"]:::hardware
+    P["端口<br/>任务、内存、存储、日志、网络请求"]:::hardware
+    O["平台<br/>ESP-IDF（真机）或 Linux（主机测试）"]
+    A --> M --> F --> E --> H --> P --> O
+    classDef hardware fill:#e7f5ed,stroke:#34805d,color:#202b33
+    classDef product fill:#fff0e7,stroke:#b8754e,color:#202b33
+    classDef interaction fill:#e7f1fb,stroke:#477da9,color:#202b33
+    classDef media fill:#f4f2dd,stroke:#969043,color:#202b33
